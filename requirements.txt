@@ -5,3 +5,4 @@ dnspython
 yt-dlp
 PyNaCl
 imageio-ffmpeg
+requests
