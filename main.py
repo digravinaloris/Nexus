@@ -2,7 +2,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import os
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, session, redirect, url_for
+import requests
 from threading import Thread
 import asyncio
 import datetime
@@ -2581,6 +2582,166 @@ def unwarn_member_route(guild_id, user_id):
                     pass
 
     return jsonify({"success": True, "warnings": count})
+
+
+# ============================================================
+# ============ DASHBOARD WEB (OAuth2 Discord) ================
+# ============================================================
+# Dashboard admin-only : login via Discord, accès limité aux serveurs
+# ou l'utilisateur a la permission Administrator ET ou le bot est présent.
+
+api.secret_key = os.environ["FLASK_SECRET_KEY"]
+api.config.update(
+    SESSION_COOKIE_SECURE=True,     # cookie envoyé que en HTTPS
+    SESSION_COOKIE_HTTPONLY=True,   # inaccessible en JS (anti XSS)
+    SESSION_COOKIE_SAMESITE="Lax",  # anti CSRF de base
+)
+
+DASH_CLIENT_ID = os.environ["DISCORD_CLIENT_ID"]
+DASH_CLIENT_SECRET = os.environ["DISCORD_CLIENT_SECRET"]
+DASH_REDIRECT_URI = os.environ["DISCORD_REDIRECT_URI"]
+
+DISCORD_API_BASE = "https://discord.com/api"
+ADMINISTRATOR_PERM = 0x8
+GUILD_ID_RE = re.compile(r"^\d{17,19}$")  # valide un vrai snowflake Discord
+
+
+def dash_login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if "access_token" not in session:
+            return redirect(url_for("dash_login"))
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def get_user_admin_guilds():
+    """Revient TOUJOURS chercher la vérité chez Discord, jamais en cache client."""
+    r = requests.get(
+        f"{DISCORD_API_BASE}/users/@me/guilds",
+        headers={"Authorization": f"Bearer {session['access_token']}"},
+        timeout=10,
+    )
+    if r.status_code == 401:
+        session.clear()
+        return None
+    guilds = r.json()
+    return [
+        g_ for g_ in guilds
+        if int(g_["permissions"]) & ADMINISTRATOR_PERM == ADMINISTRATOR_PERM
+    ]
+
+
+def dash_guild_admin_required(f):
+    """Vérifie que guild_id dans l'URL est un serveur où l'user est admin ET où le bot est présent."""
+    @wraps(f)
+    def wrapper(guild_id, *args, **kwargs):
+        if not GUILD_ID_RE.match(guild_id):
+            return jsonify({"error": "Invalid guild id"}), 400
+        admin_guilds = get_user_admin_guilds()
+        if admin_guilds is None:
+            return redirect(url_for("dash_login"))
+        admin_guild_ids = {g_["id"] for g_ in admin_guilds}
+        if guild_id not in admin_guild_ids:
+            return jsonify({"error": "Forbidden"}), 403
+        if not bot.is_ready() or not bot.get_guild(int(guild_id)):
+            return jsonify({"error": "Bot not present on this server"}), 403
+        return f(guild_id, *args, **kwargs)
+    return wrapper
+
+
+@api.route("/login")
+def dash_login():
+    state = secrets.token_urlsafe(32)
+    session["oauth_state"] = state
+    params = {
+        "client_id": DASH_CLIENT_ID,
+        "redirect_uri": DASH_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "identify guilds",
+        "state": state,
+    }
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    return redirect(f"{DISCORD_API_BASE}/oauth2/authorize?{query}")
+
+
+@api.route("/callback")
+def dash_callback():
+    state = request.args.get("state")
+    if not state or state != session.pop("oauth_state", None):
+        return jsonify({"error": "Invalid state"}), 403
+
+    code = request.args.get("code")
+    if not code:
+        return jsonify({"error": "Missing code"}), 400
+
+    token_r = requests.post(
+        f"{DISCORD_API_BASE}/oauth2/token",
+        data={
+            "client_id": DASH_CLIENT_ID,
+            "client_secret": DASH_CLIENT_SECRET,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": DASH_REDIRECT_URI,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=10,
+    )
+    if token_r.status_code != 200:
+        return jsonify({"error": "Token exchange failed"}), 400
+
+    token_data = token_r.json()
+    session["access_token"] = token_data["access_token"]
+    session["refresh_token"] = token_data["refresh_token"]
+
+    user_r = requests.get(
+        f"{DISCORD_API_BASE}/users/@me",
+        headers={"Authorization": f"Bearer {token_data['access_token']}"},
+        timeout=10,
+    )
+    session["dash_user"] = user_r.json()
+
+    return redirect(url_for("dash_home"))
+
+
+@api.route("/logout")
+def dash_logout():
+    session.clear()
+    return redirect(url_for("dash_login"))
+
+
+@api.route("/dashboard")
+@dash_login_required
+def dash_home():
+    admin_guilds = get_user_admin_guilds()
+    if admin_guilds is None:
+        return redirect(url_for("dash_login"))
+    # ne montre que les serveurs où l'utilisateur est admin ET où le bot est présent
+    bot_guild_ids = {str(g_.id) for g_ in bot.guilds} if bot.is_ready() else set()
+    manageable = [g_ for g_ in admin_guilds if g_["id"] in bot_guild_ids]
+    return jsonify({"user": session.get("dash_user"), "guilds": manageable})
+
+
+@api.route("/dashboard/<guild_id>/config", methods=["GET"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_get_config(guild_id):
+    cfg = get_config(guild_id)
+    cfg["_id"] = str(cfg["_id"])  # ObjectId pas JSON-serialisable direct
+    return jsonify(cfg)
+
+
+@api.route("/dashboard/<guild_id>/config", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_update_config(guild_id):
+    payload = request.get_json(silent=True) or {}
+    # whitelist stricte : jamais injecter le payload brut dans une query Mongo
+    allowed_keys = {"logs_channel", "autorole"}
+    for key, value in payload.items():
+        if key in allowed_keys:
+            update_config(guild_id, key, value)
+    return jsonify({"success": True})
 
 
 def run_api():
