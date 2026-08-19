@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import os
-from flask import Flask, request, jsonify, g, session, redirect, url_for
+from flask import Flask, request, jsonify, g, session, redirect, url_for, render_template_string, flash, get_flashed_messages
 import requests
 from threading import Thread
 import asyncio
@@ -2710,6 +2710,180 @@ def dash_logout():
     return redirect(url_for("dash_login"))
 
 
+# ---------- Templates HTML ----------
+
+BASE_STYLE = """
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --ink: #0f1117;
+    --surface: #171a24;
+    --surface-2: #1e2230;
+    --line: #2a2f42;
+    --text: #eceef5;
+    --muted: #8b90a8;
+    --raspberry: #ff5f8f;
+    --raspberry-dim: #3a2230;
+    --lime: #c3f24a;
+    --lime-dim: #26301a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 600; margin: 0; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 32px; border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: 'Fraunces', serif; font-size: 20px; font-weight: 700; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--raspberry); box-shadow: 0 0 12px var(--raspberry); }
+  .user-chip { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
+  .user-chip img { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); }
+  .logout { color: var(--muted); font-size: 13px; border: 1px solid var(--line); padding: 6px 12px; border-radius: 8px; transition: all .15s; }
+  .logout:hover { color: var(--text); border-color: var(--raspberry); }
+
+  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+  .eyebrow { color: var(--raspberry); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600; }
+  .lead { color: var(--muted); font-size: 15px; margin-top: 10px; max-width: 52ch; }
+
+  .flash { background: var(--lime-dim); border: 1px solid var(--lime); color: var(--lime); padding: 10px 16px; border-radius: 12px 4px 12px 4px; font-size: 14px; margin: 20px 0; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-top: 28px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 26px 8px 26px 8px;
+    padding: 22px; transition: transform .18s ease, border-color .18s;
+  }
+  a.card:hover { transform: translateY(-3px) rotate(-0.3deg); border-color: var(--raspberry); }
+  .card-icon {
+    width: 44px; height: 44px; border-radius: 14px 4px 14px 4px;
+    background: var(--surface-2); display: flex; align-items: center; justify-content: center;
+    font-family: 'Fraunces', serif; font-weight: 700; font-size: 18px; color: var(--raspberry);
+    margin-bottom: 14px;
+  }
+  .card h3 { font-size: 17px; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .owner-tag { display: inline-block; margin-top: 12px; font-size: 11px; color: var(--lime); background: var(--lime-dim); padding: 3px 9px; border-radius: 999px; }
+
+  .empty { color: var(--muted); font-size: 14px; margin-top: 28px; padding: 24px; border: 1px dashed var(--line); border-radius: 16px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px 6px 20px 6px; padding: 26px; margin-top: 20px; }
+  .panel h2 { font-size: 16px; margin-bottom: 4px; }
+  .panel .desc { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  select, input[type=text] {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
+    padding: 10px 12px; border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 14px;
+    margin-bottom: 18px;
+  }
+  select:focus, input:focus { outline: none; border-color: var(--raspberry); }
+  button {
+    background: var(--raspberry); color: #1a0a10; border: none; font-weight: 600;
+    padding: 11px 20px; border-radius: 12px 4px 12px 4px; font-size: 14px; cursor: pointer;
+    transition: filter .15s;
+  }
+  button:hover { filter: brightness(1.1); }
+  .back { color: var(--muted); font-size: 13px; display: inline-block; margin-bottom: 18px; }
+  .back:hover { color: var(--text); }
+  .id-note { color: var(--muted); font-size: 12px; margin-top: -8px; }
+</style>
+"""
+
+DASH_LIST_TEMPLATE = BASE_STYLE + """
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> Jello Bello</div>
+  <div class="user-chip">
+    {% if user and user.avatar %}
+      <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png" alt="">
+    {% endif %}
+    {{ user.global_name or user.username }}
+    <a class="logout" href="{{ url_for('dash_logout') }}">Se déconnecter</a>
+  </div>
+</div>
+<div class="wrap">
+  <div class="eyebrow">Tableau de bord</div>
+  <h1>Tes serveurs</h1>
+  <p class="lead">Seuls les serveurs où t'es Administrateur ET où Jello Bello est présent apparaissent ici.</p>
+
+  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  {% if guilds %}
+  <div class="grid">
+    {% for g in guilds %}
+    <a class="card" href="{{ url_for('dash_guild_page', guild_id=g.id) }}">
+      <div class="card-icon">{{ g.name[0]|upper }}</div>
+      <h3>{{ g.name }}</h3>
+      <div class="sub mono">{{ g.id }}</div>
+      {% if g.owner %}<span class="owner-tag">Propriétaire</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">Aucun serveur géré pour l'instant — ajoute Jello Bello sur un serveur où t'es admin pour le voir apparaître ici.</div>
+  {% endif %}
+</div>
+"""
+
+GUILD_PAGE_TEMPLATE = BASE_STYLE + """
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> Jello Bello</div>
+  <div class="user-chip">
+    {% if user and user.avatar %}
+      <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png" alt="">
+    {% endif %}
+    {{ user.global_name or user.username }}
+    <a class="logout" href="{{ url_for('dash_logout') }}">Se déconnecter</a>
+  </div>
+</div>
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_home') }}">&larr; Tous les serveurs</a>
+  <div class="eyebrow">Configuration</div>
+  <h1>{{ guild.name }}</h1>
+  <p class="lead mono">{{ guild.id }}</p>
+
+  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  <form method="POST">
+    <div class="panel">
+      <h2>Salon de logs</h2>
+      <div class="desc">Les actions de modération (bans, kicks, warns...) sont envoyées dans ce salon.</div>
+      <label for="logs_channel">Salon</label>
+      <select name="logs_channel" id="logs_channel">
+        {% for c in channels %}
+        <option value="{{ c.id }}" {% if c.name == cfg.logs_channel %}selected{% endif %}>#{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="panel">
+      <h2>Rôle automatique</h2>
+      <div class="desc">Rôle donné automatiquement aux nouveaux membres à leur arrivée.</div>
+      <label for="autorole">Rôle</label>
+      <select name="autorole" id="autorole">
+        <option value="none" {% if not cfg.autorole %}selected{% endif %}>Aucun</option>
+        {% for r in roles %}
+        <option value="{{ r.id }}" {% if cfg.autorole == r.id %}selected{% endif %}>{{ r.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button type="submit">Enregistrer les changements</button>
+  </form>
+</div>
+"""
+
+
+# ---------- Routes dashboard (HTML) ----------
+
 @api.route("/dashboard")
 @dash_login_required
 def dash_home():
@@ -2719,29 +2893,48 @@ def dash_home():
     # ne montre que les serveurs où l'utilisateur est admin ET où le bot est présent
     bot_guild_ids = {str(g_.id) for g_ in bot.guilds} if bot.is_ready() else set()
     manageable = [g_ for g_ in admin_guilds if g_["id"] in bot_guild_ids]
-    return jsonify({"user": session.get("dash_user"), "guilds": manageable})
+    return render_template_string(
+        DASH_LIST_TEMPLATE, guilds=manageable, user=session.get("dash_user")
+    )
 
 
-@api.route("/dashboard/<guild_id>/config", methods=["GET"])
+@api.route("/dashboard/<guild_id>", methods=["GET", "POST"])
 @dash_login_required
 @dash_guild_admin_required
-def dash_get_config(guild_id):
+def dash_guild_page(guild_id):
+    guild = bot.get_guild(int(guild_id))
+    if guild is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
+
+    if request.method == "POST":
+        # Toute valeur reçue est revalidée contre les objets réels de CE serveur
+        # (jamais de confiance sur un id envoyé par le formulaire).
+        logs_channel_id = request.form.get("logs_channel", "")
+        if logs_channel_id.isdigit():
+            channel = guild.get_channel(int(logs_channel_id))
+            if channel is not None and channel in guild.text_channels:
+                update_config(guild_id, "logs_channel", channel.name)
+
+        autorole_id = request.form.get("autorole", "none")
+        if autorole_id == "none":
+            update_config(guild_id, "autorole", None)
+        elif autorole_id.isdigit():
+            role = guild.get_role(int(autorole_id))
+            if role is not None:
+                update_config(guild_id, "autorole", role.id)
+
+        flash("Configuration mise à jour.")
+        return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
     cfg = get_config(guild_id)
-    cfg["_id"] = str(cfg["_id"])  # ObjectId pas JSON-serialisable direct
-    return jsonify(cfg)
-
-
-@api.route("/dashboard/<guild_id>/config", methods=["POST"])
-@dash_login_required
-@dash_guild_admin_required
-def dash_update_config(guild_id):
-    payload = request.get_json(silent=True) or {}
-    # whitelist stricte : jamais injecter le payload brut dans une query Mongo
-    allowed_keys = {"logs_channel", "autorole"}
-    for key, value in payload.items():
-        if key in allowed_keys:
-            update_config(guild_id, key, value)
-    return jsonify({"success": True})
+    return render_template_string(
+        GUILD_PAGE_TEMPLATE,
+        guild=guild,
+        cfg=cfg,
+        channels=guild.text_channels,
+        roles=[r for r in guild.roles if not r.is_default()],
+        user=session.get("dash_user"),
+    )
 
 
 def run_api():
