@@ -2712,14 +2712,21 @@ def dash_logout():
 
 # ---------- Templates HTML ----------
 
+MODERATION_COMMANDS = [
+    "ban", "kick", "mute", "unmute", "unban", "warn", "unwarn", "clear",
+    "roleadd", "roleremove", "lock", "unlock", "vlock", "vunlock",
+    "slowmode", "nickname", "softban", "purgeuser", "tempban", "broadcast",
+]
+
 BASE_STYLE = """
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
   :root {
-    --ink: #0f1117;
+    --ink: #0b0c12;
     --surface: #171a24;
     --surface-2: #1e2230;
+    --surface-3: #262b3d;
     --line: #2a2f42;
     --text: #eceef5;
     --muted: #8b90a8;
@@ -2727,11 +2734,16 @@ BASE_STYLE = """
     --raspberry-dim: #3a2230;
     --lime: #c3f24a;
     --lime-dim: #26301a;
+    --amber: #ffb84d;
+    --amber-dim: #3a2c14;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background: var(--ink);
+    background:
+      radial-gradient(900px 500px at 15% -10%, rgba(255,95,143,.08), transparent 60%),
+      radial-gradient(700px 500px at 100% 0%, rgba(195,242,74,.06), transparent 55%),
+      var(--ink);
     color: var(--text);
     font-family: 'Inter', sans-serif;
     min-height: 100vh;
@@ -2740,65 +2752,135 @@ BASE_STYLE = """
   h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 600; margin: 0; }
   code, .mono { font-family: 'JetBrains Mono', monospace; }
 
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes jiggle {
+    0%, 100% { transform: translateY(-3px) rotate(-0.3deg); }
+    50% { transform: translateY(-5px) rotate(0.4deg); }
+  }
+  @keyframes popIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+  @keyframes pulseDot { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,95,143,.5); } 50% { box-shadow: 0 0 0 6px rgba(255,95,143,0); } }
+  @keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+
   .topbar {
     display: flex; align-items: center; justify-content: space-between;
     padding: 20px 32px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: rgba(11,12,18,.85); backdrop-filter: blur(10px);
+    z-index: 10; animation: fadeUp .4s ease both;
   }
   .brand { display: flex; align-items: center; gap: 10px; font-family: 'Fraunces', serif; font-size: 20px; font-weight: 700; }
-  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--raspberry); box-shadow: 0 0 12px var(--raspberry); }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--raspberry); animation: pulseDot 2.4s infinite; }
   .user-chip { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
   .user-chip img { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); }
   .logout { color: var(--muted); font-size: 13px; border: 1px solid var(--line); padding: 6px 12px; border-radius: 8px; transition: all .15s; }
   .logout:hover { color: var(--text); border-color: var(--raspberry); }
 
-  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
-  .eyebrow { color: var(--raspberry); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600; }
-  .lead { color: var(--muted); font-size: 15px; margin-top: 10px; max-width: 52ch; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
+  .eyebrow { color: var(--raspberry); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600; animation: fadeUp .4s ease .05s both; }
+  h1 { animation: fadeUp .45s ease .08s both; }
+  .lead { color: var(--muted); font-size: 15px; margin-top: 10px; max-width: 56ch; animation: fadeUp .45s ease .12s both; }
 
-  .flash { background: var(--lime-dim); border: 1px solid var(--lime); color: var(--lime); padding: 10px 16px; border-radius: 12px 4px 12px 4px; font-size: 14px; margin: 20px 0; }
+  .flash { background: var(--lime-dim); border: 1px solid var(--lime); color: var(--lime); padding: 10px 16px; border-radius: 12px 4px 12px 4px; font-size: 14px; margin: 20px 0; animation: popIn .25s ease both; }
+  .flash.error { background: var(--raspberry-dim); border-color: var(--raspberry); color: var(--raspberry); }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-top: 28px; }
   .card {
     background: var(--surface); border: 1px solid var(--line);
     border-radius: 26px 8px 26px 8px;
-    padding: 22px; transition: transform .18s ease, border-color .18s;
+    padding: 22px; transition: transform .18s ease, border-color .18s, box-shadow .18s;
+    animation: fadeUp .4s ease both;
   }
-  a.card:hover { transform: translateY(-3px) rotate(-0.3deg); border-color: var(--raspberry); }
+  a.card:hover { animation: jiggle .5s ease; border-color: var(--raspberry); box-shadow: 0 10px 30px -12px rgba(255,95,143,.35); }
   .card-icon {
     width: 44px; height: 44px; border-radius: 14px 4px 14px 4px;
     background: var(--surface-2); display: flex; align-items: center; justify-content: center;
     font-family: 'Fraunces', serif; font-weight: 700; font-size: 18px; color: var(--raspberry);
-    margin-bottom: 14px;
+    margin-bottom: 14px; transition: transform .2s;
   }
+  a.card:hover .card-icon { transform: rotate(-6deg) scale(1.05); }
   .card h3 { font-size: 17px; }
   .card .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .owner-tag { display: inline-block; margin-top: 12px; font-size: 11px; color: var(--lime); background: var(--lime-dim); padding: 3px 9px; border-radius: 999px; }
 
-  .empty { color: var(--muted); font-size: 14px; margin-top: 28px; padding: 24px; border: 1px dashed var(--line); border-radius: 16px; }
+  .empty { color: var(--muted); font-size: 14px; margin-top: 28px; padding: 24px; border: 1px dashed var(--line); border-radius: 16px; animation: fadeUp .4s ease both; }
 
-  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px 6px 20px 6px; padding: 26px; margin-top: 20px; }
-  .panel h2 { font-size: 16px; margin-bottom: 4px; }
-  .panel .desc { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .status-strip { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; animation: fadeUp .4s ease .1s both; }
+  .pill { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); padding: 7px 13px; border-radius: 999px; }
+  .pill .pip { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); }
+  .pill.locked .pip { background: var(--raspberry); }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 20px 6px 20px 6px;
+    padding: 26px; margin-top: 20px; animation: fadeUp .4s ease both;
+  }
+  .panel.danger { border-color: rgba(255,95,143,.35); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+  .panel h2 { font-size: 16px; }
+  .panel .desc { color: var(--muted); font-size: 13px; margin: 6px 0 18px; }
+  .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; padding: 3px 8px; border-radius: 999px; font-weight: 600; }
+  .badge.owner { color: var(--amber); background: var(--amber-dim); }
+  .badge.admin { color: var(--muted); background: var(--surface-3); }
+
   label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
   select, input[type=text] {
     width: 100%; background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
     padding: 10px 12px; border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 14px;
-    margin-bottom: 18px;
+    margin-bottom: 18px; transition: border-color .15s, box-shadow .15s;
   }
-  select:focus, input:focus { outline: none; border-color: var(--raspberry); }
-  button {
+  select[multiple] { min-height: 110px; }
+  select:focus, input:focus { outline: none; border-color: var(--raspberry); box-shadow: 0 0 0 3px rgba(255,95,143,.12); }
+  .hint { color: var(--muted); font-size: 11px; margin-top: -12px; margin-bottom: 18px; }
+
+  button, .btn {
     background: var(--raspberry); color: #1a0a10; border: none; font-weight: 600;
     padding: 11px 20px; border-radius: 12px 4px 12px 4px; font-size: 14px; cursor: pointer;
-    transition: filter .15s;
+    transition: filter .15s, transform .1s; display: inline-flex; align-items: center; gap: 6px;
   }
-  button:hover { filter: brightness(1.1); }
-  .back { color: var(--muted); font-size: 13px; display: inline-block; margin-bottom: 18px; }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  button:active, .btn:active { transform: scale(.97); }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button.ghost:hover { border-color: var(--raspberry); }
+  button.warn { background: var(--amber); }
+  button.stop { background: var(--surface-3); color: var(--raspberry); border: 1px solid rgba(255,95,143,.4); }
+
+  .back { color: var(--muted); font-size: 13px; display: inline-block; margin-bottom: 18px; transition: color .15s; }
   .back:hover { color: var(--text); }
-  .id-note { color: var(--muted); font-size: 12px; margin-top: -8px; }
+
+  .row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .row > * { flex: 1; min-width: 180px; }
+
+  .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .chip {
+    display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--line);
+    padding: 6px 8px 6px 12px; border-radius: 999px; font-size: 12px; animation: popIn .2s ease both;
+  }
+  .chip form { margin: 0; }
+  .chip button.x {
+    background: var(--surface-3); color: var(--muted); border: none; width: 18px; height: 18px; border-radius: 50%;
+    font-size: 11px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .chip button.x:hover { background: var(--raspberry-dim); color: var(--raspberry); }
+  .no-perms { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+
+  .key-box { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+  .key-box code { flex: 1; color: var(--muted); letter-spacing: .04em; }
+  .key-box.revealed code { color: var(--lime); filter: none; }
+  .key-box code.masked { filter: blur(5px); user-select: none; }
+  .reveal-btn { background: var(--surface-3); border: none; color: var(--text); font-size: 11px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+
+  .divider { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
 </style>
+<script>
+  function toggleKey(btn) {
+    const box = btn.closest('.key-box');
+    box.classList.toggle('revealed');
+    const code = box.querySelector('code');
+    code.classList.toggle('masked');
+    btn.textContent = code.classList.contains('masked') ? 'Afficher' : 'Masquer';
+  }
+</script>
 """
 
-DASH_LIST_TEMPLATE = BASE_STYLE + """
+TOPBAR = """
 <div class="topbar">
   <div class="brand"><span class="dot"></span> Jello Bello</div>
   <div class="user-chip">
@@ -2809,6 +2891,9 @@ DASH_LIST_TEMPLATE = BASE_STYLE + """
     <a class="logout" href="{{ url_for('dash_logout') }}">Se déconnecter</a>
   </div>
 </div>
+"""
+
+DASH_LIST_TEMPLATE = BASE_STYLE + TOPBAR + """
 <div class="wrap">
   <div class="eyebrow">Tableau de bord</div>
   <h1>Tes serveurs</h1>
@@ -2819,7 +2904,7 @@ DASH_LIST_TEMPLATE = BASE_STYLE + """
   {% if guilds %}
   <div class="grid">
     {% for g in guilds %}
-    <a class="card" href="{{ url_for('dash_guild_page', guild_id=g.id) }}">
+    <a class="card" style="animation-delay: {{ loop.index0 * 0.05 }}s" href="{{ url_for('dash_guild_page', guild_id=g.id) }}">
       <div class="card-icon">{{ g.name[0]|upper }}</div>
       <h3>{{ g.name }}</h3>
       <div class="sub mono">{{ g.id }}</div>
@@ -2833,28 +2918,25 @@ DASH_LIST_TEMPLATE = BASE_STYLE + """
 </div>
 """
 
-GUILD_PAGE_TEMPLATE = BASE_STYLE + """
-<div class="topbar">
-  <div class="brand"><span class="dot"></span> Jello Bello</div>
-  <div class="user-chip">
-    {% if user and user.avatar %}
-      <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png" alt="">
-    {% endif %}
-    {{ user.global_name or user.username }}
-    <a class="logout" href="{{ url_for('dash_logout') }}">Se déconnecter</a>
-  </div>
-</div>
+GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
 <div class="wrap">
   <a class="back" href="{{ url_for('dash_home') }}">&larr; Tous les serveurs</a>
   <div class="eyebrow">Configuration</div>
   <h1>{{ guild.name }}</h1>
   <p class="lead mono">{{ guild.id }}</p>
 
+  <div class="status-strip">
+    <span class="pill {{ 'locked' if is_locked else '' }}"><span class="pip"></span> Bot {{ 'verrouillé' if is_locked else 'actif' }}</span>
+    <span class="pill"><span class="pip"></span> {{ channels|length }} salons texte</span>
+    <span class="pill"><span class="pip"></span> {{ roles|length }} rôles</span>
+    {% if is_owner %}<span class="pill"><span class="pip" style="background: var(--amber);"></span> Tu es propriétaire</span>{% endif %}
+  </div>
+
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
 
-  <form method="POST">
-    <div class="panel">
-      <h2>Salon de logs</h2>
+  <form method="POST" action="{{ url_for('dash_guild_page', guild_id=guild.id) }}">
+    <div class="panel" style="animation-delay:.02s">
+      <div class="panel-head"><h2>Salon de logs</h2><span class="badge admin">Admin</span></div>
       <div class="desc">Les actions de modération (bans, kicks, warns...) sont envoyées dans ce salon.</div>
       <label for="logs_channel">Salon</label>
       <select name="logs_channel" id="logs_channel">
@@ -2862,27 +2944,135 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + """
         <option value="{{ c.id }}" {% if c.name == cfg.logs_channel %}selected{% endif %}>#{{ c.name }}</option>
         {% endfor %}
       </select>
-    </div>
 
-    <div class="panel">
-      <h2>Rôle automatique</h2>
-      <div class="desc">Rôle donné automatiquement aux nouveaux membres à leur arrivée.</div>
-      <label for="autorole">Rôle</label>
+      <label for="autorole">Rôle automatique à l'arrivée</label>
       <select name="autorole" id="autorole">
         <option value="none" {% if not cfg.autorole %}selected{% endif %}>Aucun</option>
         {% for r in roles %}
         <option value="{{ r.id }}" {% if cfg.autorole == r.id %}selected{% endif %}>{{ r.name }}</option>
         {% endfor %}
       </select>
+      <button type="submit">Enregistrer</button>
     </div>
-
-    <button type="submit">Enregistrer les changements</button>
   </form>
+
+  <form method="POST" action="{{ url_for('dash_automod', guild_id=guild.id) }}">
+    <div class="panel" style="animation-delay:.06s">
+      <div class="panel-head"><h2>Exemptions anti-raid / anti-spam</h2><span class="badge admin">Admin</span></div>
+      <div class="desc">Ces rôles ne sont jamais auto-modérés (spam, caps, invitations). Les membres avec la permission "Gérer les messages" sont déjà exemptés.</div>
+      <label for="allowed_roles">Rôles exemptés</label>
+      <select name="allowed_roles" id="allowed_roles" multiple>
+        {% for r in roles %}
+        <option value="{{ r.id }}" {% if r.id in (cfg.allowed_roles or []) %}selected{% endif %}>{{ r.name }}</option>
+        {% endfor %}
+      </select>
+      <div class="hint">Ctrl/Cmd + clic pour en sélectionner plusieurs.</div>
+      <button type="submit">Enregistrer</button>
+    </div>
+  </form>
+
+  {% if is_owner %}
+  <div class="panel" style="animation-delay:.1s">
+    <div class="panel-head"><h2>Permissions par commande</h2><span class="badge owner">Owner</span></div>
+    <div class="desc">Autorise des rôles spécifiques à utiliser certaines commandes de modération, en plus des permissions Discord classiques.</div>
+
+    {% if cfg.command_roles %}
+    {% for cmd, role_ids in cfg.command_roles.items() %}
+      {% if role_ids %}
+      <label>/{{ cmd }}</label>
+      <div class="chip-list">
+        {% for rid in role_ids %}
+        <div class="chip">
+          {{ role_names.get(rid, rid) }}
+          <form method="POST" action="{{ url_for('dash_permission_remove', guild_id=guild.id) }}">
+            <input type="hidden" name="command" value="{{ cmd }}">
+            <input type="hidden" name="role_id" value="{{ rid }}">
+            <button type="submit" class="x" title="Retirer">&times;</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% else %}
+    <div class="no-perms">Aucune permission personnalisée pour l'instant.</div>
+    {% endif %}
+
+    <hr class="divider">
+    <form method="POST" action="{{ url_for('dash_permission_add', guild_id=guild.id) }}">
+      <div class="row">
+        <div>
+          <label for="command">Commande</label>
+          <select name="command" id="command">
+            {% for cmd in moderation_commands %}
+            <option value="{{ cmd }}">/{{ cmd }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="role_id">Rôle autorisé</label>
+          <select name="role_id" id="role_id">
+            {% for r in roles %}
+            <option value="{{ r.id }}">{{ r.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button type="submit">Ajouter la permission</button>
+    </form>
+  </div>
+
+  <div class="panel" style="animation-delay:.14s">
+    <div class="panel-head"><h2>Clé API mobile</h2><span class="badge owner">Owner</span></div>
+    <div class="desc">Utilisée par l'app mobile pour gérer ce serveur uniquement.</div>
+    {% if cfg.api_key %}
+    <div class="key-box">
+      <code class="masked mono">{{ cfg.api_key }}</code>
+      <button type="button" class="reveal-btn" onclick="toggleKey(this)">Afficher</button>
+    </div>
+    {% else %}
+    <div class="no-perms">Aucune clé générée pour l'instant.</div>
+    {% endif %}
+    <form method="POST" action="{{ url_for('dash_apikey_regen', guild_id=guild.id) }}" onsubmit="return confirm('Régénérer la clé API ? L\\'ancienne cessera de fonctionner immédiatement.');">
+      <button type="submit" class="ghost">Régénérer la clé</button>
+    </form>
+  </div>
+
+  <div class="panel danger" style="animation-delay:.18s">
+    <div class="panel-head"><h2>Verrouillage du bot</h2><span class="badge owner">Owner</span></div>
+    <div class="desc">
+      {% if is_locked %}Le bot est verrouillé : seul toi peux utiliser ses commandes sur ce serveur.
+      {% else %}En cas d'urgence, verrouille le bot pour bloquer toutes les commandes sauf les tiennes.{% endif %}
+    </div>
+    <form method="POST" action="{{ url_for('dash_toggle_lock', guild_id=guild.id) }}">
+      {% if is_locked %}
+      <button type="submit" class="warn">Déverrouiller le bot</button>
+      {% else %}
+      <button type="submit" class="stop">Verrouiller le bot</button>
+      {% endif %}
+    </form>
+  </div>
+  {% endif %}
 </div>
 """
 
 
 # ---------- Routes dashboard (HTML) ----------
+
+def dash_is_owner(guild):
+    user = session.get("dash_user") or {}
+    return str(guild.owner_id) == str(user.get("id"))
+
+
+def dash_owner_required(f):
+    @wraps(f)
+    def wrapper(guild_id, *args, **kwargs):
+        guild = bot.get_guild(int(guild_id))
+        if guild is None or not dash_is_owner(guild):
+            return jsonify({"error": "Propriétaire du serveur requis"}), 403
+        return f(guild_id, *args, **kwargs)
+    return wrapper
+
 
 @api.route("/dashboard")
 @dash_login_required
@@ -2927,14 +3117,88 @@ def dash_guild_page(guild_id):
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
     cfg = get_config(guild_id)
+    role_names = {r.id: r.name for r in guild.roles}
     return render_template_string(
         GUILD_PAGE_TEMPLATE,
         guild=guild,
         cfg=cfg,
         channels=guild.text_channels,
         roles=[r for r in guild.roles if not r.is_default()],
+        role_names=role_names,
+        moderation_commands=MODERATION_COMMANDS,
+        is_owner=dash_is_owner(guild),
+        is_locked=guild.id in bot.locked_guilds,
         user=session.get("dash_user"),
     )
+
+
+@api.route("/dashboard/<guild_id>/automod", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_automod(guild_id):
+    guild = bot.get_guild(int(guild_id))
+    submitted = request.form.getlist("allowed_roles")
+    valid_role_ids = {r.id for r in guild.roles}
+    # ne garde que des ids qui correspondent à de vrais rôles de CE serveur
+    clean = [int(rid) for rid in submitted if rid.isdigit() and int(rid) in valid_role_ids]
+    update_config(guild_id, "allowed_roles", clean)
+    flash("Exemptions anti-raid mises à jour.")
+    return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
+
+@api.route("/dashboard/<guild_id>/permissions/add", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+@dash_owner_required
+def dash_permission_add(guild_id):
+    guild = bot.get_guild(int(guild_id))
+    command = request.form.get("command", "")
+    role_id = request.form.get("role_id", "")
+    if command in MODERATION_COMMANDS and role_id.isdigit():
+        role = guild.get_role(int(role_id))
+        if role is not None:
+            add_command_role(guild_id, command, role.id)
+            flash(f"{role.name} peut maintenant utiliser /{command}.")
+    return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
+
+@api.route("/dashboard/<guild_id>/permissions/remove", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+@dash_owner_required
+def dash_permission_remove(guild_id):
+    command = request.form.get("command", "")
+    role_id = request.form.get("role_id", "")
+    if command in MODERATION_COMMANDS and role_id.isdigit():
+        remove_command_role(guild_id, command, int(role_id))
+        flash(f"Permission retirée pour /{command}.")
+    return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
+
+@api.route("/dashboard/<guild_id>/apikey/regenerate", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+@dash_owner_required
+def dash_apikey_regen(guild_id):
+    new_key = secrets.token_hex(16)
+    update_config(guild_id, "api_key", new_key)
+    flash("Nouvelle clé API générée — l'ancienne ne fonctionne plus.")
+    return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
+
+@api.route("/dashboard/<guild_id>/lock", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+@dash_owner_required
+def dash_toggle_lock(guild_id):
+    gid = int(guild_id)
+    if gid in bot.locked_guilds:
+        bot.locked_guilds.discard(gid)
+        flash("Bot déverrouillé.")
+    else:
+        bot.locked_guilds.add(gid)
+        flash("Bot verrouillé — seul toi peux utiliser ses commandes ici.")
+    return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
 def run_api():
