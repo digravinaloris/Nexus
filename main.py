@@ -1993,7 +1993,10 @@ async def on_message(message):
 async def on_member_join(member):
     cfg = get_config(member.guild.id)
     autorole_id = cfg.get("autorole")
-    if autorole_id:
+    # On ne file pas l'autorole si le serveur est déjà verrouillé (raid en cours) :
+    # pas de vérification anti-alt/anti-raid en amont, donc mieux vaut ne rien
+    # distribuer automatiquement tant que la situation n'est pas confirmée saine.
+    if autorole_id and member.guild.id not in bot.locked_guilds:
         role = member.guild.get_role(autorole_id)
         if role:
             await member.add_roles(role)
@@ -2829,6 +2832,7 @@ BASE_STYLE = """
   select[multiple] { min-height: 110px; }
   select:focus, input:focus { outline: none; border-color: var(--raspberry); box-shadow: 0 0 0 3px rgba(255,95,143,.12); }
   .hint { color: var(--muted); font-size: 11px; margin-top: -12px; margin-bottom: 18px; }
+  .risky-warning { background: var(--amber-dim); border: 1px solid var(--amber); color: var(--amber); padding: 10px 14px; border-radius: 12px 4px 12px 4px; font-size: 12.5px; margin: -6px 0 18px; animation: popIn .2s ease both; }
 
   button, .btn {
     background: var(--raspberry); color: #1a0a10; border: none; font-weight: 600;
@@ -2946,15 +2950,28 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
       </select>
 
       <label for="autorole">Rôle automatique à l'arrivée</label>
-      <select name="autorole" id="autorole">
-        <option value="none" {% if not cfg.autorole %}selected{% endif %}>Aucun</option>
+      <select name="autorole" id="autorole" onchange="checkRiskyRole(this)">
+        <option value="none" data-risky="0" {% if not cfg.autorole %}selected{% endif %}>Aucun</option>
         {% for r in roles %}
-        <option value="{{ r.id }}" {% if cfg.autorole == r.id %}selected{% endif %}>{{ r.name }}</option>
+        <option value="{{ r.id }}" data-risky="{{ '1' if r.permissions.administrator or r.permissions.manage_guild or r.permissions.ban_members or r.permissions.kick_members or r.permissions.manage_roles else '0' }}" {% if cfg.autorole == r.id %}selected{% endif %}>{{ r.name }}</option>
         {% endfor %}
       </select>
+      <div id="autorole-warning" class="risky-warning" style="display:none;">
+        ⚠️ Ce rôle a des permissions sensibles (admin, gestion du serveur, ban/kick...). Il sera donné automatiquement à <strong>tout nouveau membre</strong>, sans aucune vérification anti-alt.
+      </div>
       <button type="submit">Enregistrer</button>
     </div>
   </form>
+  <script>
+    function checkRiskyRole(select) {
+      var opt = select.options[select.selectedIndex];
+      var warn = document.getElementById('autorole-warning');
+      warn.style.display = (opt.dataset.risky === '1') ? 'block' : 'none';
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      checkRiskyRole(document.getElementById('autorole'));
+    });
+  </script>
 
   <form method="POST" action="{{ url_for('dash_automod', guild_id=guild.id) }}">
     <div class="panel" style="animation-delay:.06s">
@@ -3106,12 +3123,15 @@ def dash_guild_page(guild_id):
                 update_config(guild_id, "logs_channel", channel.name)
 
         autorole_id = request.form.get("autorole", "none")
+        risky_perms = ("administrator", "manage_guild", "ban_members", "kick_members", "manage_roles")
         if autorole_id == "none":
             update_config(guild_id, "autorole", None)
         elif autorole_id.isdigit():
             role = guild.get_role(int(autorole_id))
             if role is not None:
                 update_config(guild_id, "autorole", role.id)
+                if any(getattr(role.permissions, p) for p in risky_perms):
+                    flash(f"⚠️ Attention : le rôle « {role.name} » a des permissions sensibles et sera donné automatiquement à tout nouveau membre.")
 
         flash("Configuration mise à jour.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
@@ -3211,4 +3231,21 @@ def keep_alive():
     t.start()
 
 keep_alive()
-bot.run(os.getenv("TOKEN"))
+
+# Si Discord/Cloudflare renvoie un 429 au login (rate limit), on ne laisse pas
+# le process planter : Render le relancerait instantanément, ce qui martèle
+# encore plus l'endpoint de login et prolonge le blocage. On attend avec un
+# backoff progressif à la place.
+_login_attempt = 0
+while True:
+    try:
+        bot.run(os.getenv("TOKEN"))
+        break  # bot.run() ne revient normalement qu'à l'arrêt volontaire
+    except discord.errors.HTTPException as e:
+        if e.status == 429:
+            _login_attempt += 1
+            wait = min(60 * (2 ** (_login_attempt - 1)), 900)  # 60s, 120s, 240s... max 15 min
+            print(f"[LOGIN] 429 rate limited par Discord/Cloudflare, retry dans {wait}s (tentative {_login_attempt})", flush=True)
+            time.sleep(wait)
+        else:
+            raise
