@@ -918,7 +918,30 @@ async def config_view(interaction: discord.Interaction):
                 continue
             mentions = " ".join(f"<@&{r}>" for r in roles)
             lines.append(f"**/{cmd}** → {mentions}")
-        embed.add_field(name="Command Permissions", value="\n".join(lines) or "None configured", inline=False)
+        if not lines:
+            embed.add_field(name="Command Permissions", value="None configured", inline=False)
+        else:
+            # Discord limite chaque champ d'embed à 1024 caractères : on
+            # répartit sur plusieurs champs si la liste est trop longue
+            # (le mass-add du dashboard peut vite dépasser cette limite).
+            chunk = ""
+            chunk_index = 1
+            for line in lines:
+                if len(chunk) + len(line) + 1 > 1000:
+                    embed.add_field(
+                        name="Command Permissions" if chunk_index == 1 else "Command Permissions (cont.)",
+                        value=chunk,
+                        inline=False,
+                    )
+                    chunk = ""
+                    chunk_index += 1
+                chunk += (line + "\n")
+            if chunk:
+                embed.add_field(
+                    name="Command Permissions" if chunk_index == 1 else "Command Permissions (cont.)",
+                    value=chunk,
+                    inline=False,
+                )
     else:
         embed.add_field(name="Command Permissions", value="None configured (using default Discord permissions)", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
