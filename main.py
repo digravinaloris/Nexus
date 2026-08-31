@@ -2619,7 +2619,13 @@ def dash_login_required(f):
 
 
 def get_user_admin_guilds():
-    """Revient TOUJOURS chercher la vérité chez Discord, jamais en cache client."""
+    """Revient chercher la vérité chez Discord, avec un court cache pour éviter
+    de spammer l'API à chaque clic (et donc de se reprendre un rate limit)."""
+    cached = session.get("admin_guilds_cache")
+    cached_at = session.get("admin_guilds_cache_at", 0)
+    if cached is not None and (time.time() - cached_at) < 120:
+        return cached
+
     r = requests.get(
         f"{DISCORD_API_BASE}/users/@me/guilds",
         headers={"Authorization": f"Bearer {session['access_token']}"},
@@ -2628,11 +2634,25 @@ def get_user_admin_guilds():
     if r.status_code == 401:
         session.clear()
         return None
+    if r.status_code != 200:
+        # Discord a répondu autre chose qu'une liste de serveurs (rate limit,
+        # erreur temporaire...) : on ne plante pas, on retombe sur le cache
+        # précédent s'il existe, sinon on force un nouveau login.
+        if cached is not None:
+            return cached
+        return None
+
     guilds = r.json()
-    return [
+    if not isinstance(guilds, list):
+        return cached if cached is not None else None
+
+    admin_guilds = [
         g_ for g_ in guilds
-        if int(g_["permissions"]) & ADMINISTRATOR_PERM == ADMINISTRATOR_PERM
+        if isinstance(g_, dict) and int(g_.get("permissions", 0)) & ADMINISTRATOR_PERM == ADMINISTRATOR_PERM
     ]
+    session["admin_guilds_cache"] = admin_guilds
+    session["admin_guilds_cache_at"] = time.time()
+    return admin_guilds
 
 
 def dash_guild_admin_required(f):
