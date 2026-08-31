@@ -2853,6 +2853,11 @@ BASE_STYLE = """
   select:focus, input:focus { outline: none; border-color: var(--raspberry); box-shadow: 0 0 0 3px rgba(255,95,143,.12); }
   .hint { color: var(--muted); font-size: 11px; margin-top: -12px; margin-bottom: 18px; }
   .risky-warning { background: var(--amber-dim); border: 1px solid var(--amber); color: var(--amber); padding: 10px 14px; border-radius: 12px 4px 12px 4px; font-size: 12.5px; margin: -6px 0 18px; animation: popIn .2s ease both; }
+  .cmd-toggle-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  button.ghost.small { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
+  .cmd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 18px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .cmd-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); cursor: pointer; }
+  .cmd-check input { width: auto; margin: 0; accent-color: var(--raspberry); }
 
   button, .btn {
     background: var(--raspberry); color: #1a0a10; border: none; font-weight: 600;
@@ -3037,26 +3042,32 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
 
     <hr class="divider">
     <form method="POST" action="{{ url_for('dash_permission_add', guild_id=guild.id) }}">
-      <div class="row">
-        <div>
-          <label for="command">Command</label>
-          <select name="command" id="command">
-            {% for cmd in moderation_commands %}
-            <option value="{{ cmd }}">/{{ cmd }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label for="role_id">Allowed role</label>
-          <select name="role_id" id="role_id">
-            {% for r in roles %}
-            <option value="{{ r.id }}">{{ r.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
+      <label>Commands</label>
+      <div class="cmd-toggle-row">
+        <button type="button" class="ghost small" onclick="toggleAllCmds(true)">Select all</button>
+        <button type="button" class="ghost small" onclick="toggleAllCmds(false)">Clear</button>
       </div>
-      <button type="submit">Add permission</button>
+      <div class="cmd-grid">
+        {% for cmd in moderation_commands %}
+        <label class="cmd-check">
+          <input type="checkbox" name="commands" value="{{ cmd }}" class="cmd-checkbox">
+          /{{ cmd }}
+        </label>
+        {% endfor %}
+      </div>
+      <label for="role_id">Allowed role</label>
+      <select name="role_id" id="role_id">
+        {% for r in roles %}
+        <option value="{{ r.id }}">{{ r.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Add permission(s)</button>
     </form>
+    <script>
+      function toggleAllCmds(state) {
+        document.querySelectorAll('.cmd-checkbox').forEach(function(cb) { cb.checked = state; });
+      }
+    </script>
   </div>
 
   <div class="panel" style="animation-delay:.14s">
@@ -3192,13 +3203,18 @@ def dash_automod(guild_id):
 @dash_owner_required
 def dash_permission_add(guild_id):
     guild = bot.get_guild(int(guild_id))
-    command = request.form.get("command", "")
+    commands = request.form.getlist("commands")
     role_id = request.form.get("role_id", "")
-    if command in MODERATION_COMMANDS and role_id.isdigit():
+    valid_commands = [c for c in commands if c in MODERATION_COMMANDS]
+    if valid_commands and role_id.isdigit():
         role = guild.get_role(int(role_id))
         if role is not None:
-            add_command_role(guild_id, command, role.id)
-            flash(f"{role.name} can now use /{command}.")
+            for cmd in valid_commands:
+                add_command_role(guild_id, cmd, role.id)
+            if len(valid_commands) == 1:
+                flash(f"{role.name} can now use /{valid_commands[0]}.")
+            else:
+                flash(f"{role.name} can now use {len(valid_commands)} commands: " + ", ".join(f"/{c}" for c in valid_commands) + ".")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -3209,7 +3225,12 @@ def dash_permission_add(guild_id):
 def dash_permission_remove(guild_id):
     command = request.form.get("command", "")
     role_id = request.form.get("role_id", "")
-    if command in MODERATION_COMMANDS and role_id.isdigit():
+    # Pas de whitelist ici : la commande vient d'un chip déjà affiché depuis
+    # la DB (donc déjà existante), et retirer une permission ne présente
+    # aucun risque même pour un nom de commande hors de MODERATION_COMMANDS
+    # (ex: ajouté via /config allow avec une casse différente, ou une
+    # commande hors de notre liste curatée).
+    if command and role_id.isdigit():
         remove_command_role(guild_id, command, int(role_id))
         flash(f"Permission removed for /{command}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
