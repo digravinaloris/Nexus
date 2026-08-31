@@ -2912,16 +2912,16 @@ TOPBAR = """
       <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png" alt="">
     {% endif %}
     {{ user.global_name or user.username }}
-    <a class="logout" href="{{ url_for('dash_logout') }}">Se déconnecter</a>
+    <a class="logout" href="{{ url_for('dash_logout') }}">Log out</a>
   </div>
 </div>
 """
 
 DASH_LIST_TEMPLATE = BASE_STYLE + TOPBAR + """
 <div class="wrap">
-  <div class="eyebrow">Tableau de bord</div>
-  <h1>Tes serveurs</h1>
-  <p class="lead">Seuls les serveurs où t'es Administrateur ET où Jello Bello est présent apparaissent ici.</p>
+  <div class="eyebrow">Dashboard</div>
+  <h1>Your servers</h1>
+  <p class="lead">Only servers where you're an Administrator AND where Jello Bello is present show up here.</p>
 
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
 
@@ -2932,54 +2932,54 @@ DASH_LIST_TEMPLATE = BASE_STYLE + TOPBAR + """
       <div class="card-icon">{{ g.name[0]|upper }}</div>
       <h3>{{ g.name }}</h3>
       <div class="sub mono">{{ g.id }}</div>
-      {% if g.owner %}<span class="owner-tag">Propriétaire</span>{% endif %}
+      {% if g.owner %}<span class="owner-tag">Owner</span>{% endif %}
     </a>
     {% endfor %}
   </div>
   {% else %}
-  <div class="empty">Aucun serveur géré pour l'instant — ajoute Jello Bello sur un serveur où t'es admin pour le voir apparaître ici.</div>
+  <div class="empty">No manageable servers yet — add Jello Bello to a server where you're an admin to see it here.</div>
   {% endif %}
 </div>
 """
 
 GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
 <div class="wrap">
-  <a class="back" href="{{ url_for('dash_home') }}">&larr; Tous les serveurs</a>
+  <a class="back" href="{{ url_for('dash_home') }}">&larr; All servers</a>
   <div class="eyebrow">Configuration</div>
   <h1>{{ guild.name }}</h1>
   <p class="lead mono">{{ guild.id }}</p>
 
   <div class="status-strip">
-    <span class="pill {{ 'locked' if is_locked else '' }}"><span class="pip"></span> Bot {{ 'verrouillé' if is_locked else 'actif' }}</span>
-    <span class="pill"><span class="pip"></span> {{ channels|length }} salons texte</span>
-    <span class="pill"><span class="pip"></span> {{ roles|length }} rôles</span>
-    {% if is_owner %}<span class="pill"><span class="pip" style="background: var(--amber);"></span> Tu es propriétaire</span>{% endif %}
+    <span class="pill {{ 'locked' if is_locked else '' }}"><span class="pip"></span> Bot {{ 'locked' if is_locked else 'active' }}</span>
+    <span class="pill"><span class="pip"></span> {{ channels|length }} text channels</span>
+    <span class="pill"><span class="pip"></span> {{ roles|length }} roles</span>
+    {% if is_owner %}<span class="pill"><span class="pip" style="background: var(--amber);"></span> You are the owner</span>{% endif %}
   </div>
 
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
 
   <form method="POST" action="{{ url_for('dash_guild_page', guild_id=guild.id) }}">
     <div class="panel" style="animation-delay:.02s">
-      <div class="panel-head"><h2>Salon de logs</h2><span class="badge admin">Admin</span></div>
-      <div class="desc">Les actions de modération (bans, kicks, warns...) sont envoyées dans ce salon.</div>
-      <label for="logs_channel">Salon</label>
+      <div class="panel-head"><h2>Logs channel</h2><span class="badge admin">Admin</span></div>
+      <div class="desc">Moderation actions (bans, kicks, warns...) are sent to this channel.</div>
+      <label for="logs_channel">Channel</label>
       <select name="logs_channel" id="logs_channel">
         {% for c in channels %}
         <option value="{{ c.id }}" {% if c.name == cfg.logs_channel %}selected{% endif %}>#{{ c.name }}</option>
         {% endfor %}
       </select>
 
-      <label for="autorole">Rôle automatique à l'arrivée</label>
+      <label for="autorole">Auto-role on join</label>
       <select name="autorole" id="autorole" onchange="checkRiskyRole(this)">
-        <option value="none" data-risky="0" {% if not cfg.autorole %}selected{% endif %}>Aucun</option>
+        <option value="none" data-risky="0" {% if not cfg.autorole %}selected{% endif %}>None</option>
         {% for r in roles %}
         <option value="{{ r.id }}" data-risky="{{ '1' if r.permissions.administrator or r.permissions.manage_guild or r.permissions.ban_members or r.permissions.kick_members or r.permissions.manage_roles else '0' }}" {% if cfg.autorole == r.id %}selected{% endif %}>{{ r.name }}</option>
         {% endfor %}
       </select>
       <div id="autorole-warning" class="risky-warning" style="display:none;">
-        ⚠️ Ce rôle a des permissions sensibles (admin, gestion du serveur, ban/kick...). Il sera donné automatiquement à <strong>tout nouveau membre</strong>, sans aucune vérification anti-alt.
+        ⚠️ This role has sensitive permissions (admin, manage server, ban/kick...). It will be given automatically to <strong>every new member</strong>, with no anti-alt check.
       </div>
-      <button type="submit">Enregistrer</button>
+      <button type="submit">Save</button>
     </div>
   </form>
   <script>
@@ -2995,23 +2995,23 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
 
   <form method="POST" action="{{ url_for('dash_automod', guild_id=guild.id) }}">
     <div class="panel" style="animation-delay:.06s">
-      <div class="panel-head"><h2>Exemptions anti-raid / anti-spam</h2><span class="badge admin">Admin</span></div>
-      <div class="desc">Ces rôles ne sont jamais auto-modérés (spam, caps, invitations). Les membres avec la permission "Gérer les messages" sont déjà exemptés.</div>
-      <label for="allowed_roles">Rôles exemptés</label>
+      <div class="panel-head"><h2>Anti-raid / anti-spam exemptions</h2><span class="badge admin">Admin</span></div>
+      <div class="desc">These roles are never auto-moderated (spam, caps, invite links). Members with "Manage Messages" are already exempt.</div>
+      <label for="allowed_roles">Exempt roles</label>
       <select name="allowed_roles" id="allowed_roles" multiple>
         {% for r in roles %}
         <option value="{{ r.id }}" {% if r.id in (cfg.allowed_roles or []) %}selected{% endif %}>{{ r.name }}</option>
         {% endfor %}
       </select>
-      <div class="hint">Ctrl/Cmd + clic pour en sélectionner plusieurs.</div>
-      <button type="submit">Enregistrer</button>
+      <div class="hint">Ctrl/Cmd + click to select multiple.</div>
+      <button type="submit">Save</button>
     </div>
   </form>
 
   {% if is_owner %}
   <div class="panel" style="animation-delay:.1s">
-    <div class="panel-head"><h2>Permissions par commande</h2><span class="badge owner">Owner</span></div>
-    <div class="desc">Autorise des rôles spécifiques à utiliser certaines commandes de modération, en plus des permissions Discord classiques.</div>
+    <div class="panel-head"><h2>Per-command permissions</h2><span class="badge owner">Owner</span></div>
+    <div class="desc">Allow specific roles to use certain moderation commands, on top of standard Discord permissions.</div>
 
     {% if cfg.command_roles %}
     {% for cmd, role_ids in cfg.command_roles.items() %}
@@ -3024,7 +3024,7 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
           <form method="POST" action="{{ url_for('dash_permission_remove', guild_id=guild.id) }}">
             <input type="hidden" name="command" value="{{ cmd }}">
             <input type="hidden" name="role_id" value="{{ rid }}">
-            <button type="submit" class="x" title="Retirer">&times;</button>
+            <button type="submit" class="x" title="Remove">&times;</button>
           </form>
         </div>
         {% endfor %}
@@ -3032,14 +3032,14 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
       {% endif %}
     {% endfor %}
     {% else %}
-    <div class="no-perms">Aucune permission personnalisée pour l'instant.</div>
+    <div class="no-perms">No custom permissions yet.</div>
     {% endif %}
 
     <hr class="divider">
     <form method="POST" action="{{ url_for('dash_permission_add', guild_id=guild.id) }}">
       <div class="row">
         <div>
-          <label for="command">Commande</label>
+          <label for="command">Command</label>
           <select name="command" id="command">
             {% for cmd in moderation_commands %}
             <option value="{{ cmd }}">/{{ cmd }}</option>
@@ -3047,7 +3047,7 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
           </select>
         </div>
         <div>
-          <label for="role_id">Rôle autorisé</label>
+          <label for="role_id">Allowed role</label>
           <select name="role_id" id="role_id">
             {% for r in roles %}
             <option value="{{ r.id }}">{{ r.name }}</option>
@@ -3055,37 +3055,37 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
           </select>
         </div>
       </div>
-      <button type="submit">Ajouter la permission</button>
+      <button type="submit">Add permission</button>
     </form>
   </div>
 
   <div class="panel" style="animation-delay:.14s">
-    <div class="panel-head"><h2>Clé API mobile</h2><span class="badge owner">Owner</span></div>
-    <div class="desc">Utilisée par l'app mobile pour gérer ce serveur uniquement.</div>
+    <div class="panel-head"><h2>Mobile API key</h2><span class="badge owner">Owner</span></div>
+    <div class="desc">Used by the mobile app to manage this server only.</div>
     {% if cfg.api_key %}
     <div class="key-box">
       <code class="masked mono">{{ cfg.api_key }}</code>
-      <button type="button" class="reveal-btn" onclick="toggleKey(this)">Afficher</button>
+      <button type="button" class="reveal-btn" onclick="toggleKey(this)">Show</button>
     </div>
     {% else %}
-    <div class="no-perms">Aucune clé générée pour l'instant.</div>
+    <div class="no-perms">No key generated yet.</div>
     {% endif %}
-    <form method="POST" action="{{ url_for('dash_apikey_regen', guild_id=guild.id) }}" onsubmit="return confirm('Régénérer la clé API ? L\\'ancienne cessera de fonctionner immédiatement.');">
-      <button type="submit" class="ghost">Régénérer la clé</button>
+    <form method="POST" action="{{ url_for('dash_apikey_regen', guild_id=guild.id) }}" onsubmit="return confirm('Regenerate the API key? The old one will stop working immediately.');">
+      <button type="submit" class="ghost">Regenerate key</button>
     </form>
   </div>
 
   <div class="panel danger" style="animation-delay:.18s">
-    <div class="panel-head"><h2>Verrouillage du bot</h2><span class="badge owner">Owner</span></div>
+    <div class="panel-head"><h2>Bot lockdown</h2><span class="badge owner">Owner</span></div>
     <div class="desc">
-      {% if is_locked %}Le bot est verrouillé : seul toi peux utiliser ses commandes sur ce serveur.
-      {% else %}En cas d'urgence, verrouille le bot pour bloquer toutes les commandes sauf les tiennes.{% endif %}
+      {% if is_locked %}The bot is locked: only you can use its commands on this server.
+      {% else %}In an emergency, lock the bot to block every command except yours.{% endif %}
     </div>
     <form method="POST" action="{{ url_for('dash_toggle_lock', guild_id=guild.id) }}">
       {% if is_locked %}
-      <button type="submit" class="warn">Déverrouiller le bot</button>
+      <button type="submit" class="warn">Unlock bot</button>
       {% else %}
-      <button type="submit" class="stop">Verrouiller le bot</button>
+      <button type="submit" class="stop">Lock bot</button>
       {% endif %}
     </form>
   </div>
@@ -3106,7 +3106,7 @@ def dash_owner_required(f):
     def wrapper(guild_id, *args, **kwargs):
         guild = bot.get_guild(int(guild_id))
         if guild is None or not dash_is_owner(guild):
-            return jsonify({"error": "Propriétaire du serveur requis"}), 403
+            return jsonify({"error": "Server owner required"}), 403
         return f(guild_id, *args, **kwargs)
     return wrapper
 
@@ -3151,9 +3151,9 @@ def dash_guild_page(guild_id):
             if role is not None:
                 update_config(guild_id, "autorole", role.id)
                 if any(getattr(role.permissions, p) for p in risky_perms):
-                    flash(f"⚠️ Attention : le rôle « {role.name} » a des permissions sensibles et sera donné automatiquement à tout nouveau membre.")
+                    flash(f"⚠️ Heads up: the role « {role.name} » has sensitive permissions and will be given automatically to every new member.")
 
-        flash("Configuration mise à jour.")
+        flash("Configuration updated.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
     cfg = get_config(guild_id)
@@ -3182,7 +3182,7 @@ def dash_automod(guild_id):
     # ne garde que des ids qui correspondent à de vrais rôles de CE serveur
     clean = [int(rid) for rid in submitted if rid.isdigit() and int(rid) in valid_role_ids]
     update_config(guild_id, "allowed_roles", clean)
-    flash("Exemptions anti-raid mises à jour.")
+    flash("Anti-raid exemptions updated.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -3198,7 +3198,7 @@ def dash_permission_add(guild_id):
         role = guild.get_role(int(role_id))
         if role is not None:
             add_command_role(guild_id, command, role.id)
-            flash(f"{role.name} peut maintenant utiliser /{command}.")
+            flash(f"{role.name} can now use /{command}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -3211,7 +3211,7 @@ def dash_permission_remove(guild_id):
     role_id = request.form.get("role_id", "")
     if command in MODERATION_COMMANDS and role_id.isdigit():
         remove_command_role(guild_id, command, int(role_id))
-        flash(f"Permission retirée pour /{command}.")
+        flash(f"Permission removed for /{command}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -3222,7 +3222,7 @@ def dash_permission_remove(guild_id):
 def dash_apikey_regen(guild_id):
     new_key = secrets.token_hex(16)
     update_config(guild_id, "api_key", new_key)
-    flash("Nouvelle clé API générée — l'ancienne ne fonctionne plus.")
+    flash("New API key generated — the old one no longer works.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -3234,10 +3234,10 @@ def dash_toggle_lock(guild_id):
     gid = int(guild_id)
     if gid in bot.locked_guilds:
         bot.locked_guilds.discard(gid)
-        flash("Bot déverrouillé.")
+        flash("Bot unlocked.")
     else:
         bot.locked_guilds.add(gid)
-        flash("Bot verrouillé — seul toi peux utiliser ses commandes ici.")
+        flash("Bot locked — only you can use its commands here.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
