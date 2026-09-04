@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Jello Bello are documented here.
+All notable changes to Nexus are documented here.
 
 ## [Unreleased]
 

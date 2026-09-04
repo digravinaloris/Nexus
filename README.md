@@ -20,7 +20,7 @@ Built with Python (discord.py) + Flask, backed by MongoDB Atlas, hosted on Rende
 - **Music** — play, queue, and search YouTube audio directly in voice channels
 - **Companion Android app** — moderate your server, view stats, and manage config from your phone
 
-Jello Bello works across multiple servers — each server has its own independent configuration, sanctions, warnings, and permissions.
+Nexus works across multiple servers — each server has its own independent configuration, sanctions, warnings, and permissions.
 
 ---
 

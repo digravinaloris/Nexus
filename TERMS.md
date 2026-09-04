@@ -1,8 +1,8 @@
-# Terms of Service — Jello Bello
+# Terms of Service — Nexus
 
 **Last updated:** July 8, 2026
 
-These Terms of Service ("Terms") govern your access to and use of the Jello Bello Discord bot ("the Bot", "we", "us"). By adding the Bot to a Discord server, or by interacting with it in any server where it is present, you agree to these Terms. If you do not agree, do not use the Bot.
+These Terms of Service ("Terms") govern your access to and use of the Nexus Discord bot ("the Bot", "we", "us"). By adding the Bot to a Discord server, or by interacting with it in any server where it is present, you agree to these Terms. If you do not agree, do not use the Bot.
 
 ## 1. Eligibility
 
@@ -10,7 +10,7 @@ You must meet Discord's own minimum age requirement (13 years old, or higher whe
 
 ## 2. Description of Service
 
-Jello Bello is a general-purpose Discord bot providing:
+Nexus is a general-purpose Discord bot providing:
 
 - Moderation tools (ban, kick, mute, warnings, channel locks, auto-moderation, anti-raid protection)
 - Utility commands (server/user info, broadcasts, sanction history)

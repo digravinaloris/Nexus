@@ -1,8 +1,8 @@
-# Privacy Policy — Jello Bello
+# Privacy Policy — Nexus
 
 **Last updated:** July 8, 2026
 
-This Privacy Policy explains what data the Jello Bello Discord bot ("the Bot", "we", "us") collects, why, and how it is handled. By using the Bot in any Discord server, you agree to this Policy.
+This Privacy Policy explains what data the Nexus Discord bot ("the Bot", "we", "us") collects, why, and how it is handled. By using the Bot in any Discord server, you agree to this Policy.
 
 ## 1. Data We Collect
 
