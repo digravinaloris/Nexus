@@ -1,10 +1,10 @@
-# Jello Bello
+# Nexus
 
 A full-featured Discord moderation & utility bot — auto-moderation, anti-raid protection, tempbans, reaction roles, a role-application system, music playback, and a companion Android app for managing your server on the go.
 
 Built with Python (discord.py) + Flask, backed by MongoDB Atlas, hosted on Render.
 
-**[➕ Invite Jello Bello to your server](https://discord.com/oauth2/authorize?client_id=1510263826455466004)**
+**[➕ Invite Nexus to your server](https://discord.com/oauth2/authorize?client_id=1510263826455466004)**
 
 ---
 
