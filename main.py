@@ -223,7 +223,7 @@ async def on_guild_join(guild: discord.Guild):
     try:
         owner = guild.owner or await guild.fetch_owner()
         embed = discord.Embed(
-            title="👋 Thanks for adding Jello Bello!",
+            title="👋 Thanks for adding Nexus!",
             description=(
                 f"I'm now active on **{guild.name}**. Here's how to get started:\n\n"
                 "• `/config logs <channel>` — set where logs are sent\n"
@@ -1056,7 +1056,7 @@ async def serverinfo(interaction: discord.Interaction):
 
 @bot.tree.command(name="help", description="List all available commands")
 async def help_command(interaction: discord.Interaction):
-    embed = discord.Embed(title="📖 Jello Bello — Commands", color=0x3399ff)
+    embed = discord.Embed(title="📖 Nexus — Commands", color=0x3399ff)
     embed.add_field(
         name="🛡️ Moderation",
         value="`/ban` `/unban` `/kick` `/mute` `/unmute` `/tempban` `/softban`\n"
@@ -1105,7 +1105,7 @@ async def botinfo(interaction: discord.Interaction):
     hours, rem = divmod(rem, 3600)
     minutes, _ = divmod(rem, 60)
     uptime_str = f"{days}d {hours}h {minutes}m"
-    embed = discord.Embed(title="🤖 Jello Bello", color=0x3399ff)
+    embed = discord.Embed(title="🤖 Nexus", color=0x3399ff)
     if bot.user.avatar:
         embed.set_thumbnail(url=bot.user.avatar.url)
     embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
@@ -2934,7 +2934,7 @@ BASE_STYLE = """
 
 TOPBAR = """
 <div class="topbar">
-  <div class="brand"><span class="dot"></span> Jello Bello</div>
+  <div class="brand"><span class="dot"></span> Nexus</div>
   <div class="user-chip">
     {% if user and user.avatar %}
       <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png" alt="">
@@ -2949,7 +2949,7 @@ DASH_LIST_TEMPLATE = BASE_STYLE + TOPBAR + """
 <div class="wrap">
   <div class="eyebrow">Dashboard</div>
   <h1>Your servers</h1>
-  <p class="lead">Only servers where you're an Administrator AND where Jello Bello is present show up here.</p>
+  <p class="lead">Only servers where you're an Administrator AND where Nexus is present show up here.</p>
 
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
 
@@ -2965,7 +2965,7 @@ DASH_LIST_TEMPLATE = BASE_STYLE + TOPBAR + """
     {% endfor %}
   </div>
   {% else %}
-  <div class="empty">No manageable servers yet — add Jello Bello to a server where you're an admin to see it here.</div>
+  <div class="empty">No manageable servers yet — add Nexus to a server where you're an admin to see it here.</div>
   {% endif %}
 </div>
 """
