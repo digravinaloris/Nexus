@@ -56,3 +56,7 @@ btn_lock: Verrouiller le bot
 badge_admin: Admin
 badge_owner: Owner
 remove_title: Retirer
+label_log_dashboard: Journaliser les actions du dashboard dans le salon de logs
+panel_audit_title: Journal d'audit
+panel_audit_desc: Changements récents effectués depuis ce dashboard, avec qui a fait quoi et quand.
+audit_empty: Aucun changement enregistré pour l'instant.

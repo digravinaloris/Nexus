@@ -56,3 +56,7 @@ btn_lock: Lock bot
 badge_admin: Admin
 badge_owner: Owner
 remove_title: Remove
+label_log_dashboard: Log dashboard actions to the logs channel
+panel_audit_title: Audit log
+panel_audit_desc: Recent changes made from this dashboard, with who did what and when.
+audit_empty: No changes recorded yet.

@@ -26,9 +26,10 @@ locked_channels_col = None
 sanctions_col = None
 reaction_roles_col = None
 notes_col = None
+audit_col = None
 
 def init_mongo():
-    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col
+    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col
     mongo = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
     db = mongo["discordbot"]
     warns_col = db["warns"]
@@ -37,6 +38,30 @@ def init_mongo():
     sanctions_col = db["sanctions"]
     reaction_roles_col = db["reaction_roles"]
     notes_col = db["notes"]
+    audit_col = db["audit_log"]
+
+def record_audit(guild_id, actor_id, actor_name, action, details=""):
+    """Trace de chaque changement de config (dashboard ou commande) pour
+    l'audit log affiché dans le dashboard — indépendant du log Discord
+    optionnel (log_dashboard_actions)."""
+    try:
+        audit_col.insert_one({
+            "guild_id": str(guild_id),
+            "actor_id": str(actor_id) if actor_id else None,
+            "actor_name": actor_name,
+            "action": action,
+            "details": details[:500] if details else "",
+            "timestamp": datetime.datetime.now(datetime.timezone.utc),
+        })
+    except Exception as e:
+        print(f"[AUDIT] Failed to record audit entry: {e}", flush=True)
+
+def get_audit_log(guild_id, limit=20):
+    try:
+        return list(audit_col.find({"guild_id": str(guild_id)}).sort("timestamp", -1).limit(limit))
+    except Exception as e:
+        print(f"[AUDIT] Failed to fetch audit log: {e}", flush=True)
+        return []
 
 def get_config(guild_id):
     doc = config_col.find_one({"guild_id": str(guild_id)})
@@ -49,6 +74,11 @@ def get_config(guild_id):
             "command_roles": {},
             "command_templates": {},
             "language": None,
+            "log_dashboard_actions": False,
+            "tickets_enabled": False,
+            "ticket_category_id": None,
+            "ticket_support_role_id": None,
+            "member_count_channel_id": None,
         }
         config_col.insert_one(doc)
     return doc
@@ -225,7 +255,12 @@ async def on_ready():
     except Exception as e:
         print(f"Sync error: {e}")
     print(f"{bot.user} is online!")
+    if not getattr(bot, "_nexus_persistent_views_added", False):
+        bot.add_view(TicketPanelView())
+        bot.add_view(TicketCloseView())
+        bot._nexus_persistent_views_added = True
     bot.loop.create_task(tempban_check_loop())
+    bot.loop.create_task(member_count_loop())
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
@@ -1042,6 +1077,66 @@ async def config_template_list(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+
+@config_group.command(name="membercount", description="Show the live member count in a voice channel's name — admin only")
+@app_commands.describe(channel="Voice channel to rename with the live member count. Leave empty to disable.")
+@has_admin()
+async def config_membercount(interaction: discord.Interaction, channel: discord.VoiceChannel = None):
+    if channel is None:
+        update_config(interaction.guild_id, "member_count_channel_id", None)
+        await interaction.response.send_message("📊 Member count channel disabled.", ephemeral=True)
+        return
+    update_config(interaction.guild_id, "member_count_channel_id", channel.id)
+    await interaction.response.send_message(
+        f"📊 {channel.mention} will now show the live member count (updates roughly every 10 minutes due to Discord rate limits).",
+        ephemeral=True,
+    )
+
+
+# Système de tickets par bouton : /config ticket setup|disable
+ticket_group = app_commands.Group(
+    name="ticket",
+    description="Configure the button-based ticket system for this server — server owner only",
+    parent=config_group,
+)
+
+
+@ticket_group.command(name="setup", description="Post the ticket panel and configure where tickets go — server owner only")
+@app_commands.describe(
+    panel_channel="Channel where the 'Open Ticket' button will be posted",
+    category="Category where new ticket channels will be created",
+    support_role="Role that can see and manage tickets",
+)
+@has_owner()
+async def config_ticket_setup(
+    interaction: discord.Interaction,
+    panel_channel: discord.TextChannel,
+    category: discord.CategoryChannel,
+    support_role: discord.Role,
+):
+    update_config(interaction.guild_id, "ticket_category_id", category.id)
+    update_config(interaction.guild_id, "ticket_support_role_id", support_role.id)
+    update_config(interaction.guild_id, "tickets_enabled", True)
+
+    embed = discord.Embed(
+        title="🎫 Need help?",
+        description="Click the button below to open a private ticket with our team.",
+        color=0x3399ff,
+    )
+    await panel_channel.send(embed=embed, view=TicketPanelView())
+    await interaction.response.send_message(
+        f"✅ Ticket panel posted in {panel_channel.mention}. New tickets are created under **{category.name}**, visible to {support_role.mention}.",
+        ephemeral=True,
+    )
+
+
+@ticket_group.command(name="disable", description="Disable the ticket system — server owner only")
+@has_owner()
+async def config_ticket_disable(interaction: discord.Interaction):
+    update_config(interaction.guild_id, "tickets_enabled", False)
+    await interaction.response.send_message("🎫 Ticket system disabled. Existing open tickets are unaffected.", ephemeral=True)
+
+
 bot.tree.add_command(config_group)
 
 @bot.tree.command(name="botlock", description="Lock the bot on this server (server owner only)")
@@ -1097,6 +1192,32 @@ async def tempban_check_loop():
         except Exception as e:
             print(f"Tempban loop error: {e}")
         await asyncio.sleep(60)
+
+
+async def member_count_loop():
+    """Renomme les salons vocaux configurés avec le nombre de membres, toutes
+    les 10 minutes (Discord limite le renommage d'un salon à environ 2 fois
+    toutes les 10 minutes, donc on reste large)."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            for guild in bot.guilds:
+                cfg = get_config(guild.id)
+                channel_id = cfg.get("member_count_channel_id")
+                if not channel_id:
+                    continue
+                channel = guild.get_channel(int(channel_id))
+                if channel is None:
+                    continue
+                new_name = f"👥 Members: {guild.member_count}"
+                if channel.name != new_name:
+                    try:
+                        await channel.edit(name=new_name)
+                    except discord.HTTPException as e:
+                        print(f"[MEMBERCOUNT] Failed to rename channel in guild {guild.id}: {e}", flush=True)
+        except Exception as e:
+            print(f"[MEMBERCOUNT] loop error: {e}", flush=True)
+        await asyncio.sleep(600)
 
 
 @bot.tree.command(name="userinfo", description="Show information about a member")
@@ -1373,6 +1494,97 @@ class ApplicationModal(discord.ui.Modal):
             await owner.send(embed=embed, view=view)
         except Exception as e:
             print(f"Apply DM error: {e}")
+
+
+class TicketCloseView(discord.ui.View):
+    """Bouton persistant dans chaque ticket ouvert pour le fermer."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="nexus_ticket_close")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        channel = interaction.channel
+        cfg = get_config(interaction.guild_id)
+        support_role = interaction.guild.get_role(cfg.get("ticket_support_role_id") or 0)
+        is_opener = channel.topic and str(interaction.user.id) == channel.topic
+        is_support = support_role is not None and support_role in interaction.user.roles
+        is_admin = interaction.user.guild_permissions.manage_channels
+        if not (is_opener or is_support or is_admin):
+            await interaction.response.send_message(
+                "You don't have permission to close this ticket.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(f"🔒 Closing this ticket in 5 seconds (requested by {interaction.user.mention})...")
+        await asyncio.sleep(5)
+        try:
+            await channel.delete(reason=f"Ticket closed by {interaction.user}")
+        except discord.HTTPException as e:
+            print(f"[TICKET] Failed to delete channel: {e}", flush=True)
+
+
+class TicketPanelView(discord.ui.View):
+    """Bouton persistant posté par /config ticket setup pour ouvrir un ticket."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Open Ticket", style=discord.ButtonStyle.primary, emoji="🎫", custom_id="nexus_ticket_open")
+    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_config(interaction.guild_id)
+        if not cfg.get("tickets_enabled"):
+            await interaction.response.send_message(
+                "Tickets are currently disabled on this server.", ephemeral=True
+            )
+            return
+
+        category = interaction.guild.get_channel(cfg.get("ticket_category_id") or 0)
+        if category is None or not isinstance(category, discord.CategoryChannel):
+            await interaction.response.send_message(
+                "Ticket system isn't configured properly. Ask an admin to run `/config ticket setup` again.",
+                ephemeral=True,
+            )
+            return
+
+        # Empêche un utilisateur d'ouvrir plusieurs tickets en même temps :
+        # on stocke son id dans le topic du salon pour le retrouver.
+        existing = discord.utils.get(category.text_channels, topic=str(interaction.user.id))
+        if existing:
+            await interaction.response.send_message(
+                f"You already have an open ticket: {existing.mention}", ephemeral=True
+            )
+            return
+
+        overwrites = {
+            interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            interaction.guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
+        }
+        support_role = interaction.guild.get_role(cfg.get("ticket_support_role_id") or 0)
+        if support_role:
+            overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+
+        safe_name = re.sub(r"[^a-z0-9-]", "", interaction.user.name.lower().replace(" ", "-"))[:20] or "user"
+        try:
+            channel = await category.create_text_channel(
+                name=f"ticket-{safe_name}",
+                overwrites=overwrites,
+                topic=str(interaction.user.id),
+                reason=f"Ticket opened by {interaction.user}",
+            )
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"Couldn't create the ticket channel: {e}", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="🎫 New Ticket",
+            description=f"Hey {interaction.user.mention}! The support team will be with you shortly. Explain your issue here.",
+            color=0x3399ff,
+        )
+        await channel.send(
+            content=support_role.mention if support_role else None,
+            embed=embed,
+            view=TicketCloseView(),
+        )
+        await interaction.response.send_message(f"✅ Ticket created: {channel.mention}", ephemeral=True)
 
 
 class ApplicationDecisionView(discord.ui.View):
@@ -2281,6 +2493,20 @@ async def _send_log_embed(guild, embed):
     if channel:
         await channel.send(embed=embed)
 
+def log_dashboard_action(guild, actor_name, action, details=""):
+    """Poste un embed dans le salon de logs Discord quand une action est
+    faite depuis le dashboard web — seulement si l'option est activée
+    (config.log_dashboard_actions)."""
+    cfg = get_config(guild.id)
+    if not cfg.get("log_dashboard_actions"):
+        return None
+    embed = discord.Embed(title="🖥️ Dashboard change", color=0x9b59b6)
+    embed.add_field(name="By", value=actor_name, inline=True)
+    embed.add_field(name="Action", value=action, inline=True)
+    if details:
+        embed.add_field(name="Details", value=details[:1000], inline=False)
+    return _send_log_embed(guild, embed)
+
 def log_ban(guild, member, reason):
     embed = discord.Embed(title="🔨 Member Banned", color=0xff0000)
     embed.add_field(name="User", value=f"**{member}**", inline=True)
@@ -3020,6 +3246,10 @@ BASE_STYLE = """
   .lang-switch a { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 4px 8px; border-radius: 7px; transition: all .15s; }
   .lang-switch a.active { color: var(--text); border-color: var(--raspberry); background: var(--surface-2); }
   .lang-switch a:hover { color: var(--text); }
+  .audit-list { display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow-y: auto; }
+  .audit-entry { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; animation: popIn .2s ease both; }
+  .audit-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .audit-action { font-size: 13px; color: var(--text); }
 </style>
 <script>
   function toggleKey(btn) {
@@ -3173,6 +3403,13 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
       <div id="autorole-warning" class="risky-warning" style="display:none;">
         {{ t('risky_warning')|safe }}
       </div>
+
+      <label class="cmd-check" style="margin-top:4px;">
+        <input type="checkbox" name="log_dashboard_actions" {% if cfg.log_dashboard_actions %}checked{% endif %}>
+        {{ t('label_log_dashboard') }}
+      </label>
+      <div style="height:14px;"></div>
+
       <button type="submit">{{ t('btn_save') }}</button>
     </div>
   </form>
@@ -3324,6 +3561,23 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
       {% endif %}
     </form>
   </div>
+
+  <div class="panel" style="animation-delay:.22s">
+    <div class="panel-head"><h2>{{ t('panel_audit_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
+    <div class="desc">{{ t('panel_audit_desc') }}</div>
+    {% if audit_entries %}
+    <div class="audit-list">
+      {% for entry in audit_entries %}
+      <div class="audit-entry">
+        <div class="audit-meta"><strong>{{ entry.actor_name }}</strong> · {{ entry.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}</div>
+        <div class="audit-action">{{ entry.action }}{% if entry.details %} — {{ entry.details }}{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-perms">{{ t('audit_empty') }}</div>
+    {% endif %}
+  </div>
   {% endif %}
 </div>
 """
@@ -3342,6 +3596,27 @@ def dash_set_lang(lang_code):
 def dash_is_owner(guild):
     user = session.get("dash_user") or {}
     return str(guild.owner_id) == str(user.get("id"))
+
+
+def dash_actor():
+    """Identité de la personne connectée sur le dashboard, pour l'audit log
+    et le log Discord optionnel des actions du dashboard."""
+    user = session.get("dash_user") or {}
+    name = user.get("global_name") or user.get("username") or "Unknown"
+    return user.get("id"), name
+
+
+def dash_log_action(guild, guild_id, action, details=""):
+    """Enregistre une action dashboard dans l'audit log Mongo, et poste dans
+    le salon Discord si l'option log_dashboard_actions est activée."""
+    actor_id, actor_name = dash_actor()
+    record_audit(guild_id, actor_id, actor_name, action, details)
+    coro = log_dashboard_action(guild, actor_name, action, details)
+    if coro is not None:
+        try:
+            run_coroutine(coro)
+        except Exception as e:
+            print(f"[DASHLOG] Failed to send Discord log: {e}", flush=True)
 
 
 def dash_owner_required(f):
@@ -3379,22 +3654,34 @@ def dash_guild_page(guild_id):
     if request.method == "POST":
         # Toute valeur reçue est revalidée contre les objets réels de CE serveur
         # (jamais de confiance sur un id envoyé par le formulaire).
+        changes = []
         logs_channel_id = request.form.get("logs_channel", "")
         if logs_channel_id.isdigit():
             channel = guild.get_channel(int(logs_channel_id))
             if channel is not None and channel in guild.text_channels:
                 update_config(guild_id, "logs_channel", channel.name)
+                changes.append(f"logs channel → #{channel.name}")
 
         autorole_id = request.form.get("autorole", "none")
         risky_perms = ("administrator", "manage_guild", "ban_members", "kick_members", "manage_roles")
         if autorole_id == "none":
             update_config(guild_id, "autorole", None)
+            changes.append("autorole → none")
         elif autorole_id.isdigit():
             role = guild.get_role(int(autorole_id))
             if role is not None:
                 update_config(guild_id, "autorole", role.id)
+                changes.append(f"autorole → @{role.name}")
                 if any(getattr(role.permissions, p) for p in risky_perms):
                     flash(f"⚠️ {role.name}: " + ("sensitive permissions, given to every new member." if current_lang() == "en" else "permissions sensibles, donné à tout nouveau membre."))
+
+        log_toggle = request.form.get("log_dashboard_actions") == "on"
+        if log_toggle != bool(get_config(guild_id).get("log_dashboard_actions")):
+            update_config(guild_id, "log_dashboard_actions", log_toggle)
+            changes.append(f"Discord logging of dashboard actions → {'on' if log_toggle else 'off'}")
+
+        if changes:
+            dash_log_action(guild, guild_id, "Updated general config", "; ".join(changes))
 
         flash("Configuration updated." if current_lang() == "en" else "Configuration mise à jour.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
@@ -3406,6 +3693,7 @@ def dash_guild_page(guild_id):
     if "lang" not in session and cfg.get("language") in TRANSLATIONS:
         session["lang"] = cfg["language"]
 
+    is_owner = dash_is_owner(guild)
     role_names = {r.id: r.name for r in guild.roles}
     return render_template_string(
         GUILD_PAGE_TEMPLATE,
@@ -3417,7 +3705,8 @@ def dash_guild_page(guild_id):
         moderation_commands=MODERATION_COMMANDS,
         templates=COMMAND_TEMPLATES,
         custom_templates=cfg.get("command_templates", {}),
-        is_owner=dash_is_owner(guild),
+        audit_entries=get_audit_log(guild_id) if is_owner else [],
+        is_owner=is_owner,
         is_locked=guild.id in bot.locked_guilds,
         user=session.get("dash_user"),
     )
@@ -3433,6 +3722,8 @@ def dash_automod(guild_id):
     # ne garde que des ids qui correspondent à de vrais rôles de CE serveur
     clean = [int(rid) for rid in submitted if rid.isdigit() and int(rid) in valid_role_ids]
     update_config(guild_id, "allowed_roles", clean)
+    role_names = ", ".join(f"@{r.name}" for r in guild.roles if r.id in clean) or "none"
+    dash_log_action(guild, guild_id, "Updated anti-raid exemptions", f"exempt roles: {role_names}")
     flash("Anti-raid exemptions updated." if current_lang() == "en" else "Exemptions anti-raid mises à jour.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -3452,6 +3743,7 @@ def dash_permission_add(guild_id):
             for cmd in valid_commands:
                 add_command_role(guild_id, cmd, role.id)
             cmd_list = ", ".join(f"/{c}" for c in valid_commands)
+            dash_log_action(guild, guild_id, "Added command permissions", f"@{role.name}: {cmd_list}")
             if current_lang() == "en":
                 flash(f"{role.name} can now use {len(valid_commands)} command(s): {cmd_list}.")
             else:
@@ -3491,6 +3783,7 @@ def dash_permission_template(guild_id):
     if commands_list:
         for cmd in commands_list:
             add_command_role(guild_id, cmd, role.id)
+        dash_log_action(guild, guild_id, "Applied permission template", f"template « {label} » → @{role.name}")
         if current_lang() == "en":
             flash(f"Template « {label} » applied to {role.name} ({len(commands_list)} commands).")
         else:
@@ -3504,6 +3797,7 @@ def dash_permission_template(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_remove(guild_id):
+    guild = bot.get_guild(int(guild_id))
     command = request.form.get("command", "")
     role_id = request.form.get("role_id", "")
     # Pas de whitelist ici : la commande vient d'un chip déjà affiché depuis
@@ -3513,6 +3807,8 @@ def dash_permission_remove(guild_id):
     # commande hors de notre liste curatée).
     if command and role_id.isdigit():
         remove_command_role(guild_id, command, int(role_id))
+        role = guild.get_role(int(role_id)) if guild else None
+        dash_log_action(guild, guild_id, "Removed command permission", f"/{command} for {'@' + role.name if role else role_id}")
         flash(f"Permission removed for /{command}." if current_lang() == "en" else f"Permission retirée pour /{command}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -3522,8 +3818,10 @@ def dash_permission_remove(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_apikey_regen(guild_id):
+    guild = bot.get_guild(int(guild_id))
     new_key = secrets.token_hex(16)
     update_config(guild_id, "api_key", new_key)
+    dash_log_action(guild, guild_id, "Regenerated mobile API key")
     flash("New API key generated — the old one no longer works." if current_lang() == "en" else "Nouvelle clé API générée — l'ancienne ne fonctionne plus.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -3533,12 +3831,15 @@ def dash_apikey_regen(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_toggle_lock(guild_id):
+    guild = bot.get_guild(int(guild_id))
     gid = int(guild_id)
     if gid in bot.locked_guilds:
         bot.locked_guilds.discard(gid)
+        dash_log_action(guild, guild_id, "Unlocked the bot")
         flash("Bot unlocked." if current_lang() == "en" else "Bot déverrouillé.")
     else:
         bot.locked_guilds.add(gid)
+        dash_log_action(guild, guild_id, "Locked the bot")
         flash("Bot locked — only you can use its commands here." if current_lang() == "en" else "Bot verrouillé — seul toi peux utiliser ses commandes ici.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
