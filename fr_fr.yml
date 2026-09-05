@@ -1,0 +1,58 @@
+# Nexus dashboard — chaînes en français
+logout: Se déconnecter
+dash_eyebrow: Tableau de bord
+dash_title: Tes serveurs
+dash_lead: Seuls les serveurs où t'es Administrateur ET où Nexus est présent apparaissent ici.
+owner_tag: Propriétaire
+empty_state: Aucun serveur géré pour l'instant — ajoute Nexus sur un serveur où t'es admin pour le voir apparaître ici.
+back_all_servers: '&larr; Tous les serveurs'
+config_eyebrow: Configuration
+status_locked: verrouillé
+status_active: actif
+status_text_channels: salons texte
+status_roles: rôles
+status_owner: Tu es propriétaire
+panel_logs_title: Salon de logs
+panel_logs_desc: Les actions de modération (bans, kicks, warns...) sont envoyées dans ce salon.
+label_channel: Salon
+label_autorole: Rôle automatique à l'arrivée
+option_none: Aucun
+risky_warning: ⚠️ Ce rôle a des permissions sensibles (admin, gestion du serveur, ban/kick...). Il sera donné automatiquement à <strong>tout nouveau membre</strong>, sans aucune vérification anti-alt.
+btn_save: Enregistrer
+panel_automod_title: Exemptions anti-raid / anti-spam
+panel_automod_desc: Ces rôles ne sont jamais auto-modérés (spam, caps, invitations). Les membres avec "Gérer les messages" sont déjà exemptés.
+label_exempt_roles: Rôles exemptés
+hint_multiselect: Ctrl/Cmd + clic pour en sélectionner plusieurs.
+panel_perms_title: Permissions par commande
+panel_perms_desc: Autorise des rôles spécifiques à utiliser certaines commandes de modération, en plus des permissions Discord classiques.
+no_perms_yet: Aucune permission personnalisée pour l'instant.
+label_commands: Commandes
+btn_select_all: Tout sélectionner
+btn_clear: Tout désélectionner
+label_allowed_role: Rôle autorisé
+btn_add_permissions: Ajouter la/les permission(s)
+tmpl_quick_label: Ou applique un modèle rapide
+tmpl_select_label: Modèle
+tmpl_role_label: Pour le rôle
+btn_apply_template: Appliquer le modèle
+tmpl_trial_mod: Modérateur stagiaire
+tmpl_moderator: Modérateur
+tmpl_helper: Assistant
+tmpl_dj: DJ
+tmpl_custom_group: Modèles du serveur
+tmpl_builtin_group: Modèles prédéfinis
+panel_apikey_title: Clé API mobile
+panel_apikey_desc: Utilisée par l'app mobile pour gérer ce serveur uniquement.
+no_key_yet: Aucune clé générée pour l'instant.
+btn_show: Afficher
+btn_hide: Masquer
+confirm_regen: Régénérer la clé API ? L'ancienne cessera de fonctionner immédiatement.
+btn_regenerate: Régénérer la clé
+panel_lockdown_title: Verrouillage du bot
+lockdown_desc_locked: 'Le bot est verrouillé : seul toi peux utiliser ses commandes sur ce serveur.'
+lockdown_desc_unlocked: En cas d'urgence, verrouille le bot pour bloquer toutes les commandes sauf les tiennes.
+btn_unlock: Déverrouiller le bot
+btn_lock: Verrouiller le bot
+badge_admin: Admin
+badge_owner: Owner
+remove_title: Retirer

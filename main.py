@@ -4,6 +4,7 @@ from discord import app_commands
 import os
 from flask import Flask, request, jsonify, g, session, redirect, url_for, render_template_string, flash, get_flashed_messages
 import requests
+import yaml
 from threading import Thread
 import asyncio
 import datetime
@@ -45,7 +46,9 @@ def get_config(guild_id):
             "logs_channel": "logs",
             "autorole": None,
             "allowed_roles": [],
-            "command_roles": {}
+            "command_roles": {},
+            "command_templates": {},
+            "language": None,
         }
         config_col.insert_one(doc)
     return doc
@@ -66,6 +69,14 @@ def remove_command_role(guild_id, command_name, role_id):
     config_col.update_one(
         {"guild_id": str(guild_id)},
         {"$pull": {f"command_roles.{command_name}": role_id}},
+        upsert=True,
+    )
+
+def set_command_template(guild_id, template_name, commands_list):
+    """Crée ou remplace un template de permissions propre à ce serveur."""
+    config_col.update_one(
+        {"guild_id": str(guild_id)},
+        {"$set": {f"command_templates.{template_name}": commands_list}},
         upsert=True,
     )
 
@@ -910,6 +921,7 @@ async def config_view(interaction: discord.Interaction):
     embed.add_field(name="Auto-Role", value=autorole, inline=True)
     embed.add_field(name="API Key", value="✅ Set (use `/config apikey` to regenerate)" if cfg.get("api_key") else "❌ Not set — use `/config apikey` to generate one", inline=True)
     embed.add_field(name="Locked", value="🔒 Yes" if interaction.guild_id in bot.locked_guilds else "🔓 No", inline=True)
+    embed.add_field(name="Dashboard Language", value=(cfg.get("language") or "auto (browser default)").upper() if cfg.get("language") else "Auto (defaults to English)", inline=True)
     command_roles = cfg.get("command_roles", {})
     if command_roles:
         lines = []
@@ -944,6 +956,90 @@ async def config_view(interaction: discord.Interaction):
                 )
     else:
         embed.add_field(name="Command Permissions", value="None configured (using default Discord permissions)", inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@config_group.command(name="language", description="Set the default dashboard language for this server — server owner only")
+@app_commands.describe(language="Default language shown on the web dashboard for this server")
+@app_commands.choices(language=[
+    app_commands.Choice(name="English", value="en"),
+    app_commands.Choice(name="Français", value="fr"),
+])
+@has_owner()
+async def config_language(interaction: discord.Interaction, language: app_commands.Choice[str]):
+    update_config(interaction.guild_id, "language", language.value)
+    await interaction.response.send_message(
+        f"✅ Dashboard default language set to **{language.name}** for this server.",
+        ephemeral=True,
+    )
+
+
+# Templates de permissions propres à un serveur (distincts des modèles
+# prédéfinis intégrés au dashboard) : /config template set|list
+template_group = app_commands.Group(
+    name="template",
+    description="Manage custom command-permission templates for this server — server owner only",
+    parent=config_group,
+)
+
+
+@template_group.command(name="set", description="Create or update a custom permission template — server owner only")
+@app_commands.describe(
+    name="Template name (e.g. moderator, helper)",
+    commands="Comma-separated command names (e.g. ban,kick,warn)",
+)
+@has_owner()
+async def config_template_set(interaction: discord.Interaction, name: str, commands: str):
+    name = name.strip().lower()[:32]
+    if not name:
+        await interaction.response.send_message("❌ Template name can't be empty.", ephemeral=True)
+        return
+
+    requested = [c.strip().lower() for c in commands.split(",") if c.strip()]
+    valid = [c for c in requested if c in MODERATION_COMMANDS]
+    invalid = [c for c in requested if c not in MODERATION_COMMANDS]
+
+    if not valid:
+        await interaction.response.send_message(
+            f"❌ None of those commands are recognized. Available: {', '.join(sorted(MODERATION_COMMANDS))}",
+            ephemeral=True,
+        )
+        return
+
+    set_command_template(interaction.guild_id, name, valid)
+
+    msg = f"✅ Template **{name}** saved with {len(valid)} command(s): {', '.join(f'/{c}' for c in valid)}"
+    if invalid:
+        msg += f"\n⚠️ Ignored unknown command(s): {', '.join(invalid)}"
+    await interaction.response.send_message(msg, ephemeral=True)
+
+
+@template_group.command(name="list", description="List custom permission templates for this server")
+@has_admin()
+async def config_template_list(interaction: discord.Interaction):
+    cfg = get_config(interaction.guild_id)
+    custom_templates = cfg.get("command_templates", {})
+
+    embed = discord.Embed(title="📋 Command Permission Templates", color=0x3399ff)
+
+    builtin_lines = [f"**{TRANSLATIONS['en'].get(tpl['label_key'], tpl['label_key'])}** → " + ", ".join(f"/{c}" for c in tpl["commands"]) for tpl in COMMAND_TEMPLATES.values()]
+    builtin_value = "\n".join(builtin_lines) or "None"
+    embed.add_field(name="Built-in templates", value=builtin_value[:1000], inline=False)
+
+    if custom_templates:
+        custom_lines = [f"**{name}** → " + ", ".join(f"/{c}" for c in cmds) for name, cmds in custom_templates.items() if cmds]
+        custom_value = "\n".join(custom_lines) or "None"
+        if len(custom_value) > 1000:
+            custom_value = custom_value[:990] + "\n…"
+        embed.add_field(
+            name="Server templates",
+            value=custom_value,
+            inline=False,
+        )
+        embed.set_footer(text="Manage these from /config template set, or apply them from the web dashboard.")
+    else:
+        embed.add_field(name="Server templates", value="None yet — create one with `/config template set`", inline=False)
+
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 bot.tree.add_command(config_group)
@@ -2920,6 +3016,10 @@ BASE_STYLE = """
   .reveal-btn { background: var(--surface-3); border: none; color: var(--text); font-size: 11px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
 
   .divider { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
+  .lang-switch { display: flex; gap: 4px; margin-right: 4px; }
+  .lang-switch a { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 4px 8px; border-radius: 7px; transition: all .15s; }
+  .lang-switch a.active { color: var(--text); border-color: var(--raspberry); background: var(--surface-2); }
+  .lang-switch a:hover { color: var(--text); }
 </style>
 <script>
   function toggleKey(btn) {
@@ -2927,29 +3027,95 @@ BASE_STYLE = """
     box.classList.toggle('revealed');
     const code = box.querySelector('code');
     code.classList.toggle('masked');
-    btn.textContent = code.classList.contains('masked') ? 'Afficher' : 'Masquer';
+    btn.textContent = code.classList.contains('masked') ? btn.dataset.show : btn.dataset.hide;
   }
 </script>
 """
+
+# ---------- i18n ----------
+
+TRANSLATIONS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_FALLBACK_TRANSLATIONS = {
+    "en": {"logout": "Log out", "dash_title": "Your servers"},
+    "fr": {"logout": "Se d\u00e9connecter", "dash_title": "Tes serveurs"},
+}
+
+
+def _load_locale_file(filename):
+    """Charge un fichier de langue .yml. En cas de souci (fichier manquant,
+    YAML invalide...), on log l'erreur et on retombe sur un mini-dict de
+    secours plut\u00f4t que de planter tout le dashboard."""
+    path = os.path.join(TRANSLATIONS_DIR, filename)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        print(f"[I18N] Locale file not found: {path}", flush=True)
+        return {}
+    except yaml.YAMLError as e:
+        print(f"[I18N] Failed to parse {path}: {e}", flush=True)
+        return {}
+
+
+TRANSLATIONS = {
+    "en": _load_locale_file("en_us.yml") or _FALLBACK_TRANSLATIONS["en"],
+    "fr": _load_locale_file("fr_fr.yml") or _FALLBACK_TRANSLATIONS["fr"],
+}
+
+
+def t(key):
+    lang = session.get("lang", "en")
+    return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, TRANSLATIONS["en"].get(key, key))
+
+
+def current_lang():
+    return session.get("lang", "en")
+
+
+api.jinja_env.globals["t"] = t
+api.jinja_env.globals["lang"] = current_lang
+
+
+# ---------- Modèles de permissions par commande ----------
+# Des packs de commandes courants, pour éviter de tout cocher à la main
+# à chaque fois qu'on crée un nouveau rôle de modération.
+COMMAND_TEMPLATES = {
+    "trial_mod": {"label_key": "tmpl_trial_mod", "commands": ["warn", "unwarn", "mute", "unmute", "clear"]},
+    "moderator": {"label_key": "tmpl_moderator", "commands": [
+        "warn", "unwarn", "mute", "unmute", "kick", "ban", "unban",
+        "clear", "roleadd", "roleremove", "slowmode", "softban", "purgeuser", "tempban",
+    ]},
+    "helper": {"label_key": "tmpl_helper", "commands": ["warn", "clear", "slowmode"]},
+    "dj": {"label_key": "tmpl_dj", "commands": ["play", "skip", "pause", "resume", "stop", "queue", "volume"]},
+}
+
+
+# ---------- Templates HTML ----------
 
 TOPBAR = """
 <div class="topbar">
   <div class="brand"><span class="dot"></span> Nexus</div>
   <div class="user-chip">
+    <div class="lang-switch">
+      <a href="{{ url_for('dash_set_lang', lang='en', next=request.path) }}" class="{{ 'active' if lang()=='en' else '' }}">EN</a>
+      <a href="{{ url_for('dash_set_lang', lang='fr', next=request.path) }}" class="{{ 'active' if lang()=='fr' else '' }}">FR</a>
+    </div>
     {% if user and user.avatar %}
       <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png" alt="">
     {% endif %}
     {{ user.global_name or user.username }}
-    <a class="logout" href="{{ url_for('dash_logout') }}">Log out</a>
+    <a class="logout" href="{{ url_for('dash_logout') }}">{{ t('logout') }}</a>
   </div>
 </div>
 """
 
 DASH_LIST_TEMPLATE = BASE_STYLE + TOPBAR + """
 <div class="wrap">
-  <div class="eyebrow">Dashboard</div>
-  <h1>Your servers</h1>
-  <p class="lead">Only servers where you're an Administrator AND where Nexus is present show up here.</p>
+  <div class="eyebrow">{{ t('dash_eyebrow') }}</div>
+  <h1>{{ t('dash_title') }}</h1>
+  <p class="lead">{{ t('dash_lead') }}</p>
 
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
 
@@ -2960,54 +3126,54 @@ DASH_LIST_TEMPLATE = BASE_STYLE + TOPBAR + """
       <div class="card-icon">{{ g.name[0]|upper }}</div>
       <h3>{{ g.name }}</h3>
       <div class="sub mono">{{ g.id }}</div>
-      {% if g.owner %}<span class="owner-tag">Owner</span>{% endif %}
+      {% if g.owner %}<span class="owner-tag">{{ t('owner_tag') }}</span>{% endif %}
     </a>
     {% endfor %}
   </div>
   {% else %}
-  <div class="empty">No manageable servers yet — add Nexus to a server where you're an admin to see it here.</div>
+  <div class="empty">{{ t('empty_state') }}</div>
   {% endif %}
 </div>
 """
 
 GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
 <div class="wrap">
-  <a class="back" href="{{ url_for('dash_home') }}">&larr; All servers</a>
-  <div class="eyebrow">Configuration</div>
+  <a class="back" href="{{ url_for('dash_home') }}">{{ t('back_all_servers')|safe }}</a>
+  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
   <h1>{{ guild.name }}</h1>
   <p class="lead mono">{{ guild.id }}</p>
 
   <div class="status-strip">
-    <span class="pill {{ 'locked' if is_locked else '' }}"><span class="pip"></span> Bot {{ 'locked' if is_locked else 'active' }}</span>
-    <span class="pill"><span class="pip"></span> {{ channels|length }} text channels</span>
-    <span class="pill"><span class="pip"></span> {{ roles|length }} roles</span>
-    {% if is_owner %}<span class="pill"><span class="pip" style="background: var(--amber);"></span> You are the owner</span>{% endif %}
+    <span class="pill {{ 'locked' if is_locked else '' }}"><span class="pip"></span> Bot {{ t('status_locked') if is_locked else t('status_active') }}</span>
+    <span class="pill"><span class="pip"></span> {{ channels|length }} {{ t('status_text_channels') }}</span>
+    <span class="pill"><span class="pip"></span> {{ roles|length }} {{ t('status_roles') }}</span>
+    {% if is_owner %}<span class="pill"><span class="pip" style="background: var(--amber);"></span> {{ t('status_owner') }}</span>{% endif %}
   </div>
 
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
 
   <form method="POST" action="{{ url_for('dash_guild_page', guild_id=guild.id) }}">
     <div class="panel" style="animation-delay:.02s">
-      <div class="panel-head"><h2>Logs channel</h2><span class="badge admin">Admin</span></div>
-      <div class="desc">Moderation actions (bans, kicks, warns...) are sent to this channel.</div>
-      <label for="logs_channel">Channel</label>
+      <div class="panel-head"><h2>{{ t('panel_logs_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+      <div class="desc">{{ t('panel_logs_desc') }}</div>
+      <label for="logs_channel">{{ t('label_channel') }}</label>
       <select name="logs_channel" id="logs_channel">
         {% for c in channels %}
         <option value="{{ c.id }}" {% if c.name == cfg.logs_channel %}selected{% endif %}>#{{ c.name }}</option>
         {% endfor %}
       </select>
 
-      <label for="autorole">Auto-role on join</label>
+      <label for="autorole">{{ t('label_autorole') }}</label>
       <select name="autorole" id="autorole" onchange="checkRiskyRole(this)">
-        <option value="none" data-risky="0" {% if not cfg.autorole %}selected{% endif %}>None</option>
+        <option value="none" data-risky="0" {% if not cfg.autorole %}selected{% endif %}>{{ t('option_none') }}</option>
         {% for r in roles %}
         <option value="{{ r.id }}" data-risky="{{ '1' if r.permissions.administrator or r.permissions.manage_guild or r.permissions.ban_members or r.permissions.kick_members or r.permissions.manage_roles else '0' }}" {% if cfg.autorole == r.id %}selected{% endif %}>{{ r.name }}</option>
         {% endfor %}
       </select>
       <div id="autorole-warning" class="risky-warning" style="display:none;">
-        ⚠️ This role has sensitive permissions (admin, manage server, ban/kick...). It will be given automatically to <strong>every new member</strong>, with no anti-alt check.
+        {{ t('risky_warning')|safe }}
       </div>
-      <button type="submit">Save</button>
+      <button type="submit">{{ t('btn_save') }}</button>
     </div>
   </form>
   <script>
@@ -3023,23 +3189,23 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
 
   <form method="POST" action="{{ url_for('dash_automod', guild_id=guild.id) }}">
     <div class="panel" style="animation-delay:.06s">
-      <div class="panel-head"><h2>Anti-raid / anti-spam exemptions</h2><span class="badge admin">Admin</span></div>
-      <div class="desc">These roles are never auto-moderated (spam, caps, invite links). Members with "Manage Messages" are already exempt.</div>
-      <label for="allowed_roles">Exempt roles</label>
+      <div class="panel-head"><h2>{{ t('panel_automod_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+      <div class="desc">{{ t('panel_automod_desc') }}</div>
+      <label for="allowed_roles">{{ t('label_exempt_roles') }}</label>
       <select name="allowed_roles" id="allowed_roles" multiple>
         {% for r in roles %}
         <option value="{{ r.id }}" {% if r.id in (cfg.allowed_roles or []) %}selected{% endif %}>{{ r.name }}</option>
         {% endfor %}
       </select>
-      <div class="hint">Ctrl/Cmd + click to select multiple.</div>
-      <button type="submit">Save</button>
+      <div class="hint">{{ t('hint_multiselect') }}</div>
+      <button type="submit">{{ t('btn_save') }}</button>
     </div>
   </form>
 
   {% if is_owner %}
   <div class="panel" style="animation-delay:.1s">
-    <div class="panel-head"><h2>Per-command permissions</h2><span class="badge owner">Owner</span></div>
-    <div class="desc">Allow specific roles to use certain moderation commands, on top of standard Discord permissions.</div>
+    <div class="panel-head"><h2>{{ t('panel_perms_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
+    <div class="desc">{{ t('panel_perms_desc') }}</div>
 
     {% if cfg.command_roles %}
     {% for cmd, role_ids in cfg.command_roles.items() %}
@@ -3052,7 +3218,7 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
           <form method="POST" action="{{ url_for('dash_permission_remove', guild_id=guild.id) }}">
             <input type="hidden" name="command" value="{{ cmd }}">
             <input type="hidden" name="role_id" value="{{ rid }}">
-            <button type="submit" class="x" title="Remove">&times;</button>
+            <button type="submit" class="x" title="{{ t('remove_title') }}">&times;</button>
           </form>
         </div>
         {% endfor %}
@@ -3060,15 +3226,15 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
       {% endif %}
     {% endfor %}
     {% else %}
-    <div class="no-perms">No custom permissions yet.</div>
+    <div class="no-perms">{{ t('no_perms_yet') }}</div>
     {% endif %}
 
     <hr class="divider">
     <form method="POST" action="{{ url_for('dash_permission_add', guild_id=guild.id) }}">
-      <label>Commands</label>
+      <label>{{ t('label_commands') }}</label>
       <div class="cmd-toggle-row">
-        <button type="button" class="ghost small" onclick="toggleAllCmds(true)">Select all</button>
-        <button type="button" class="ghost small" onclick="toggleAllCmds(false)">Clear</button>
+        <button type="button" class="ghost small" onclick="toggleAllCmds(true)">{{ t('btn_select_all') }}</button>
+        <button type="button" class="ghost small" onclick="toggleAllCmds(false)">{{ t('btn_clear') }}</button>
       </div>
       <div class="cmd-grid">
         {% for cmd in moderation_commands %}
@@ -3078,48 +3244,83 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
         </label>
         {% endfor %}
       </div>
-      <label for="role_id">Allowed role</label>
+      <label for="role_id">{{ t('label_allowed_role') }}</label>
       <select name="role_id" id="role_id">
         {% for r in roles %}
         <option value="{{ r.id }}">{{ r.name }}</option>
         {% endfor %}
       </select>
-      <button type="submit">Add permission(s)</button>
+      <button type="submit">{{ t('btn_add_permissions') }}</button>
     </form>
     <script>
       function toggleAllCmds(state) {
         document.querySelectorAll('.cmd-checkbox').forEach(function(cb) { cb.checked = state; });
       }
     </script>
+
+    <hr class="divider">
+    <form method="POST" action="{{ url_for('dash_permission_template', guild_id=guild.id) }}">
+      <label for="template_id">{{ t('tmpl_quick_label') }}</label>
+      <div class="row">
+        <div>
+          <label for="template_id">{{ t('tmpl_select_label') }}</label>
+          <select name="template_id" id="template_id">
+            <optgroup label="{{ t('tmpl_builtin_group') }}">
+              {% for tid, tpl in templates.items() %}
+              <option value="builtin:{{ tid }}">{{ t(tpl.label_key) }} (/{{ tpl.commands|join(', /') }})</option>
+              {% endfor %}
+            </optgroup>
+            {% if custom_templates %}
+            <optgroup label="{{ t('tmpl_custom_group') }}">
+              {% for name, cmds in custom_templates.items() %}
+              {% if cmds %}
+              <option value="custom:{{ name }}">{{ name }} (/{{ cmds|join(', /') }})</option>
+              {% endif %}
+              {% endfor %}
+            </optgroup>
+            {% endif %}
+          </select>
+        </div>
+        <div>
+          <label for="template_role_id">{{ t('tmpl_role_label') }}</label>
+          <select name="role_id" id="template_role_id">
+            {% for r in roles %}
+            <option value="{{ r.id }}">{{ r.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="ghost">{{ t('btn_apply_template') }}</button>
+    </form>
   </div>
 
   <div class="panel" style="animation-delay:.14s">
-    <div class="panel-head"><h2>Mobile API key</h2><span class="badge owner">Owner</span></div>
-    <div class="desc">Used by the mobile app to manage this server only.</div>
+    <div class="panel-head"><h2>{{ t('panel_apikey_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
+    <div class="desc">{{ t('panel_apikey_desc') }}</div>
     {% if cfg.api_key %}
     <div class="key-box">
       <code class="masked mono">{{ cfg.api_key }}</code>
-      <button type="button" class="reveal-btn" onclick="toggleKey(this)">Show</button>
+      <button type="button" class="reveal-btn" data-show="{{ t('btn_show') }}" data-hide="{{ t('btn_hide') }}" onclick="toggleKey(this)">{{ t('btn_show') }}</button>
     </div>
     {% else %}
-    <div class="no-perms">No key generated yet.</div>
+    <div class="no-perms">{{ t('no_key_yet') }}</div>
     {% endif %}
-    <form method="POST" action="{{ url_for('dash_apikey_regen', guild_id=guild.id) }}" onsubmit="return confirm('Regenerate the API key? The old one will stop working immediately.');">
-      <button type="submit" class="ghost">Regenerate key</button>
+    <form method="POST" action="{{ url_for('dash_apikey_regen', guild_id=guild.id) }}" onsubmit="return confirm('{{ t('confirm_regen') }}');">
+      <button type="submit" class="ghost">{{ t('btn_regenerate') }}</button>
     </form>
   </div>
 
   <div class="panel danger" style="animation-delay:.18s">
-    <div class="panel-head"><h2>Bot lockdown</h2><span class="badge owner">Owner</span></div>
+    <div class="panel-head"><h2>{{ t('panel_lockdown_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
     <div class="desc">
-      {% if is_locked %}The bot is locked: only you can use its commands on this server.
-      {% else %}In an emergency, lock the bot to block every command except yours.{% endif %}
+      {% if is_locked %}{{ t('lockdown_desc_locked') }}
+      {% else %}{{ t('lockdown_desc_unlocked') }}{% endif %}
     </div>
     <form method="POST" action="{{ url_for('dash_toggle_lock', guild_id=guild.id) }}">
       {% if is_locked %}
-      <button type="submit" class="warn">Unlock bot</button>
+      <button type="submit" class="warn">{{ t('btn_unlock') }}</button>
       {% else %}
-      <button type="submit" class="stop">Lock bot</button>
+      <button type="submit" class="stop">{{ t('btn_lock') }}</button>
       {% endif %}
     </form>
   </div>
@@ -3129,6 +3330,14 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
 
 
 # ---------- Routes dashboard (HTML) ----------
+
+@api.route("/dashboard/lang/<lang_code>")
+def dash_set_lang(lang_code):
+    if lang_code in TRANSLATIONS:
+        session["lang"] = lang_code
+    next_url = request.args.get("next") or url_for("dash_home")
+    return redirect(next_url)
+
 
 def dash_is_owner(guild):
     user = session.get("dash_user") or {}
@@ -3185,12 +3394,18 @@ def dash_guild_page(guild_id):
             if role is not None:
                 update_config(guild_id, "autorole", role.id)
                 if any(getattr(role.permissions, p) for p in risky_perms):
-                    flash(f"⚠️ Heads up: the role « {role.name} » has sensitive permissions and will be given automatically to every new member.")
+                    flash(f"⚠️ {role.name}: " + ("sensitive permissions, given to every new member." if current_lang() == "en" else "permissions sensibles, donné à tout nouveau membre."))
 
-        flash("Configuration updated.")
+        flash("Configuration updated." if current_lang() == "en" else "Configuration mise à jour.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
     cfg = get_config(guild_id)
+    # Si l'utilisateur n'a pas déjà choisi une langue pour sa session, on
+    # applique la langue par défaut configurée pour CE serveur via
+    # /config language (sans écraser un choix explicite déjà fait).
+    if "lang" not in session and cfg.get("language") in TRANSLATIONS:
+        session["lang"] = cfg["language"]
+
     role_names = {r.id: r.name for r in guild.roles}
     return render_template_string(
         GUILD_PAGE_TEMPLATE,
@@ -3200,6 +3415,8 @@ def dash_guild_page(guild_id):
         roles=[r for r in guild.roles if not r.is_default()],
         role_names=role_names,
         moderation_commands=MODERATION_COMMANDS,
+        templates=COMMAND_TEMPLATES,
+        custom_templates=cfg.get("command_templates", {}),
         is_owner=dash_is_owner(guild),
         is_locked=guild.id in bot.locked_guilds,
         user=session.get("dash_user"),
@@ -3216,7 +3433,7 @@ def dash_automod(guild_id):
     # ne garde que des ids qui correspondent à de vrais rôles de CE serveur
     clean = [int(rid) for rid in submitted if rid.isdigit() and int(rid) in valid_role_ids]
     update_config(guild_id, "allowed_roles", clean)
-    flash("Anti-raid exemptions updated.")
+    flash("Anti-raid exemptions updated." if current_lang() == "en" else "Exemptions anti-raid mises à jour.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -3234,10 +3451,51 @@ def dash_permission_add(guild_id):
         if role is not None:
             for cmd in valid_commands:
                 add_command_role(guild_id, cmd, role.id)
-            if len(valid_commands) == 1:
-                flash(f"{role.name} can now use /{valid_commands[0]}.")
+            cmd_list = ", ".join(f"/{c}" for c in valid_commands)
+            if current_lang() == "en":
+                flash(f"{role.name} can now use {len(valid_commands)} command(s): {cmd_list}.")
             else:
-                flash(f"{role.name} can now use {len(valid_commands)} commands: " + ", ".join(f"/{c}" for c in valid_commands) + ".")
+                flash(f"{role.name} peut maintenant utiliser {len(valid_commands)} commande(s) : {cmd_list}.")
+    return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
+
+@api.route("/dashboard/<guild_id>/permissions/template", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+@dash_owner_required
+def dash_permission_template(guild_id):
+    guild = bot.get_guild(int(guild_id))
+    template_id = request.form.get("template_id", "")
+    role_id = request.form.get("role_id", "")
+    if not role_id.isdigit():
+        return redirect(url_for("dash_guild_page", guild_id=guild_id))
+    role = guild.get_role(int(role_id))
+    if role is None:
+        return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
+    source, _, key = template_id.partition(":")
+    commands_list = None
+    label = None
+
+    if source == "builtin" and key in COMMAND_TEMPLATES:
+        tpl = COMMAND_TEMPLATES[key]
+        commands_list = tpl["commands"]
+        label = t(tpl["label_key"])
+    elif source == "custom":
+        cfg = get_config(guild_id)
+        custom_templates = cfg.get("command_templates", {})
+        if key in custom_templates:
+            commands_list = custom_templates[key]
+            label = key
+
+    if commands_list:
+        for cmd in commands_list:
+            add_command_role(guild_id, cmd, role.id)
+        if current_lang() == "en":
+            flash(f"Template « {label} » applied to {role.name} ({len(commands_list)} commands).")
+        else:
+            flash(f"Modèle « {label} » appliqué à {role.name} ({len(commands_list)} commandes).")
+
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -3255,7 +3513,7 @@ def dash_permission_remove(guild_id):
     # commande hors de notre liste curatée).
     if command and role_id.isdigit():
         remove_command_role(guild_id, command, int(role_id))
-        flash(f"Permission removed for /{command}.")
+        flash(f"Permission removed for /{command}." if current_lang() == "en" else f"Permission retirée pour /{command}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -3266,7 +3524,7 @@ def dash_permission_remove(guild_id):
 def dash_apikey_regen(guild_id):
     new_key = secrets.token_hex(16)
     update_config(guild_id, "api_key", new_key)
-    flash("New API key generated — the old one no longer works.")
+    flash("New API key generated — the old one no longer works." if current_lang() == "en" else "Nouvelle clé API générée — l'ancienne ne fonctionne plus.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -3278,10 +3536,10 @@ def dash_toggle_lock(guild_id):
     gid = int(guild_id)
     if gid in bot.locked_guilds:
         bot.locked_guilds.discard(gid)
-        flash("Bot unlocked.")
+        flash("Bot unlocked." if current_lang() == "en" else "Bot déverrouillé.")
     else:
         bot.locked_guilds.add(gid)
-        flash("Bot locked — only you can use its commands here.")
+        flash("Bot locked — only you can use its commands here." if current_lang() == "en" else "Bot verrouillé — seul toi peux utiliser ses commandes ici.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 

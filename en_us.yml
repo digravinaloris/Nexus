@@ -1,0 +1,58 @@
+# Nexus dashboard — English strings
+logout: Log out
+dash_eyebrow: Dashboard
+dash_title: Your servers
+dash_lead: Only servers where you're an Administrator AND where Nexus is present show up here.
+owner_tag: Owner
+empty_state: No manageable servers yet — add Nexus to a server where you're an admin to see it here.
+back_all_servers: '&larr; All servers'
+config_eyebrow: Configuration
+status_locked: locked
+status_active: active
+status_text_channels: text channels
+status_roles: roles
+status_owner: You are the owner
+panel_logs_title: Logs channel
+panel_logs_desc: Moderation actions (bans, kicks, warns...) are sent to this channel.
+label_channel: Channel
+label_autorole: Auto-role on join
+option_none: None
+risky_warning: ⚠️ This role has sensitive permissions (admin, manage server, ban/kick...). It will be given automatically to <strong>every new member</strong>, with no anti-alt check.
+btn_save: Save
+panel_automod_title: Anti-raid / anti-spam exemptions
+panel_automod_desc: These roles are never auto-moderated (spam, caps, invite links). Members with "Manage Messages" are already exempt.
+label_exempt_roles: Exempt roles
+hint_multiselect: Ctrl/Cmd + click to select multiple.
+panel_perms_title: Per-command permissions
+panel_perms_desc: Allow specific roles to use certain moderation commands, on top of standard Discord permissions.
+no_perms_yet: No custom permissions yet.
+label_commands: Commands
+btn_select_all: Select all
+btn_clear: Clear
+label_allowed_role: Allowed role
+btn_add_permissions: Add permission(s)
+tmpl_quick_label: Or apply a quick template
+tmpl_select_label: Template
+tmpl_role_label: For role
+btn_apply_template: Apply template
+tmpl_trial_mod: Trial Moderator
+tmpl_moderator: Moderator
+tmpl_helper: Helper
+tmpl_dj: DJ
+tmpl_custom_group: Server templates
+tmpl_builtin_group: Built-in templates
+panel_apikey_title: Mobile API key
+panel_apikey_desc: Used by the mobile app to manage this server only.
+no_key_yet: No key generated yet.
+btn_show: Show
+btn_hide: Hide
+confirm_regen: Regenerate the API key? The old one will stop working immediately.
+btn_regenerate: Regenerate key
+panel_lockdown_title: Bot lockdown
+lockdown_desc_locked: 'The bot is locked: only you can use its commands on this server.'
+lockdown_desc_unlocked: In an emergency, lock the bot to block every command except yours.
+btn_unlock: Unlock bot
+btn_lock: Lock bot
+badge_admin: Admin
+badge_owner: Owner
+remove_title: Remove
