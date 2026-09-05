@@ -3099,8 +3099,8 @@ TOPBAR = """
   <div class="brand"><span class="dot"></span> Nexus</div>
   <div class="user-chip">
     <div class="lang-switch">
-      <a href="{{ url_for('dash_set_lang', lang='en', next=request.path) }}" class="{{ 'active' if lang()=='en' else '' }}">EN</a>
-      <a href="{{ url_for('dash_set_lang', lang='fr', next=request.path) }}" class="{{ 'active' if lang()=='fr' else '' }}">FR</a>
+      <a href="{{ url_for('dash_set_lang', lang_code='en', next=request.path) }}" class="{{ 'active' if lang()=='en' else '' }}">EN</a>
+      <a href="{{ url_for('dash_set_lang', lang_code='fr', next=request.path) }}" class="{{ 'active' if lang()=='fr' else '' }}">FR</a>
     </div>
     {% if user and user.avatar %}
       <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png" alt="">
