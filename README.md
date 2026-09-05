@@ -132,7 +132,7 @@ Built with Kotlin + Jetpack Compose, connecting to the bot's REST API to let ser
 
 ## Support
 
-Found a bug or have a feature request? Open an [issue on GitHub](https://github.com/digravinaloris/dc-bot/issues).
+Found a bug or have a feature request? Open an [issue on GitHub](https://github.com/digravinaloris/Nexus/issues).
 
 ---
 
