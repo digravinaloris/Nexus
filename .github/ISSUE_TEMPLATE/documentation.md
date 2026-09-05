@@ -1,10 +1,10 @@
 ---
 name: Documentation
 about: Documentation changes
-title: "[DOCS]"
+title: "[DOCS]: "
 labels: Documentation
 assignees: ''
 
 ---
 
-Ask for a change here
+<!-- Ask for a doc change here -->

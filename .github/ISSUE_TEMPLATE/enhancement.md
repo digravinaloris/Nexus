@@ -1,10 +1,10 @@
 ---
 name: Enhancement
 about: Improve an existing feature
-title: "[Enhancement]"
+title: "[Enhancement]: "
 labels: Enhancement
 assignees: ''
 
 ---
 
-Your(s) idea(s) here...
+<!-- Your(s) idea(s) here... -->
