@@ -1724,6 +1724,12 @@ class TicketCloseView(discord.ui.View):
             )
             return
 
+        # 1 tap, pas de re-clic possible : le bouton est désactivé immédiatement,
+        # avant même de faire quoi que ce soit d'autre.
+        button.disabled = True
+        button.label = "Closed"
+        await interaction.response.edit_message(view=self)
+
         archive_category = None
         archive_category_id = cfg.get("ticket_archive_category_id")
         if archive_category_id:
@@ -1744,16 +1750,14 @@ class TicketCloseView(discord.ui.View):
                     sync_permissions=True,
                     reason=f"Ticket archived by {interaction.user}",
                 )
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"🔒 Ticket archived by {interaction.user.mention} — moved to **{archive_category.name}**, now following that category's permissions."
                 )
             except discord.HTTPException as e:
-                await interaction.response.send_message(f"Couldn't archive the ticket: {e}", ephemeral=True)
+                await interaction.followup.send(f"Couldn't archive the ticket: {e}", ephemeral=True)
             return
 
-        # Pas de catégorie d'archive configurée -> comportement d'origine (suppression).
-        await interaction.response.send_message(f"🔒 Closing this ticket in 5 seconds (requested by {interaction.user.mention})...")
-        await asyncio.sleep(5)
+        # Pas de catégorie d'archive configurée -> suppression immédiate, en un seul tap.
         try:
             await channel.delete(reason=f"Ticket closed by {interaction.user}")
         except discord.HTTPException as e:
