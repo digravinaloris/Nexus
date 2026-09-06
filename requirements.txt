@@ -7,3 +7,4 @@ PyNaCl
 imageio-ffmpeg
 requests
 pyyaml
+pyotp
