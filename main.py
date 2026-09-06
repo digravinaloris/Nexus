@@ -5,6 +5,9 @@ import os
 from flask import Flask, request, jsonify, g, session, redirect, url_for, render_template_string, flash, get_flashed_messages
 import requests
 import yaml
+import pyotp
+import smtplib
+from email.mime.text import MIMEText
 from threading import Thread
 import asyncio
 import datetime
@@ -27,9 +30,11 @@ sanctions_col = None
 reaction_roles_col = None
 notes_col = None
 audit_col = None
+bot_state_col = None
+killswitch_tokens_col = None
 
 def init_mongo():
-    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col
+    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col
     mongo = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
     db = mongo["discordbot"]
     warns_col = db["warns"]
@@ -39,6 +44,8 @@ def init_mongo():
     reaction_roles_col = db["reaction_roles"]
     notes_col = db["notes"]
     audit_col = db["audit_log"]
+    bot_state_col = db["bot_state"]
+    killswitch_tokens_col = db["killswitch_tokens"]
 
 def record_audit(guild_id, actor_id, actor_name, action, details=""):
     """Trace de chaque changement de config (dashboard ou commande) pour
@@ -193,6 +200,146 @@ bot.locked_guilds = set()  # {guild_id, ...} — serveurs actuellement verrouill
 bot.start_time = time.time()
 bot.ready_event = None  # set in on_ready, used so Flask waits until bot is ready
 
+# ============================================================
+# ==================== GLOBAL KILL-SWITCH ====================
+# ============================================================
+# Verrou global (tous les serveurs), indépendant du lock par-serveur
+# existant (bot.locked_guilds). Activable UNIQUEMENT via un lien email
+# à usage unique + un code TOTP (2FA), donc indépendant d'un compte
+# Discord ou d'un token bot compromis.
+
+def get_global_lock():
+    doc = bot_state_col.find_one({"_id": "global"})
+    return bool(doc and doc.get("locked"))
+
+def set_global_lock(locked: bool):
+    bot_state_col.update_one({"_id": "global"}, {"$set": {"locked": locked}}, upsert=True)
+
+
+async def global_interaction_check(interaction: discord.Interaction) -> bool:
+    """Appliqué à TOUTES les commandes, sur TOUS les serveurs. Un seul
+    point de contrôle, pour ne jamais risquer d'oublier une vérif
+    éparpillée dans chaque commande."""
+    if not get_global_lock():
+        return True
+    if await bot.is_owner(interaction.user):
+        return True
+    await interaction.response.send_message(
+        "🔒 Nexus is currently locked down by its owner. Please try again later.",
+        ephemeral=True,
+    )
+    return False
+
+bot.tree.interaction_check = global_interaction_check
+
+
+def is_bot_owner():
+    """Decorator: réservé au vrai propriétaire de l'application Discord
+    (vérifié via le Developer Portal par discord.py, jamais un id codé
+    en dur ici)."""
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if not await bot.is_owner(interaction.user):
+            await interaction.response.send_message(
+                "❌ This command is restricted to the bot owner.", ephemeral=True
+            )
+            return False
+        return True
+    return app_commands.check(predicate)
+
+
+async def get_owner_user():
+    app_info = await bot.application_info()
+    if app_info.owner:
+        return app_info.owner
+    if app_info.team:
+        try:
+            return await bot.fetch_user(app_info.team.owner_id)
+        except discord.HTTPException:
+            return None
+    return None
+
+
+async def notify_owner_killswitch(locked: bool):
+    owner = await get_owner_user()
+    if owner is None:
+        return
+    msg = (
+        "🔒 Nexus has just been **locked down** across all servers via the email kill-switch."
+        if locked else
+        "🔓 Nexus has just been **unlocked** and is back to normal across all servers."
+    )
+    try:
+        await owner.send(msg)
+    except discord.HTTPException:
+        pass
+
+
+def send_email(subject, body):
+    """Envoi bloquant via Gmail SMTP — toujours appelé via asyncio.to_thread
+    depuis le code async pour ne pas geler l'event loop du bot."""
+    gmail_address = os.getenv("GMAIL_ADDRESS")
+    gmail_password = os.getenv("GMAIL_APP_PASSWORD")
+    owner_email = os.getenv("OWNER_EMAIL")
+    if not (gmail_address and gmail_password and owner_email):
+        print("[EMAIL] Missing GMAIL_ADDRESS / GMAIL_APP_PASSWORD / OWNER_EMAIL env vars, skipping send.", flush=True)
+        return
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = gmail_address
+    msg["To"] = owner_email
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+            server.starttls()
+            server.login(gmail_address, gmail_password)
+            server.sendmail(gmail_address, [owner_email], msg.as_string())
+    except Exception as e:
+        print(f"[EMAIL] Failed to send: {e}", flush=True)
+
+
+def create_killswitch_token():
+    token = secrets.token_urlsafe(32)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    killswitch_tokens_col.insert_one({
+        "token": token,
+        "created_at": now,
+        "expires_at": now + datetime.timedelta(minutes=30),
+        "used": False,
+        "attempts": 0,
+    })
+    return token
+
+
+def send_daily_killswitch_email():
+    base_url = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+    if not base_url:
+        print("[KILLSWITCH] PUBLIC_BASE_URL not set, cannot build the confirmation link.", flush=True)
+        return
+    token = create_killswitch_token()
+    link = f"{base_url}/admin/kill-switch/{token}"
+    locked = get_global_lock()
+    state_txt = "currently LOCKED down" if locked else "currently active (unlocked)"
+    action_txt = "unlock it" if locked else "lock it down"
+    body = (
+        "Nexus — daily control link\n\n"
+        f"The bot is {state_txt} across all servers.\n\n"
+        f"If you need to {action_txt}, open this link and enter your authenticator code:\n{link}\n\n"
+        "This link expires in 30 minutes and can only be used once.\n"
+        "Nothing happens if you ignore this email."
+    )
+    send_email("Nexus — daily control link", body)
+
+
+async def daily_killswitch_email_loop():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            await asyncio.to_thread(send_daily_killswitch_email)
+        except Exception as e:
+            print(f"[KILLSWITCH] Daily email loop error: {e}", flush=True)
+        await asyncio.sleep(24 * 60 * 60)
+
+
+
 API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à définir sur Render
 
 def has_admin():
@@ -261,6 +408,7 @@ async def on_ready():
         bot._nexus_persistent_views_added = True
     bot.loop.create_task(tempban_check_loop())
     bot.loop.create_task(member_count_loop())
+    bot.loop.create_task(daily_killswitch_email_loop())
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
@@ -1138,6 +1286,39 @@ async def config_ticket_disable(interaction: discord.Interaction):
 
 
 bot.tree.add_command(config_group)
+
+
+# Kill-switch d'urgence : commandes réservées au vrai owner de l'app Discord
+# (jamais un rôle serveur, jamais un id codé en dur — voir is_bot_owner()).
+admin_group = app_commands.Group(name="admin", description="Bot owner only")
+
+killswitch_admin_group = app_commands.Group(
+    name="killswitch",
+    description="Manage the emergency kill-switch — bot owner only",
+    parent=admin_group,
+)
+
+
+@killswitch_admin_group.command(name="status", description="Check whether the bot is globally locked — bot owner only")
+@is_bot_owner()
+async def admin_killswitch_status(interaction: discord.Interaction):
+    locked = get_global_lock()
+    await interaction.response.send_message(
+        "🔒 The bot is currently locked down across all servers." if locked
+        else "🔓 The bot is currently active normally across all servers.",
+        ephemeral=True,
+    )
+
+
+@killswitch_admin_group.command(name="resend", description="Send a fresh kill-switch email now instead of waiting for the daily one — bot owner only")
+@is_bot_owner()
+async def admin_killswitch_resend(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await asyncio.to_thread(send_daily_killswitch_email)
+    await interaction.followup.send("📧 A fresh kill-switch email has been sent — check your inbox.", ephemeral=True)
+
+
+bot.tree.add_command(admin_group)
 
 @bot.tree.command(name="botlock", description="Lock the bot on this server (server owner only)")
 @has_owner()
@@ -3842,6 +4023,93 @@ def dash_toggle_lock(guild_id):
         dash_log_action(guild, guild_id, "Locked the bot")
         flash("Bot locked — only you can use its commands here." if current_lang() == "en" else "Bot verrouillé — seul toi peux utiliser ses commandes ici.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
+
+# ============================================================
+# =============== KILL-SWITCH — confirmation web ==============
+# ============================================================
+# Ces routes sont volontairement SANS login dashboard/OAuth2 : la
+# sécurité vient de deux facteurs indépendants — le token à usage
+# unique reçu par email, et le code TOTP de l'app d'authentification.
+# Le GET n'a AUCUN effet de bord (pour ne pas se faire déclencher par
+# les scanners anti-spam qui pré-visitent les liens des emails) ;
+# seul le POST, avec un code correct, change l'état du bot.
+
+KILLSWITCH_CONFIRM_TEMPLATE = BASE_STYLE + """
+<div class="wrap" style="max-width:420px; margin:80px auto;">
+  <div class="eyebrow">Nexus — Owner Control</div>
+  <h1>{{ 'Unlock the bot?' if locked else 'Lock the bot down?' }}</h1>
+  <p class="lead">The bot is currently {{ 'LOCKED across every server' if locked else 'active normally' }}. Enter your authenticator code to {{ 'unlock it' if locked else 'lock it down everywhere' }}.</p>
+  {% if error %}<div class="flash error">❌ Incorrect code, or the link expired. {{ attempts_left }} attempt(s) left.</div>{% endif %}
+  <form method="POST">
+    <label for="code">6-digit authenticator code</label>
+    <input type="text" name="code" id="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" autofocus>
+    <button type="submit" class="{{ 'warn' if locked else 'stop' }}">{{ 'Confirm unlock' if locked else 'Confirm lockdown' }}</button>
+  </form>
+</div>
+"""
+
+KILLSWITCH_DONE_TEMPLATE = BASE_STYLE + """
+<div class="wrap" style="max-width:420px; margin:80px auto;">
+  <div class="eyebrow">Nexus — Owner Control</div>
+  <h1>{{ '🔒 Bot locked down' if locked else '🔓 Bot unlocked' }}</h1>
+  <p class="lead">{{ 'All commands are now restricted to you across every server the bot is in.' if locked else 'The bot is back to normal across every server.' }}</p>
+</div>
+"""
+
+KILLSWITCH_INVALID_TEMPLATE = BASE_STYLE + """
+<div class="wrap" style="max-width:420px; margin:80px auto;">
+  <div class="eyebrow">Nexus — Owner Control</div>
+  <h1>Link expired or invalid</h1>
+  <p class="lead">This link is invalid, already used, expired, or had too many wrong codes entered. Use <code>/admin killswitch resend</code> in Discord to get a fresh one, or wait for tomorrow's email.</p>
+</div>
+"""
+
+
+def _killswitch_token_doc(token):
+    doc = killswitch_tokens_col.find_one({"token": token})
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if not doc or doc.get("used") or doc["expires_at"] < now or doc.get("attempts", 0) >= 5:
+        return None
+    return doc
+
+
+@api.route("/admin/kill-switch/<token>", methods=["GET"])
+def killswitch_confirm_page(token):
+    if _killswitch_token_doc(token) is None:
+        return render_template_string(KILLSWITCH_INVALID_TEMPLATE), 410
+    return render_template_string(KILLSWITCH_CONFIRM_TEMPLATE, locked=get_global_lock(), error=False)
+
+
+@api.route("/admin/kill-switch/<token>", methods=["POST"])
+def killswitch_submit(token):
+    doc = _killswitch_token_doc(token)
+    if doc is None:
+        return render_template_string(KILLSWITCH_INVALID_TEMPLATE), 410
+
+    code = request.form.get("code", "").strip()
+    totp_secret = os.getenv("TOTP_SECRET")
+    valid = bool(totp_secret) and bool(code) and pyotp.TOTP(totp_secret).verify(code, valid_window=1)
+
+    if not valid:
+        killswitch_tokens_col.update_one({"token": token}, {"$inc": {"attempts": 1}})
+        attempts_left = max(0, 5 - (doc.get("attempts", 0) + 1))
+        return render_template_string(
+            KILLSWITCH_CONFIRM_TEMPLATE, locked=get_global_lock(), error=True, attempts_left=attempts_left
+        )
+
+    # Code correct : le token est consommé immédiatement (usage unique),
+    # avant même de faire quoi que ce soit d'autre.
+    killswitch_tokens_col.update_one({"token": token}, {"$set": {"used": True}})
+    new_state = not get_global_lock()
+    set_global_lock(new_state)
+    record_audit("global", None, "Owner (email + authenticator)", "Locked bot globally" if new_state else "Unlocked bot globally")
+    try:
+        run_coroutine(notify_owner_killswitch(new_state))
+    except Exception as e:
+        print(f"[KILLSWITCH] Failed to DM owner: {e}", flush=True)
+
+    return render_template_string(KILLSWITCH_DONE_TEMPLATE, locked=new_state)
 
 
 def run_api():
