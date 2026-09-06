@@ -276,13 +276,16 @@ async def notify_owner_killswitch(locked: bool):
 
 def send_email(subject, body):
     """Envoi bloquant via Gmail SMTP — toujours appelé via asyncio.to_thread
-    depuis le code async pour ne pas geler l'event loop du bot."""
+    depuis le code async pour ne pas geler l'event loop du bot.
+    Retourne (succès: bool, message_erreur: str|None) au lieu d'avaler
+    l'erreur, pour pouvoir la remonter jusqu'à Discord."""
     gmail_address = os.getenv("GMAIL_ADDRESS")
     gmail_password = os.getenv("GMAIL_APP_PASSWORD")
     owner_email = os.getenv("OWNER_EMAIL")
     if not (gmail_address and gmail_password and owner_email):
-        print("[EMAIL] Missing GMAIL_ADDRESS / GMAIL_APP_PASSWORD / OWNER_EMAIL env vars, skipping send.", flush=True)
-        return
+        error = "Missing GMAIL_ADDRESS / GMAIL_APP_PASSWORD / OWNER_EMAIL env var(s)."
+        print(f"[EMAIL] {error}", flush=True)
+        return False, error
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = gmail_address
@@ -292,8 +295,15 @@ def send_email(subject, body):
             server.starttls()
             server.login(gmail_address, gmail_password)
             server.sendmail(gmail_address, [owner_email], msg.as_string())
+        return True, None
+    except smtplib.SMTPAuthenticationError as e:
+        error = f"Gmail rejected the login — check GMAIL_ADDRESS and GMAIL_APP_PASSWORD (App Password, not your normal password): {e}"
+        print(f"[EMAIL] {error}", flush=True)
+        return False, error
     except Exception as e:
-        print(f"[EMAIL] Failed to send: {e}", flush=True)
+        error = f"{type(e).__name__}: {e}"
+        print(f"[EMAIL] Failed to send: {error}", flush=True)
+        return False, error
 
 
 def create_killswitch_token():
@@ -312,8 +322,9 @@ def create_killswitch_token():
 def send_daily_killswitch_email():
     base_url = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
     if not base_url:
-        print("[KILLSWITCH] PUBLIC_BASE_URL not set, cannot build the confirmation link.", flush=True)
-        return
+        error = "PUBLIC_BASE_URL not set, cannot build the confirmation link."
+        print(f"[KILLSWITCH] {error}", flush=True)
+        return False, error
     token = create_killswitch_token()
     link = f"{base_url}/admin/kill-switch/{token}"
     locked = get_global_lock()
@@ -326,14 +337,18 @@ def send_daily_killswitch_email():
         "This link expires in 30 minutes and can only be used once.\n"
         "Nothing happens if you ignore this email."
     )
-    send_email("Nexus — daily control link", body)
+    return send_email("Nexus — daily control link", body)
+
+
 
 
 async def daily_killswitch_email_loop():
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
-            await asyncio.to_thread(send_daily_killswitch_email)
+            success, error = await asyncio.to_thread(send_daily_killswitch_email)
+            if not success:
+                print(f"[KILLSWITCH] Daily email failed: {error}", flush=True)
         except Exception as e:
             print(f"[KILLSWITCH] Daily email loop error: {e}", flush=True)
         await asyncio.sleep(24 * 60 * 60)
@@ -1314,8 +1329,11 @@ async def admin_killswitch_status(interaction: discord.Interaction):
 @is_bot_owner()
 async def admin_killswitch_resend(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    await asyncio.to_thread(send_daily_killswitch_email)
-    await interaction.followup.send("📧 A fresh kill-switch email has been sent — check your inbox.", ephemeral=True)
+    success, error = await asyncio.to_thread(send_daily_killswitch_email)
+    if success:
+        await interaction.followup.send("📧 A fresh kill-switch email has been sent — check your inbox (and spam folder).", ephemeral=True)
+    else:
+        await interaction.followup.send(f"❌ Email failed to send:\n```{error}```", ephemeral=True)
 
 
 bot.tree.add_command(admin_group)
