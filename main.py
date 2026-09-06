@@ -4087,8 +4087,16 @@ KILLSWITCH_INVALID_TEMPLATE = BASE_STYLE + """
 
 def _killswitch_token_doc(token):
     doc = killswitch_tokens_col.find_one({"token": token})
+    if not doc:
+        return None
     now = datetime.datetime.now(datetime.timezone.utc)
-    if not doc or doc.get("used") or doc["expires_at"] < now or doc.get("attempts", 0) >= 5:
+    expires_at = doc["expires_at"]
+    if expires_at.tzinfo is None:
+        # pymongo relit les dates sans fuseau (naive) même si on les a
+        # stockées "aware" : on remet UTC explicitement avant de comparer,
+        # sinon TypeError (naive vs aware) et 500 sur la page de confirmation.
+        expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+    if doc.get("used") or expires_at < now or doc.get("attempts", 0) >= 5:
         return None
     return doc
 
