@@ -6,8 +6,6 @@ from flask import Flask, request, jsonify, g, session, redirect, url_for, render
 import requests
 import yaml
 import pyotp
-import smtplib
-from email.mime.text import MIMEText
 from threading import Thread
 import asyncio
 import datetime
@@ -275,31 +273,34 @@ async def notify_owner_killswitch(locked: bool):
 
 
 def send_email(subject, body):
-    """Envoi bloquant via Gmail SMTP — toujours appelé via asyncio.to_thread
-    depuis le code async pour ne pas geler l'event loop du bot.
-    Retourne (succès: bool, message_erreur: str|None) au lieu d'avaler
-    l'erreur, pour pouvoir la remonter jusqu'à Discord."""
-    gmail_address = os.getenv("GMAIL_ADDRESS")
-    gmail_password = os.getenv("GMAIL_APP_PASSWORD")
+    """Envoi via l'API HTTPS de Resend (port 443, jamais bloqué) — Render
+    bloque le SMTP brut (25/465/587) sur son offre gratuite, donc pas de
+    smtplib possible ici. Toujours appelé via asyncio.to_thread depuis le
+    code async pour ne pas geler l'event loop du bot.
+    Retourne (succès: bool, message_erreur: str|None)."""
+    resend_api_key = os.getenv("RESEND_API_KEY")
     owner_email = os.getenv("OWNER_EMAIL")
-    if not (gmail_address and gmail_password and owner_email):
-        error = "Missing GMAIL_ADDRESS / GMAIL_APP_PASSWORD / OWNER_EMAIL env var(s)."
+    if not (resend_api_key and owner_email):
+        error = "Missing RESEND_API_KEY / OWNER_EMAIL env var(s)."
         print(f"[EMAIL] {error}", flush=True)
         return False, error
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = gmail_address
-    msg["To"] = owner_email
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            server.starttls()
-            server.login(gmail_address, gmail_password)
-            server.sendmail(gmail_address, [owner_email], msg.as_string())
+        r = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {resend_api_key}"},
+            json={
+                "from": "Nexus <onboarding@resend.dev>",
+                "to": [owner_email],
+                "subject": subject,
+                "text": body,
+            },
+            timeout=15,
+        )
+        if r.status_code >= 400:
+            error = f"Resend API returned {r.status_code}: {r.text[:300]}"
+            print(f"[EMAIL] {error}", flush=True)
+            return False, error
         return True, None
-    except smtplib.SMTPAuthenticationError as e:
-        error = f"Gmail rejected the login — check GMAIL_ADDRESS and GMAIL_APP_PASSWORD (App Password, not your normal password): {e}"
-        print(f"[EMAIL] {error}", flush=True)
-        return False, error
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
         print(f"[EMAIL] Failed to send: {error}", flush=True)
