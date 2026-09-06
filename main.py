@@ -1732,20 +1732,20 @@ class TicketCloseView(discord.ui.View):
                 archive_category = candidate
 
         if archive_category is not None:
-            # Archive au lieu de supprimer : lecture seule pour l'ouvreur du
-            # ticket, déplacé dans la catégorie d'archive, jamais effacé.
-            opener_id = channel.topic
-            opener = interaction.guild.get_member(int(opener_id)) if opener_id and opener_id.isdigit() else None
+            # Archive au lieu de supprimer : le salon hérite entièrement des
+            # permissions de la catégorie d'archive (sync_permissions), donc
+            # c'est cette catégorie qui décide qui peut encore voir les
+            # tickets fermés — plus aucune permission propre au ticket.
             try:
-                if opener is not None:
-                    await channel.set_permissions(
-                        opener, view_channel=True, send_messages=False, read_message_history=True,
-                        reason=f"Ticket archived by {interaction.user}",
-                    )
                 new_name = channel.name if channel.name.startswith("closed-") else f"closed-{channel.name}"[:100]
-                await channel.edit(category=archive_category, name=new_name, reason=f"Ticket archived by {interaction.user}")
+                await channel.edit(
+                    category=archive_category,
+                    name=new_name,
+                    sync_permissions=True,
+                    reason=f"Ticket archived by {interaction.user}",
+                )
                 await interaction.response.send_message(
-                    f"🔒 Ticket archived by {interaction.user.mention} — moved to **{archive_category.name}**, now read-only."
+                    f"🔒 Ticket archived by {interaction.user.mention} — moved to **{archive_category.name}**, now following that category's permissions."
                 )
             except discord.HTTPException as e:
                 await interaction.response.send_message(f"Couldn't archive the ticket: {e}", ephemeral=True)
