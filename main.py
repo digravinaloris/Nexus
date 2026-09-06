@@ -83,6 +83,7 @@ def get_config(guild_id):
             "tickets_enabled": False,
             "ticket_category_id": None,
             "ticket_support_role_id": None,
+            "ticket_archive_category_id": None,
             "member_count_channel_id": None,
         }
         config_col.insert_one(doc)
@@ -1270,6 +1271,7 @@ ticket_group = app_commands.Group(
     panel_channel="Channel where the 'Open Ticket' button will be posted",
     category="Category where new ticket channels will be created",
     support_role="Role that can see and manage tickets",
+    archive_category="Category to move closed tickets into instead of deleting them (optional)",
 )
 @has_owner()
 async def config_ticket_setup(
@@ -1277,9 +1279,11 @@ async def config_ticket_setup(
     panel_channel: discord.TextChannel,
     category: discord.CategoryChannel,
     support_role: discord.Role,
+    archive_category: discord.CategoryChannel = None,
 ):
     update_config(interaction.guild_id, "ticket_category_id", category.id)
     update_config(interaction.guild_id, "ticket_support_role_id", support_role.id)
+    update_config(interaction.guild_id, "ticket_archive_category_id", archive_category.id if archive_category else None)
     update_config(interaction.guild_id, "tickets_enabled", True)
 
     embed = discord.Embed(
@@ -1288,8 +1292,13 @@ async def config_ticket_setup(
         color=0x3399ff,
     )
     await panel_channel.send(embed=embed, view=TicketPanelView())
+    archive_txt = (
+        f" Closed tickets will be archived under **{archive_category.name}** instead of deleted."
+        if archive_category else
+        " Closed tickets will be deleted (no archive category set — pass one to keep a history instead)."
+    )
     await interaction.response.send_message(
-        f"✅ Ticket panel posted in {panel_channel.mention}. New tickets are created under **{category.name}**, visible to {support_role.mention}.",
+        f"✅ Ticket panel posted in {panel_channel.mention}. New tickets are created under **{category.name}**, visible to {support_role.mention}.{archive_txt}",
         ephemeral=True,
     )
 
@@ -1714,12 +1723,110 @@ class TicketCloseView(discord.ui.View):
                 "You don't have permission to close this ticket.", ephemeral=True
             )
             return
+
+        archive_category = None
+        archive_category_id = cfg.get("ticket_archive_category_id")
+        if archive_category_id:
+            candidate = interaction.guild.get_channel(int(archive_category_id))
+            if isinstance(candidate, discord.CategoryChannel):
+                archive_category = candidate
+
+        if archive_category is not None:
+            # Archive au lieu de supprimer : lecture seule pour l'ouvreur du
+            # ticket, déplacé dans la catégorie d'archive, jamais effacé.
+            opener_id = channel.topic
+            opener = interaction.guild.get_member(int(opener_id)) if opener_id and opener_id.isdigit() else None
+            try:
+                if opener is not None:
+                    await channel.set_permissions(
+                        opener, view_channel=True, send_messages=False, read_message_history=True,
+                        reason=f"Ticket archived by {interaction.user}",
+                    )
+                new_name = channel.name if channel.name.startswith("closed-") else f"closed-{channel.name}"[:100]
+                await channel.edit(category=archive_category, name=new_name, reason=f"Ticket archived by {interaction.user}")
+                await interaction.response.send_message(
+                    f"🔒 Ticket archived by {interaction.user.mention} — moved to **{archive_category.name}**, now read-only."
+                )
+            except discord.HTTPException as e:
+                await interaction.response.send_message(f"Couldn't archive the ticket: {e}", ephemeral=True)
+            return
+
+        # Pas de catégorie d'archive configurée -> comportement d'origine (suppression).
         await interaction.response.send_message(f"🔒 Closing this ticket in 5 seconds (requested by {interaction.user.mention})...")
         await asyncio.sleep(5)
         try:
             await channel.delete(reason=f"Ticket closed by {interaction.user}")
         except discord.HTTPException as e:
             print(f"[TICKET] Failed to delete channel: {e}", flush=True)
+
+
+class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
+    """Formulaire affiché au clic sur le bouton — la réponse est postée par
+    le bot dans le salon du ticket dès sa création."""
+    reason = discord.ui.TextInput(
+        label="What do you need help with?",
+        style=discord.TextStyle.paragraph,
+        placeholder="Briefly describe your issue so the team can help faster...",
+        max_length=500,
+        required=True,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cfg = get_config(interaction.guild_id)
+        if not cfg.get("tickets_enabled"):
+            await interaction.response.send_message("Tickets are currently disabled on this server.", ephemeral=True)
+            return
+
+        category = interaction.guild.get_channel(cfg.get("ticket_category_id") or 0)
+        if category is None or not isinstance(category, discord.CategoryChannel):
+            await interaction.response.send_message(
+                "Ticket system isn't configured properly. Ask an admin to run `/config ticket setup` again.",
+                ephemeral=True,
+            )
+            return
+
+        # Re-vérifié ici (pas juste au clic du bouton) : le formulaire prend
+        # du temps à remplir, un doublon a pu être ouvert entre-temps.
+        existing = discord.utils.get(category.text_channels, topic=str(interaction.user.id))
+        if existing:
+            await interaction.response.send_message(
+                f"You already have an open ticket: {existing.mention}", ephemeral=True
+            )
+            return
+
+        overwrites = {
+            interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            interaction.guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
+        }
+        support_role = interaction.guild.get_role(cfg.get("ticket_support_role_id") or 0)
+        if support_role:
+            overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+
+        safe_name = re.sub(r"[^a-z0-9-]", "", interaction.user.name.lower().replace(" ", "-"))[:20] or "user"
+        try:
+            channel = await category.create_text_channel(
+                name=f"ticket-{safe_name}",
+                overwrites=overwrites,
+                topic=str(interaction.user.id),
+                reason=f"Ticket opened by {interaction.user}",
+            )
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"Couldn't create the ticket channel: {e}", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="🎫 New Ticket",
+            description=f"Hey {interaction.user.mention}! The support team will be with you shortly.",
+            color=0x3399ff,
+        )
+        embed.add_field(name="What they need help with", value=self.reason.value[:1000], inline=False)
+        await channel.send(
+            content=support_role.mention if support_role else None,
+            embed=embed,
+            view=TicketCloseView(),
+        )
+        await interaction.response.send_message(f"✅ Ticket created: {channel.mention}", ephemeral=True)
 
 
 class TicketPanelView(discord.ui.View):
@@ -1753,38 +1860,7 @@ class TicketPanelView(discord.ui.View):
             )
             return
 
-        overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-            interaction.guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
-        }
-        support_role = interaction.guild.get_role(cfg.get("ticket_support_role_id") or 0)
-        if support_role:
-            overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-
-        safe_name = re.sub(r"[^a-z0-9-]", "", interaction.user.name.lower().replace(" ", "-"))[:20] or "user"
-        try:
-            channel = await category.create_text_channel(
-                name=f"ticket-{safe_name}",
-                overwrites=overwrites,
-                topic=str(interaction.user.id),
-                reason=f"Ticket opened by {interaction.user}",
-            )
-        except discord.HTTPException as e:
-            await interaction.response.send_message(f"Couldn't create the ticket channel: {e}", ephemeral=True)
-            return
-
-        embed = discord.Embed(
-            title="🎫 New Ticket",
-            description=f"Hey {interaction.user.mention}! The support team will be with you shortly. Explain your issue here.",
-            color=0x3399ff,
-        )
-        await channel.send(
-            content=support_role.mention if support_role else None,
-            embed=embed,
-            view=TicketCloseView(),
-        )
-        await interaction.response.send_message(f"✅ Ticket created: {channel.mention}", ephemeral=True)
+        await interaction.response.send_modal(TicketOpenModal())
 
 
 class ApplicationDecisionView(discord.ui.View):
@@ -4101,15 +4177,44 @@ def _killswitch_token_doc(token):
     return doc
 
 
+def get_client_ip():
+    """Render est derrière un proxy : la vraie IP du visiteur est dans
+    X-Forwarded-For, pas request.remote_addr (qui donnerait l'IP du proxy)."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+async def notify_owner_bruteforce(ip):
+    owner = await get_owner_user()
+    if owner is None:
+        return
+    msg = (
+        f"🚨 **Possible intrusion attempt**: 5 incorrect codes were entered on a kill-switch "
+        f"confirmation link (from IP `{ip}`). That link is now dead.\n\n"
+        f"If this wasn't you, consider rotating your TOTP secret (`generate_totp_secret.py`) "
+        f"and updating `TOTP_SECRET` on Render."
+    )
+    try:
+        await owner.send(msg)
+    except discord.HTTPException:
+        pass
+
+
 @api.route("/admin/kill-switch/<token>", methods=["GET"])
 def killswitch_confirm_page(token):
+    ip = get_client_ip()
     if _killswitch_token_doc(token) is None:
+        record_audit("global", None, f"Unknown (IP {ip})", "Viewed an invalid/expired kill-switch link")
         return render_template_string(KILLSWITCH_INVALID_TEMPLATE), 410
+    record_audit("global", None, f"Unknown (IP {ip})", "Opened the kill-switch confirmation page")
     return render_template_string(KILLSWITCH_CONFIRM_TEMPLATE, locked=get_global_lock(), error=False)
 
 
 @api.route("/admin/kill-switch/<token>", methods=["POST"])
 def killswitch_submit(token):
+    ip = get_client_ip()
     doc = _killswitch_token_doc(token)
     if doc is None:
         return render_template_string(KILLSWITCH_INVALID_TEMPLATE), 410
@@ -4119,8 +4224,15 @@ def killswitch_submit(token):
     valid = bool(totp_secret) and bool(code) and pyotp.TOTP(totp_secret).verify(code, valid_window=1)
 
     if not valid:
+        new_attempts = doc.get("attempts", 0) + 1
         killswitch_tokens_col.update_one({"token": token}, {"$inc": {"attempts": 1}})
-        attempts_left = max(0, 5 - (doc.get("attempts", 0) + 1))
+        attempts_left = max(0, 5 - new_attempts)
+        record_audit("global", None, f"Unknown (IP {ip})", "Failed kill-switch code attempt", f"{new_attempts}/5 attempts used")
+        if new_attempts >= 5:
+            try:
+                run_coroutine(notify_owner_bruteforce(ip))
+            except Exception as e:
+                print(f"[KILLSWITCH] Failed to DM owner about brute-force: {e}", flush=True)
         return render_template_string(
             KILLSWITCH_CONFIRM_TEMPLATE, locked=get_global_lock(), error=True, attempts_left=attempts_left
         )
@@ -4130,7 +4242,7 @@ def killswitch_submit(token):
     killswitch_tokens_col.update_one({"token": token}, {"$set": {"used": True}})
     new_state = not get_global_lock()
     set_global_lock(new_state)
-    record_audit("global", None, "Owner (email + authenticator)", "Locked bot globally" if new_state else "Unlocked bot globally")
+    record_audit("global", None, f"Owner (email + authenticator, IP {ip})", "Locked bot globally" if new_state else "Unlocked bot globally")
     try:
         run_coroutine(notify_owner_killswitch(new_state))
     except Exception as e:
