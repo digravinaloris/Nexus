@@ -48,6 +48,12 @@ All notable changes to Nexus are documented here.
 - Boost thank-you messages — `/config boostmessage` sets where a thank-you embed is posted when someone boosts the server (defaults to the logs channel)
 - **Sticky messages** — `/config sticky set` keeps a message pinned to the bottom of a channel, reposting it (with a cooldown) whenever new messages push it down; `/config sticky remove` to stop
 - Public `/status` page — no login required, shows whether the bot is online, server count, latency, and uptime
+- **Detailed activity logs** (opt-in via `/config detailedlogs`) — voice channel joins/leaves/moves, nickname changes, and role changes now post to the logs channel
+- **Custom banned words list** — `/config badwords add/remove/list` for a per-server list, plus `/config badwords import` to pull a ready-made English or French list from a public GitHub template (LDNOOBW, CC-BY-4.0) as a starting point
+- **Ticket satisfaction survey** — after a ticket is closed, the person who opened it gets a DM with a quick 👍/👎 on their experience
+- **Anti-nuke** (opt-in via `/config antinuke`) — watches Discord's own audit log for a burst of destructive actions (bans, kicks, channel/role deletions) by the same person within 60 seconds; strips their roles and locks the bot on that server, then DMs the owner with what happened
+- **Server backups** — `/backup create` snapshots roles, channels, and role-based permissions; `/backup list` shows saved backups; `/backup restore` re-creates whatever's missing (matched by name), never deleting or overwriting anything
+- **Weekly digest** (opt-in via `/config digest`) — a DM to the server owner roughly every 7 days with member count and a breakdown of moderation actions taken that week
 
 ### Changed
 - Warnings are now scoped per server (previously shared across all servers a user was in)
@@ -85,4 +91,3 @@ All notable changes to Nexus are documented here.
 - Ticket and template systems restrict structural changes (`/config ticket setup`, `/config template set`) to the server owner
 - Global kill-switch requires two independent factors (a single-use emailed link + a TOTP code) and is enforced through one central command check rather than scattered per-command guards
 - See `SECURITY.md` for the full security policy and how to report a vulnerability
-
