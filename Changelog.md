@@ -41,6 +41,13 @@ All notable changes to Nexus are documented here.
 - `/admin killswitch status` / `/admin killswitch resend` — check the global lock state or request a fresh kill-switch email on demand, restricted to the real Discord application owner (verified via Discord itself, not a stored ID)
 - Kill-switch brute-force protection — a link is destroyed after 5 wrong codes, and the owner gets an immediate DM if that happens
 - IP address logging on every kill-switch page view and attempt, recorded in the audit log
+- **Case ID system** — every sanction (starting with bans) gets a per-server sequential case number; `/case view` looks one up, and `/history` now shows case numbers too
+- **Ban appeals** — `/config appeals` sets a review channel; ban DMs then include a one-time appeal link (no login required), and `/appeal accept` / `/appeal deny` let staff resolve it, unbanning and notifying the user automatically on accept
+- Ticket close button now works in a single tap: no more 5-second delay, and the button disables itself immediately so it can't be clicked twice
+- Ticket archiving now uses Discord's own permission sync (`sync_permissions`) instead of a manual per-user override, so an archive category's own permissions fully decide who can still see closed tickets
+- Boost thank-you messages — `/config boostmessage` sets where a thank-you embed is posted when someone boosts the server (defaults to the logs channel)
+- **Sticky messages** — `/config sticky set` keeps a message pinned to the bottom of a channel, reposting it (with a cooldown) whenever new messages push it down; `/config sticky remove` to stop
+- Public `/status` page — no login required, shows whether the bot is online, server count, latency, and uptime
 
 ### Changed
 - Warnings are now scoped per server (previously shared across all servers a user was in)
@@ -78,3 +85,4 @@ All notable changes to Nexus are documented here.
 - Ticket and template systems restrict structural changes (`/config ticket setup`, `/config template set`) to the server owner
 - Global kill-switch requires two independent factors (a single-use emailed link + a TOTP code) and is enforced through one central command check rather than scattered per-command guards
 - See `SECURITY.md` for the full security policy and how to report a vulnerability
+

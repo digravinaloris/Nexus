@@ -10,7 +10,7 @@ from threading import Thread
 import asyncio
 import datetime
 import time
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 from functools import wraps
 import yt_dlp
 import re
@@ -30,9 +30,12 @@ notes_col = None
 audit_col = None
 bot_state_col = None
 killswitch_tokens_col = None
+case_counters_col = None
+sticky_messages_col = None
+ban_appeals_col = None
 
 def init_mongo():
-    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col
+    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col
     mongo = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
     db = mongo["discordbot"]
     warns_col = db["warns"]
@@ -44,6 +47,9 @@ def init_mongo():
     audit_col = db["audit_log"]
     bot_state_col = db["bot_state"]
     killswitch_tokens_col = db["killswitch_tokens"]
+    case_counters_col = db["case_counters"]
+    sticky_messages_col = db["sticky_messages"]
+    ban_appeals_col = db["ban_appeals"]
 
 def record_audit(guild_id, actor_id, actor_name, action, details=""):
     """Trace de chaque changement de config (dashboard ou commande) pour
@@ -84,6 +90,8 @@ def get_config(guild_id):
             "ticket_category_id": None,
             "ticket_support_role_id": None,
             "ticket_archive_category_id": None,
+            "appeal_channel_id": None,
+            "boost_channel_id": None,
             "member_count_channel_id": None,
         }
         config_col.insert_one(doc)
@@ -141,17 +149,91 @@ def mark_channel_unlocked(guild_id, channel_id):
 def get_locked_channels(guild_id):
     return list(locked_channels_col.find({"guild_id": str(guild_id)}))
 
+def get_next_case_id(guild_id):
+    """Compteur atomique par serveur — jamais de doublon même avec des
+    sanctions concurrentes."""
+    doc = case_counters_col.find_one_and_update(
+        {"_id": str(guild_id)},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return doc["seq"]
+
 def log_sanction(guild_id, user_id, sanction_type, reason, moderator_id):
     """Enregistre une sanction dans l'historique. moderator_id peut être un ID Discord,
-    'mobile_app' (action via l'app Android), ou 'automod' (déclenchée automatiquement)."""
+    'mobile_app' (action via l'app Android), ou 'automod' (déclenchée automatiquement).
+    Retourne le case_id généré, consultable ensuite via /case view."""
+    case_id = get_next_case_id(guild_id)
     sanctions_col.insert_one({
         "guild_id": str(guild_id),
+        "case_id": case_id,
         "user_id": str(user_id),
         "type": sanction_type,
         "reason": reason or "No reason provided",
         "moderator_id": str(moderator_id),
-        "timestamp": datetime.datetime.utcnow(),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc),
     })
+    return case_id
+
+def get_case(guild_id, case_id):
+    return sanctions_col.find_one({"guild_id": str(guild_id), "case_id": case_id})
+
+
+def create_ban_appeal(guild_id, case_id, user_id, user_name, ban_reason, token):
+    ban_appeals_col.insert_one({
+        "token": token,
+        "guild_id": str(guild_id),
+        "case_id": case_id,
+        "user_id": str(user_id),
+        "user_name": user_name,
+        "ban_reason": ban_reason,
+        "status": "pending",  # pending -> submitted -> accepted / denied
+        "appeal_text": None,
+        "created_at": datetime.datetime.now(datetime.timezone.utc),
+        "submitted_at": None,
+        "resolved_at": None,
+    })
+
+def get_ban_appeal(token):
+    return ban_appeals_col.find_one({"token": token})
+
+def get_ban_appeal_by_case(guild_id, case_id):
+    return ban_appeals_col.find_one({"guild_id": str(guild_id), "case_id": case_id})
+
+
+async def post_appeal_for_review(guild, appeal, appeal_text):
+    cfg = get_config(guild.id)
+    channel_id = cfg.get("appeal_channel_id")
+    channel = guild.get_channel(int(channel_id)) if channel_id else None
+    if channel is None:
+        return
+    embed = discord.Embed(title=f"📨 Ban Appeal — Case #{appeal['case_id']}", color=0xffb84d)
+    embed.add_field(name="User", value=f"{appeal['user_name']} ({appeal['user_id']})", inline=False)
+    embed.add_field(name="Original ban reason", value=appeal["ban_reason"][:1000] or "No reason provided", inline=False)
+    embed.add_field(name="Appeal", value=appeal_text[:1000], inline=False)
+    embed.set_footer(text=f"Review with: /appeal accept case_id:{appeal['case_id']}  or  /appeal deny case_id:{appeal['case_id']}")
+    await channel.send(embed=embed)
+
+
+def set_sticky_message(guild_id, channel_id, content):
+    sticky_messages_col.update_one(
+        {"channel_id": str(channel_id)},
+        {"$set": {
+            "guild_id": str(guild_id),
+            "channel_id": str(channel_id),
+            "content": content,
+            "last_message_id": None,
+            "last_reposted_at": None,
+        }},
+        upsert=True,
+    )
+
+def remove_sticky_message(channel_id):
+    sticky_messages_col.delete_one({"channel_id": str(channel_id)})
+
+def get_sticky_message(channel_id):
+    return sticky_messages_col.find_one({"channel_id": str(channel_id)})
 
 def get_sanction_history(guild_id, user_id, limit=15):
     return list(
@@ -412,6 +494,8 @@ async def check_access(interaction: discord.Interaction, command_name: str, nati
 @bot.event
 async def on_ready():
     init_mongo()
+    if not hasattr(bot, "start_time"):
+        bot.start_time = datetime.datetime.now(datetime.timezone.utc)
     try:
         await bot.tree.sync()
         synced = await bot.tree.sync()
@@ -474,18 +558,44 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
         embed = discord.Embed(description="❌ I can't ban this member, their role is too high.", color=0xff0000)
         await interaction.response.send_message(embed=embed)
         return
+
+    # Le DM doit partir AVANT le ban : une fois banni, le bot ne partage
+    # plus de serveur avec la personne et ne peut généralement plus lui
+    # écrire pour la première fois.
+    cfg = get_config(interaction.guild_id)
+    base_url = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+    appeals_configured = bool(base_url and cfg.get("appeal_channel_id"))
+    appeal_token = secrets.token_urlsafe(16) if appeals_configured else None
+
+    dm_message = f"You have been banned from **{interaction.guild.name}**.\nReason: {reason}"
+    if appeals_configured:
+        dm_message += f"\n\nIf you believe this is a mistake, you can submit an appeal here:\n{base_url}/appeal/{appeal_token}"
+    dm_sent = True
+    try:
+        await member.send(dm_message)
+    except discord.HTTPException:
+        dm_sent = False
+
     try:
         await member.ban(reason=reason)
-        log_sanction(interaction.guild_id, member.id, "ban", reason, interaction.user.id)
-        embed = discord.Embed(title="🔨 Member Banned", color=0xff0000)
-        embed.add_field(name="User", value=f"**{member}**", inline=True)
-        embed.add_field(name="Banned by", value=f"**{interaction.user.top_role.name}** · {interaction.user.name}", inline=True)
-        embed.add_field(name="Reason", value=reason, inline=False)
-        embed.set_thumbnail(url=member.display_avatar.url)
-        await interaction.response.send_message(embed=embed)
-    except:
+    except Exception:
         embed = discord.Embed(description="❌ I can't ban this member.", color=0xff0000)
         await interaction.response.send_message(embed=embed)
+        return
+
+    case_id = log_sanction(interaction.guild_id, member.id, "ban", reason, interaction.user.id)
+    if appeals_configured:
+        create_ban_appeal(interaction.guild_id, case_id, member.id, str(member), reason, appeal_token)
+
+    embed = discord.Embed(title="🔨 Member Banned", color=0xff0000)
+    embed.add_field(name="Case", value=f"#{case_id}", inline=True)
+    embed.add_field(name="User", value=f"**{member}**", inline=True)
+    embed.add_field(name="Banned by", value=f"**{interaction.user.top_role.name}** · {interaction.user.name}", inline=True)
+    embed.add_field(name="Reason", value=reason, inline=False)
+    if not dm_sent:
+        embed.set_footer(text="Couldn't DM the user (DMs closed or the bot is blocked).")
+    embed.set_thumbnail(url=member.display_avatar.url)
+    await interaction.response.send_message(embed=embed)
 
 # /kick
 @bot.tree.command(name="kick", description="Kick a member")
@@ -943,13 +1053,51 @@ async def history(interaction: discord.Interaction, member: discord.Member):
             except Exception:
                 mod_str = f"ID {mod_id}"
         embed.add_field(
-            name=f"{icon} {record['type'].replace('_', ' ').title()} — {date_str}",
+            name=f"{icon} Case #{record.get('case_id', '?')} — {record['type'].replace('_', ' ').title()} — {date_str}",
             value=f"Reason: {record['reason']}\nBy: {mod_str}",
             inline=False,
         )
     if len(records) >= 15:
         embed.set_footer(text="Showing the 15 most recent sanctions")
     await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="case", description="Look up a moderation case by its ID")
+@app_commands.describe(case_id="The case number shown when a sanction was issued")
+async def case_view(interaction: discord.Interaction, case_id: int):
+    if not await check_access(interaction, "case", None): return
+    case = get_case(interaction.guild_id, case_id)
+    if not case:
+        embed = discord.Embed(description=f"❌ No case **#{case_id}** found on this server.", color=0xff0000)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    mod_id = case.get("moderator_id", "")
+    if mod_id == "mobile_app":
+        mod_str = "📱 Mobile App"
+    elif mod_id == "automod":
+        mod_str = "🤖 AutoMod"
+    else:
+        try:
+            mod_user = await bot.fetch_user(int(mod_id))
+            mod_str = str(mod_user)
+        except Exception:
+            mod_str = f"ID {mod_id}"
+
+    try:
+        target_user = await bot.fetch_user(int(case["user_id"]))
+        target_str = str(target_user)
+    except Exception:
+        target_str = f"ID {case['user_id']}"
+
+    icon = SANCTION_ICONS.get(case["type"], "•")
+    embed = discord.Embed(title=f"{icon} Case #{case_id}", color=0x3399ff)
+    embed.add_field(name="Type", value=case["type"].replace("_", " ").title(), inline=True)
+    embed.add_field(name="User", value=target_str, inline=True)
+    embed.add_field(name="Moderator", value=mod_str, inline=True)
+    embed.add_field(name="Reason", value=case["reason"], inline=False)
+    embed.set_footer(text=case["timestamp"].strftime("%Y-%m-%d %H:%M UTC"))
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="note", description="Add an internal staff note on a member (not visible to them)")
@@ -1258,6 +1406,71 @@ async def config_membercount(interaction: discord.Interaction, channel: discord.
     )
 
 
+@config_group.command(name="appeals", description="Set the channel where ban appeals are reviewed — admin only. Leave empty to disable appeals.")
+@app_commands.describe(channel="Channel where submitted ban appeals will be posted for staff review")
+@has_admin()
+async def config_appeals(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if channel is None:
+        update_config(interaction.guild_id, "appeal_channel_id", None)
+        await interaction.response.send_message("📨 Ban appeals disabled — future ban DMs won't include an appeal link.", ephemeral=True)
+        return
+    if not os.getenv("PUBLIC_BASE_URL"):
+        await interaction.response.send_message(
+            "⚠️ `PUBLIC_BASE_URL` isn't set on the bot's hosting — appeal links can't be built until it is. Ask whoever manages the deployment to set it.",
+            ephemeral=True,
+        )
+        return
+    update_config(interaction.guild_id, "appeal_channel_id", channel.id)
+    await interaction.response.send_message(
+        f"📨 Ban appeals will now be reviewed in {channel.mention}. Future ban DMs will include a link to appeal.",
+        ephemeral=True,
+    )
+
+
+@config_group.command(name="boostmessage", description="Set where boost thank-you messages are posted — admin only. Leave empty to use the logs channel.")
+@app_commands.describe(channel="Channel for boost thank-you messages")
+@has_admin()
+async def config_boostmessage(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    update_config(interaction.guild_id, "boost_channel_id", channel.id if channel else None)
+    where = channel.mention if channel else "the logs channel (default)"
+    await interaction.response.send_message(f"🎉 Boost thank-you messages will be posted in {where}.", ephemeral=True)
+
+
+# Messages épinglés (sticky) : /config sticky set|remove — admin only
+sticky_group = app_commands.Group(
+    name="sticky",
+    description="Manage a sticky message that stays at the bottom of a channel — admin only",
+    parent=config_group,
+)
+
+
+@sticky_group.command(name="set", description="Post a sticky message that keeps reappearing at the bottom of a channel — admin only")
+@app_commands.describe(channel="Channel to stick the message in", content="The message content to keep at the bottom")
+@has_admin()
+async def config_sticky_set(interaction: discord.Interaction, channel: discord.TextChannel, content: str):
+    set_sticky_message(interaction.guild_id, channel.id, content[:1900])
+    await interaction.response.send_message(f"📌 Sticky message set for {channel.mention}.", ephemeral=True)
+
+
+@sticky_group.command(name="remove", description="Remove the sticky message from a channel — admin only")
+@app_commands.describe(channel="Channel to remove the sticky message from")
+@has_admin()
+async def config_sticky_remove(interaction: discord.Interaction, channel: discord.TextChannel):
+    existing = get_sticky_message(channel.id)
+    if not existing:
+        await interaction.response.send_message(f"No sticky message is set for {channel.mention}.", ephemeral=True)
+        return
+    last_id = existing.get("last_message_id")
+    if last_id:
+        try:
+            old_msg = await channel.fetch_message(int(last_id))
+            await old_msg.delete()
+        except (discord.NotFound, discord.HTTPException):
+            pass
+    remove_sticky_message(channel.id)
+    await interaction.response.send_message(f"📌 Sticky message removed from {channel.mention}.", ephemeral=True)
+
+
 # Système de tickets par bouton : /config ticket setup|disable
 ticket_group = app_commands.Group(
     name="ticket",
@@ -1347,6 +1560,66 @@ async def admin_killswitch_resend(interaction: discord.Interaction):
 
 
 bot.tree.add_command(admin_group)
+
+
+# Revue des appels de ban : /appeal accept|deny — admin only
+appeal_group = app_commands.Group(name="appeal", description="Review ban appeals — admin only")
+
+
+@appeal_group.command(name="accept", description="Accept a ban appeal and unban the user — admin only")
+@app_commands.describe(case_id="The case number shown in the appeal")
+@has_admin()
+async def appeal_accept(interaction: discord.Interaction, case_id: int):
+    appeal = get_ban_appeal_by_case(interaction.guild_id, case_id)
+    if not appeal:
+        await interaction.response.send_message(f"❌ No appeal found for case #{case_id}.", ephemeral=True)
+        return
+    if appeal["status"] != "submitted":
+        await interaction.response.send_message(f"⚠️ This appeal is already **{appeal['status']}**.", ephemeral=True)
+        return
+    try:
+        await interaction.guild.unban(discord.Object(id=int(appeal["user_id"])), reason=f"Ban appeal accepted by {interaction.user}")
+    except discord.HTTPException as e:
+        await interaction.response.send_message(f"❌ Couldn't unban: {e}", ephemeral=True)
+        return
+    ban_appeals_col.update_one(
+        {"token": appeal["token"]},
+        {"$set": {"status": "accepted", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}},
+    )
+    record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), "Accepted ban appeal", f"Case #{case_id}")
+    try:
+        user = await bot.fetch_user(int(appeal["user_id"]))
+        await user.send(f"✅ Your ban appeal for **{interaction.guild.name}** (case #{case_id}) was accepted. You've been unbanned.")
+    except discord.HTTPException:
+        pass
+    await interaction.response.send_message(f"✅ Case #{case_id} accepted — {appeal['user_name']} has been unbanned.", ephemeral=True)
+
+
+@appeal_group.command(name="deny", description="Deny a ban appeal — admin only")
+@app_commands.describe(case_id="The case number shown in the appeal", note="Optional internal note (not sent to the user)")
+@has_admin()
+async def appeal_deny(interaction: discord.Interaction, case_id: int, note: str = ""):
+    appeal = get_ban_appeal_by_case(interaction.guild_id, case_id)
+    if not appeal:
+        await interaction.response.send_message(f"❌ No appeal found for case #{case_id}.", ephemeral=True)
+        return
+    if appeal["status"] != "submitted":
+        await interaction.response.send_message(f"⚠️ This appeal is already **{appeal['status']}**.", ephemeral=True)
+        return
+    ban_appeals_col.update_one(
+        {"token": appeal["token"]},
+        {"$set": {"status": "denied", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}},
+    )
+    record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), "Denied ban appeal", f"Case #{case_id}" + (f" — {note}" if note else ""))
+    try:
+        user = await bot.fetch_user(int(appeal["user_id"]))
+        await user.send(f"❌ Your ban appeal for **{interaction.guild.name}** (case #{case_id}) was reviewed and denied.")
+    except discord.HTTPException:
+        pass
+    await interaction.response.send_message(f"Case #{case_id} denied.", ephemeral=True)
+
+
+bot.tree.add_command(appeal_group)
 
 @bot.tree.command(name="botlock", description="Lock the bot on this server (server owner only)")
 @has_owner()
@@ -2595,6 +2868,32 @@ async def on_message(message):
             await apply_automod_action(message, "automod_caps", "excessive use of capital letters")
             return
 
+    # Message épinglé (sticky) : republié en bas du salon après le passage
+    # d'un cooldown, pour rester visible sans spammer à chaque message.
+    sticky = get_sticky_message(message.channel.id)
+    if sticky:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        last_reposted_at = sticky.get("last_reposted_at")
+        if last_reposted_at and last_reposted_at.tzinfo is None:
+            last_reposted_at = last_reposted_at.replace(tzinfo=datetime.timezone.utc)
+        cooldown_ok = (not last_reposted_at) or (now - last_reposted_at).total_seconds() > 10
+        if cooldown_ok:
+            try:
+                old_id = sticky.get("last_message_id")
+                if old_id:
+                    try:
+                        old_msg = await message.channel.fetch_message(int(old_id))
+                        await old_msg.delete()
+                    except (discord.NotFound, discord.HTTPException):
+                        pass
+                new_msg = await message.channel.send(sticky["content"])
+                sticky_messages_col.update_one(
+                    {"channel_id": str(message.channel.id)},
+                    {"$set": {"last_message_id": str(new_msg.id), "last_reposted_at": now}},
+                )
+            except discord.HTTPException as e:
+                print(f"[STICKY] Failed to repost in channel {message.channel.id}: {e}", flush=True)
+
     # Nécessaire pour que les éventuelles commandes à préfixe continuent de fonctionner
     # (aucune n'est définie actuellement, mais ça évite un piège classique si on en ajoute plus tard)
     await bot.process_commands(message)
@@ -2647,6 +2946,27 @@ async def on_member_remove(member):
         embed.add_field(name="User", value=f"**{member}**", inline=True)
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
+
+@bot.event
+async def on_member_update(before, after):
+    # Détecte un boost qui vient de démarrer (premium_since passe de None à une date)
+    if before.premium_since is None and after.premium_since is not None:
+        cfg = get_config(after.guild.id)
+        channel_id = cfg.get("boost_channel_id")
+        channel = after.guild.get_channel(int(channel_id)) if channel_id else None
+        if channel is None:
+            channel = discord.utils.get(after.guild.text_channels, name=cfg.get("logs_channel", "logs"))
+        if channel:
+            embed = discord.Embed(
+                title="🎉 New Server Boost!",
+                description=f"Thanks {after.mention} for boosting **{after.guild.name}**!",
+                color=0xf47fff,
+            )
+            embed.set_thumbnail(url=after.display_avatar.url)
+            boost_count = after.guild.premium_subscription_count
+            if boost_count:
+                embed.set_footer(text=f"{after.guild.name} now has {boost_count} boosts")
+            await channel.send(embed=embed)
 
 @bot.event
 async def on_message_delete(message):
@@ -3469,13 +3789,14 @@ BASE_STYLE = """
   .badge.admin { color: var(--muted); background: var(--surface-3); }
 
   label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-  select, input[type=text] {
+  select, input[type=text], textarea {
     width: 100%; background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
     padding: 10px 12px; border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 14px;
     margin-bottom: 18px; transition: border-color .15s, box-shadow .15s;
   }
+  textarea { resize: vertical; min-height: 110px; }
   select[multiple] { min-height: 110px; }
-  select:focus, input:focus { outline: none; border-color: var(--raspberry); box-shadow: 0 0 0 3px rgba(255,95,143,.12); }
+  select:focus, input:focus, textarea:focus { outline: none; border-color: var(--raspberry); box-shadow: 0 0 0 3px rgba(255,95,143,.12); }
   .hint { color: var(--muted); font-size: 11px; margin-top: -12px; margin-bottom: 18px; }
   .risky-warning { background: var(--amber-dim); border: 1px solid var(--amber); color: var(--amber); padding: 10px 14px; border-radius: 12px 4px 12px 4px; font-size: 12.5px; margin: -6px 0 18px; animation: popIn .2s ease both; }
   .cmd-toggle-row { display: flex; gap: 8px; margin-bottom: 10px; }
@@ -4253,6 +4574,154 @@ def killswitch_submit(token):
         print(f"[KILLSWITCH] Failed to DM owner: {e}", flush=True)
 
     return render_template_string(KILLSWITCH_DONE_TEMPLATE, locked=new_state)
+
+
+# ============================================================
+# =================== BAN APPEALS — public form ===============
+# ============================================================
+# Formulaire public (pas de login) : la sécurité vient du token à usage
+# unique envoyé uniquement dans le DM de ban, pas d'un compte Discord.
+
+APPEAL_FORM_TEMPLATE = BASE_STYLE + """
+<div class="wrap" style="max-width:480px; margin:60px auto;">
+  <div class="eyebrow">Ban Appeal</div>
+  <h1>{{ guild_name }}</h1>
+  <p class="lead">You were banned from this server. Case #{{ case_id }}.<br>Reason given: {{ ban_reason }}</p>
+  <form method="POST">
+    <label for="appeal_text">Why should this ban be reconsidered?</label>
+    <textarea name="appeal_text" id="appeal_text" maxlength="1000" required placeholder="Explain your side..."></textarea>
+    <button type="submit">Submit appeal</button>
+  </form>
+</div>
+"""
+
+APPEAL_DONE_TEMPLATE = BASE_STYLE + """
+<div class="wrap" style="max-width:480px; margin:60px auto;">
+  <div class="eyebrow">Ban Appeal</div>
+  <h1>Appeal submitted</h1>
+  <p class="lead">Your appeal for case #{{ case_id }} has been sent to the server's staff team. You'll get a DM once it's reviewed.</p>
+</div>
+"""
+
+APPEAL_STATUS_TEMPLATE = BASE_STYLE + """
+<div class="wrap" style="max-width:480px; margin:60px auto;">
+  <div class="eyebrow">Ban Appeal</div>
+  <h1>{{ title }}</h1>
+  <p class="lead">{{ message }}</p>
+</div>
+"""
+
+APPEAL_INVALID_TEMPLATE = BASE_STYLE + """
+<div class="wrap" style="max-width:480px; margin:60px auto;">
+  <div class="eyebrow">Ban Appeal</div>
+  <h1>Link not found</h1>
+  <p class="lead">This appeal link is invalid.</p>
+</div>
+"""
+
+APPEAL_STATUS_COPY = {
+    "submitted": ("Already submitted", "Your appeal has already been submitted and is awaiting review."),
+    "accepted": ("Appeal accepted", "Your appeal was accepted — you should already be unbanned."),
+    "denied": ("Appeal denied", "Your appeal was reviewed and denied."),
+}
+
+
+@api.route("/appeal/<token>", methods=["GET"])
+def appeal_form_page(token):
+    appeal = get_ban_appeal(token)
+    if not appeal:
+        return render_template_string(APPEAL_INVALID_TEMPLATE), 404
+    if appeal["status"] != "pending":
+        title, message = APPEAL_STATUS_COPY.get(appeal["status"], ("Status", "This appeal has already been processed."))
+        return render_template_string(APPEAL_STATUS_TEMPLATE, title=title, message=message)
+    guild = bot.get_guild(int(appeal["guild_id"]))
+    return render_template_string(
+        APPEAL_FORM_TEMPLATE,
+        guild_name=guild.name if guild else "the server",
+        case_id=appeal["case_id"],
+        ban_reason=appeal["ban_reason"] or "No reason provided",
+    )
+
+
+@api.route("/appeal/<token>", methods=["POST"])
+def appeal_form_submit(token):
+    appeal = get_ban_appeal(token)
+    if not appeal or appeal["status"] != "pending":
+        return render_template_string(APPEAL_INVALID_TEMPLATE), 404
+
+    appeal_text = request.form.get("appeal_text", "").strip()[:1000]
+    guild = bot.get_guild(int(appeal["guild_id"]))
+    if not appeal_text:
+        return render_template_string(
+            APPEAL_FORM_TEMPLATE,
+            guild_name=guild.name if guild else "the server",
+            case_id=appeal["case_id"],
+            ban_reason=appeal["ban_reason"] or "No reason provided",
+        )
+
+    ban_appeals_col.update_one(
+        {"token": token},
+        {"$set": {
+            "status": "submitted",
+            "appeal_text": appeal_text,
+            "submitted_at": datetime.datetime.now(datetime.timezone.utc),
+        }},
+    )
+
+    if guild:
+        try:
+            run_coroutine(post_appeal_for_review(guild, appeal, appeal_text))
+        except Exception as e:
+            print(f"[APPEAL] Failed to post appeal for review: {e}", flush=True)
+
+    return render_template_string(APPEAL_DONE_TEMPLATE, case_id=appeal["case_id"])
+
+
+# ============================================================
+# =================== PUBLIC STATUS PAGE =====================
+# ============================================================
+
+STATUS_PAGE_TEMPLATE = BASE_STYLE + """
+<div class="wrap" style="max-width:480px; margin:60px auto;">
+  <div class="eyebrow">Nexus</div>
+  <h1>{{ '🟢 All systems operational' if online else '🔴 Bot is offline' }}</h1>
+  {% if online %}
+  <div class="status-strip" style="margin-top:20px;">
+    <span class="pill"><span class="pip"></span> {{ guild_count }} servers</span>
+    <span class="pill"><span class="pip"></span> {{ latency_ms }}ms latency</span>
+    <span class="pill"><span class="pip"></span> Up {{ uptime }}</span>
+  </div>
+  {% else %}
+  <p class="lead">The bot's Discord connection isn't ready yet. If this persists, check the hosting dashboard.</p>
+  {% endif %}
+</div>
+"""
+
+def _format_uptime(delta):
+    total_seconds = int(delta.total_seconds())
+    days, rem = divmod(total_seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+    parts = []
+    if days: parts.append(f"{days}d")
+    if hours: parts.append(f"{hours}h")
+    if not days: parts.append(f"{minutes}m")
+    return " ".join(parts) or "0m"
+
+
+@api.route("/status")
+def public_status_page():
+    online = bot.is_ready()
+    if not online:
+        return render_template_string(STATUS_PAGE_TEMPLATE, online=False), 503
+    uptime = _format_uptime(datetime.datetime.now(datetime.timezone.utc) - bot.start_time) if hasattr(bot, "start_time") else "unknown"
+    return render_template_string(
+        STATUS_PAGE_TEMPLATE,
+        online=True,
+        guild_count=len(bot.guilds),
+        latency_ms=round(bot.latency * 1000) if bot.latency == bot.latency else "—",  # NaN check avant le premier heartbeat
+        uptime=uptime,
+    )
 
 
 def run_api():
