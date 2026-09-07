@@ -11,6 +11,7 @@ import asyncio
 import datetime
 import time
 from pymongo import MongoClient, ReturnDocument
+from bson import ObjectId
 from functools import wraps
 import yt_dlp
 import re
@@ -33,9 +34,10 @@ killswitch_tokens_col = None
 case_counters_col = None
 sticky_messages_col = None
 ban_appeals_col = None
+server_backups_col = None
 
 def init_mongo():
-    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col
+    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col
     mongo = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
     db = mongo["discordbot"]
     warns_col = db["warns"]
@@ -50,6 +52,7 @@ def init_mongo():
     case_counters_col = db["case_counters"]
     sticky_messages_col = db["sticky_messages"]
     ban_appeals_col = db["ban_appeals"]
+    server_backups_col = db["server_backups"]
 
 def record_audit(guild_id, actor_id, actor_name, action, details=""):
     """Trace de chaque changement de config (dashboard ou commande) pour
@@ -92,6 +95,12 @@ def get_config(guild_id):
             "ticket_archive_category_id": None,
             "appeal_channel_id": None,
             "boost_channel_id": None,
+            "detailed_logs_enabled": False,
+            "banned_words": [],
+            "antinuke_enabled": False,
+            "antinuke_threshold": 5,
+            "weekly_digest_enabled": False,
+            "last_digest_sent_at": None,
             "member_count_channel_id": None,
         }
         config_col.insert_one(doc)
@@ -214,6 +223,145 @@ async def post_appeal_for_review(guild, appeal, appeal_text):
     embed.add_field(name="Appeal", value=appeal_text[:1000], inline=False)
     embed.set_footer(text=f"Review with: /appeal accept case_id:{appeal['case_id']}  or  /appeal deny case_id:{appeal['case_id']}")
     await channel.send(embed=embed)
+
+
+def _serialize_overwrites(channel_or_category):
+    """Ne garde que les permissions par rôle (pas par membre) — c'est la
+    structure qu'on veut restaurer, les cas spécifiques par membre sont
+    trop fragiles à recréer fidèlement après coup."""
+    data = []
+    for target, overwrite in channel_or_category.overwrites.items():
+        if isinstance(target, discord.Role):
+            allow, deny = overwrite.pair()
+            data.append({"role_name": target.name, "allow": allow.value, "deny": deny.value})
+    return data
+
+
+def _rebuild_overwrites(serialized_overwrites, role_name_to_role):
+    result = {}
+    for item in serialized_overwrites:
+        role = role_name_to_role.get(item["role_name"])
+        if role is None:
+            continue
+        result[role] = discord.PermissionOverwrite.from_pair(
+            discord.Permissions(item["allow"]), discord.Permissions(item["deny"])
+        )
+    return result
+
+
+def create_server_backup(guild):
+    roles_data = []
+    for role in guild.roles:
+        if role.is_default():
+            continue
+        roles_data.append({
+            "name": role.name,
+            "color": role.color.value,
+            "permissions": role.permissions.value,
+            "hoist": role.hoist,
+            "mentionable": role.mentionable,
+            "position": role.position,
+        })
+
+    channels_data = []
+    for category in guild.categories:
+        channels_data.append({
+            "type": "category",
+            "name": category.name,
+            "overwrites": _serialize_overwrites(category),
+        })
+    for channel in guild.channels:
+        if isinstance(channel, discord.CategoryChannel):
+            continue
+        if isinstance(channel, discord.TextChannel):
+            ch_type = "text"
+        elif isinstance(channel, discord.VoiceChannel):
+            ch_type = "voice"
+        else:
+            continue  # threads/forums/stage etc. pas gérés pour l'instant
+        channels_data.append({
+            "type": ch_type,
+            "name": channel.name,
+            "category": channel.category.name if channel.category else None,
+            "topic": getattr(channel, "topic", None),
+            "overwrites": _serialize_overwrites(channel),
+        })
+
+    backup_doc = {
+        "guild_id": str(guild.id),
+        "created_at": datetime.datetime.now(datetime.timezone.utc),
+        "roles": roles_data,
+        "channels": channels_data,
+    }
+    result = server_backups_col.insert_one(backup_doc)
+
+    # Ne garde que les 5 derniers backups par serveur (évite une croissance
+    # illimitée de la base pour un usage qui reste occasionnel).
+    all_backups = list(server_backups_col.find({"guild_id": str(guild.id)}).sort("created_at", -1))
+    for old in all_backups[5:]:
+        server_backups_col.delete_one({"_id": old["_id"]})
+
+    return result.inserted_id
+
+
+async def restore_server_backup(guild, backup):
+    """Ne supprime jamais rien : ne recrée que les rôles/salons manquants
+    (matchés par nom). Peut créer des doublons si relancé après un premier
+    restore partiel qui aurait changé un nom entre-temps — c'est un
+    compromis assumé pour rester simple et sans danger de suppression."""
+    role_name_to_role = {r.name: r for r in guild.roles}
+    created_roles = 0
+    for role_data in sorted(backup["roles"], key=lambda r: r["position"]):
+        if role_data["name"] in role_name_to_role:
+            continue
+        try:
+            new_role = await guild.create_role(
+                name=role_data["name"],
+                color=discord.Color(role_data["color"]),
+                permissions=discord.Permissions(role_data["permissions"]),
+                hoist=role_data["hoist"],
+                mentionable=role_data["mentionable"],
+                reason="Server backup restore",
+            )
+            role_name_to_role[new_role.name] = new_role
+            created_roles += 1
+        except discord.HTTPException:
+            pass
+
+    category_name_to_category = {c.name: c for c in guild.categories}
+    created_channels = 0
+    for ch_data in backup["channels"]:
+        if ch_data["type"] != "category" or ch_data["name"] in category_name_to_category:
+            continue
+        overwrites = _rebuild_overwrites(ch_data["overwrites"], role_name_to_role)
+        try:
+            new_cat = await guild.create_category(ch_data["name"], overwrites=overwrites, reason="Server backup restore")
+            category_name_to_category[new_cat.name] = new_cat
+            created_channels += 1
+        except discord.HTTPException:
+            pass
+
+    existing_channel_names = {c.name for c in guild.channels if not isinstance(c, discord.CategoryChannel)}
+    for ch_data in backup["channels"]:
+        if ch_data["type"] == "category" or ch_data["name"] in existing_channel_names:
+            continue
+        category = category_name_to_category.get(ch_data["category"]) if ch_data["category"] else None
+        overwrites = _rebuild_overwrites(ch_data["overwrites"], role_name_to_role)
+        try:
+            if ch_data["type"] == "text":
+                await guild.create_text_channel(
+                    ch_data["name"], category=category, topic=ch_data.get("topic"),
+                    overwrites=overwrites, reason="Server backup restore",
+                )
+            else:
+                await guild.create_voice_channel(
+                    ch_data["name"], category=category, overwrites=overwrites, reason="Server backup restore",
+                )
+            created_channels += 1
+        except discord.HTTPException:
+            pass
+
+    return created_roles, created_channels
 
 
 def set_sticky_message(guild_id, channel_id, content):
@@ -506,10 +654,12 @@ async def on_ready():
     if not getattr(bot, "_nexus_persistent_views_added", False):
         bot.add_view(TicketPanelView())
         bot.add_view(TicketCloseView())
+        bot.add_view(SatisfactionSurveyView())
         bot._nexus_persistent_views_added = True
     bot.loop.create_task(tempban_check_loop())
     bot.loop.create_task(member_count_loop())
     bot.loop.create_task(daily_killswitch_email_loop())
+    bot.loop.create_task(weekly_digest_loop())
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
@@ -1436,6 +1586,19 @@ async def config_boostmessage(interaction: discord.Interaction, channel: discord
     await interaction.response.send_message(f"🎉 Boost thank-you messages will be posted in {where}.", ephemeral=True)
 
 
+@config_group.command(name="antinuke", description="Set the anti-nuke sensitivity threshold — admin only. Use /feature enable|disable to turn it on/off.")
+@app_commands.describe(threshold="Destructive actions (bans/kicks/channel or role deletions) by the same person within 60s that trigger it (default 5)")
+@has_admin()
+async def config_antinuke(interaction: discord.Interaction, threshold: int = 5):
+    threshold = max(2, min(threshold, 20))
+    update_config(interaction.guild_id, "antinuke_threshold", threshold)
+    await interaction.response.send_message(
+        f"🛡️ Anti-nuke threshold set to **{threshold}+** destructive actions within 60 seconds. "
+        f"Use `/feature enable name:antinuke` to turn anti-nuke on if it isn't already.",
+        ephemeral=True,
+    )
+
+
 # Messages épinglés (sticky) : /config sticky set|remove — admin only
 sticky_group = app_commands.Group(
     name="sticky",
@@ -1469,6 +1632,107 @@ async def config_sticky_remove(interaction: discord.Interaction, channel: discor
             pass
     remove_sticky_message(channel.id)
     await interaction.response.send_message(f"📌 Sticky message removed from {channel.mention}.", ephemeral=True)
+
+
+# Liste de mots interdits personnalisée, avec import d'un template pré-fait
+# depuis un dépôt GitHub public et largement utilisé pour ce genre de liste.
+BADWORDS_TEMPLATE_URLS = {
+    "en": "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en",
+    "fr": "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/fr",
+}
+
+badwords_group = app_commands.Group(
+    name="badwords",
+    description="Manage a custom list of banned words for this server — admin only",
+    parent=config_group,
+)
+
+
+@badwords_group.command(name="add", description="Add a word or phrase to the banned words list — admin only")
+@app_commands.describe(word="Word or phrase to ban (matched as a whole word, case-insensitive)")
+@has_admin()
+async def config_badwords_add(interaction: discord.Interaction, word: str):
+    word = word.strip().lower()
+    if not word:
+        await interaction.response.send_message("❌ Can't add an empty word.", ephemeral=True)
+        return
+    cfg = get_config(interaction.guild_id)
+    banned = set(cfg.get("banned_words", []))
+    banned.add(word)
+    update_config(interaction.guild_id, "banned_words", sorted(banned))
+    await interaction.response.send_message(f"🚫 Added **{word}** to the banned words list ({len(banned)} total).", ephemeral=True)
+
+
+@badwords_group.command(name="remove", description="Remove a word from the banned words list — admin only")
+@app_commands.describe(word="Word or phrase to remove")
+@has_admin()
+async def config_badwords_remove(interaction: discord.Interaction, word: str):
+    word = word.strip().lower()
+    cfg = get_config(interaction.guild_id)
+    banned = set(cfg.get("banned_words", []))
+    if word not in banned:
+        await interaction.response.send_message(f"**{word}** isn't in the list.", ephemeral=True)
+        return
+    banned.discard(word)
+    update_config(interaction.guild_id, "banned_words", sorted(banned))
+    await interaction.response.send_message(f"✅ Removed **{word}** from the banned words list ({len(banned)} remaining).", ephemeral=True)
+
+
+@badwords_group.command(name="list", description="Show the current banned words list")
+@has_admin()
+async def config_badwords_list(interaction: discord.Interaction):
+    cfg = get_config(interaction.guild_id)
+    banned = sorted(cfg.get("banned_words", []))
+    if not banned:
+        await interaction.response.send_message("No banned words configured yet.", ephemeral=True)
+        return
+    embed = discord.Embed(title=f"🚫 Banned Words ({len(banned)})", color=0xff6600)
+    text = ", ".join(banned)
+    if len(text) <= 1000:
+        embed.description = text
+    else:
+        # Discord limite un champ/description d'embed à 1024 caractères
+        chunk, chunks = "", []
+        for w in banned:
+            if len(chunk) + len(w) + 2 > 1000:
+                chunks.append(chunk)
+                chunk = ""
+            chunk += w + ", "
+        if chunk:
+            chunks.append(chunk)
+        for i, c in enumerate(chunks):
+            embed.add_field(name="Words" if i == 0 else "Words (cont.)", value=c.rstrip(", "), inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@badwords_group.command(name="import", description="Import a pre-made banned words list from a public GitHub template — admin only")
+@app_commands.describe(language="Which pre-made list to import (adds to your existing list, doesn't replace it)")
+@app_commands.choices(language=[
+    app_commands.Choice(name="English", value="en"),
+    app_commands.Choice(name="Français", value="fr"),
+])
+@has_admin()
+async def config_badwords_import(interaction: discord.Interaction, language: app_commands.Choice[str]):
+    await interaction.response.defer(ephemeral=True)
+    url = BADWORDS_TEMPLATE_URLS.get(language.value)
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        imported = {w.strip().lower() for w in r.text.splitlines() if w.strip()}
+    except Exception as e:
+        await interaction.followup.send(f"❌ Couldn't fetch the template list: {e}", ephemeral=True)
+        return
+    cfg = get_config(interaction.guild_id)
+    banned = set(cfg.get("banned_words", []))
+    before_count = len(banned)
+    banned |= imported
+    update_config(interaction.guild_id, "banned_words", sorted(banned))
+    await interaction.followup.send(
+        f"🚫 Imported **{len(imported)}** words from the {language.name} template "
+        f"({len(banned) - before_count} new, {len(banned)} total).\n"
+        f"Source: github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words (CC-BY-4.0)",
+        ephemeral=True,
+    )
 
 
 # Système de tickets par bouton : /config ticket setup|disable
@@ -1621,6 +1885,119 @@ async def appeal_deny(interaction: discord.Interaction, case_id: int, note: str 
 
 bot.tree.add_command(appeal_group)
 
+
+# Sauvegarde de la structure du serveur : /backup create|list|restore — server owner only
+backup_group = app_commands.Group(name="backup", description="Server structure backups (roles, channels, permissions) — server owner only")
+
+
+@backup_group.command(name="create", description="Snapshot this server's roles, channels, and permissions — server owner only")
+@has_owner()
+async def backup_create(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    backup_id = create_server_backup(interaction.guild)
+    await interaction.followup.send(f"💾 Backup created (`{backup_id}`). Use `/backup list` to see all backups.", ephemeral=True)
+
+
+@backup_group.command(name="list", description="List available backups for this server — server owner only")
+@has_owner()
+async def backup_list(interaction: discord.Interaction):
+    backups = list(server_backups_col.find({"guild_id": str(interaction.guild_id)}).sort("created_at", -1))
+    if not backups:
+        await interaction.response.send_message("No backups yet — create one with `/backup create`.", ephemeral=True)
+        return
+    lines = []
+    for b in backups:
+        ts = b["created_at"]
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=datetime.timezone.utc)
+        lines.append(f"`{b['_id']}` — {ts.strftime('%Y-%m-%d %H:%M UTC')} ({len(b['roles'])} roles, {len(b['channels'])} channels)")
+    embed = discord.Embed(title="💾 Server Backups", description="\n".join(lines), color=0x3399ff)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@backup_group.command(name="restore", description="Restore roles/channels from a backup — server owner only. Only creates what's missing, never deletes.")
+@app_commands.describe(backup_id="The backup ID from /backup list", confirm="Set to true to actually run the restore")
+@has_owner()
+async def backup_restore(interaction: discord.Interaction, backup_id: str, confirm: bool = False):
+    if not confirm:
+        await interaction.response.send_message(
+            "⚠️ This re-creates any missing roles/channels from that backup, matched by name. "
+            "It never deletes or overwrites anything that already exists. Re-run with `confirm:true` to actually do it.",
+            ephemeral=True,
+        )
+        return
+    try:
+        backup = server_backups_col.find_one({"_id": ObjectId(backup_id), "guild_id": str(interaction.guild_id)})
+    except Exception:
+        backup = None
+    if not backup:
+        await interaction.response.send_message("❌ Backup not found. Check the ID with `/backup list`.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    created_roles, created_channels = await restore_server_backup(interaction.guild, backup)
+    record_audit(
+        interaction.guild_id, interaction.user.id, str(interaction.user),
+        "Restored server backup", f"backup {backup_id}: +{created_roles} roles, +{created_channels} channels",
+    )
+    await interaction.followup.send(
+        f"✅ Restore complete — created {created_roles} missing role(s) and {created_channels} missing channel(s).",
+        ephemeral=True,
+    )
+
+
+bot.tree.add_command(backup_group)
+
+
+# Interrupteur unique pour toutes les fonctionnalités à bascule simple
+# (on/off) — évite d'avoir une commande différente par feature.
+FEATURE_TOGGLES = {
+    "detailed_logs": {"config_key": "detailed_logs_enabled", "label": "Detailed activity logs (voice, nicknames, roles)"},
+    "antinuke": {"config_key": "antinuke_enabled", "label": "Anti-nuke protection"},
+    "weekly_digest": {"config_key": "weekly_digest_enabled", "label": "Weekly DM digest"},
+    "dashboard_logging": {"config_key": "log_dashboard_actions", "label": "Log dashboard actions to the logs channel"},
+}
+FEATURE_CHOICES = [app_commands.Choice(name=v["label"], value=k) for k, v in FEATURE_TOGGLES.items()]
+
+feature_group = app_commands.Group(name="feature", description="Enable or disable optional bot features — admin only")
+
+
+@feature_group.command(name="enable", description="Enable an optional feature — admin only")
+@app_commands.describe(name="Which feature to enable")
+@app_commands.choices(name=FEATURE_CHOICES)
+@has_admin()
+async def feature_enable(interaction: discord.Interaction, name: app_commands.Choice[str]):
+    feature = FEATURE_TOGGLES[name.value]
+    update_config(interaction.guild_id, feature["config_key"], True)
+    extra = ""
+    if name.value == "antinuke":
+        extra = " Set the sensitivity with `/config antinuke threshold:5` (default 5). Needs the **View Audit Log** permission."
+    await interaction.response.send_message(f"✅ **{feature['label']}** enabled.{extra}", ephemeral=True)
+
+
+@feature_group.command(name="disable", description="Disable an optional feature — admin only")
+@app_commands.describe(name="Which feature to disable")
+@app_commands.choices(name=FEATURE_CHOICES)
+@has_admin()
+async def feature_disable(interaction: discord.Interaction, name: app_commands.Choice[str]):
+    feature = FEATURE_TOGGLES[name.value]
+    update_config(interaction.guild_id, feature["config_key"], False)
+    await interaction.response.send_message(f"🚫 **{feature['label']}** disabled.", ephemeral=True)
+
+
+@feature_group.command(name="list", description="Show which optional features are currently on or off")
+@has_admin()
+async def feature_list(interaction: discord.Interaction):
+    cfg = get_config(interaction.guild_id)
+    lines = []
+    for key, meta in FEATURE_TOGGLES.items():
+        state = "🟢 On" if cfg.get(meta["config_key"]) else "⚪ Off"
+        lines.append(f"{state} — **{meta['label']}** (`{key}`)")
+    embed = discord.Embed(title="⚙️ Feature Toggles", description="\n".join(lines), color=0x3399ff)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+bot.tree.add_command(feature_group)
+
 @bot.tree.command(name="botlock", description="Lock the bot on this server (server owner only)")
 @has_owner()
 async def botlock(interaction: discord.Interaction):
@@ -1700,6 +2077,54 @@ async def member_count_loop():
         except Exception as e:
             print(f"[MEMBERCOUNT] loop error: {e}", flush=True)
         await asyncio.sleep(600)
+
+
+async def generate_weekly_digest(guild):
+    week_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
+    sanctions_this_week = list(sanctions_col.find({
+        "guild_id": str(guild.id),
+        "timestamp": {"$gte": week_ago},
+    }))
+    counts = {}
+    for s in sanctions_this_week:
+        counts[s["type"]] = counts.get(s["type"], 0) + 1
+
+    lines = [f"📊 **Weekly digest — {guild.name}**", ""]
+    lines.append(f"👥 Members: {guild.member_count}")
+    if counts:
+        breakdown = ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
+        lines.append(f"🛡️ Moderation actions this week: {breakdown}")
+    else:
+        lines.append("🛡️ No moderation actions this week.")
+    return "\n".join(lines)
+
+
+async def weekly_digest_loop():
+    """Vérifie toutes les 6h, par serveur, si 7 jours se sont écoulés
+    depuis le dernier digest envoyé — plus fiable qu'un simple sleep(7
+    jours) global qui ne s'adapterait pas à une activation en cours de
+    semaine."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        for guild in bot.guilds:
+            try:
+                cfg = get_config(guild.id)
+                if not cfg.get("weekly_digest_enabled"):
+                    continue
+                now = datetime.datetime.now(datetime.timezone.utc)
+                last_sent = cfg.get("last_digest_sent_at")
+                if last_sent:
+                    if last_sent.tzinfo is None:
+                        last_sent = last_sent.replace(tzinfo=datetime.timezone.utc)
+                    if (now - last_sent).total_seconds() < 7 * 24 * 60 * 60:
+                        continue
+                digest_text = await generate_weekly_digest(guild)
+                owner = guild.owner or await bot.fetch_user(guild.owner_id)
+                await owner.send(digest_text)
+                update_config(guild.id, "last_digest_sent_at", now)
+            except Exception as e:
+                print(f"[DIGEST] Failed for guild {guild.id}: {e}", flush=True)
+        await asyncio.sleep(6 * 60 * 60)
 
 
 @bot.tree.command(name="userinfo", description="Show information about a member")
@@ -1978,6 +2403,28 @@ class ApplicationModal(discord.ui.Modal):
             print(f"Apply DM error: {e}")
 
 
+class SatisfactionSurveyView(discord.ui.View):
+    """DM envoyé au propriétaire du ticket une fois celui-ci fermé."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    async def _record(self, interaction: discord.Interaction, satisfied: bool):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self)
+        record_audit("global", str(interaction.user.id), str(interaction.user),
+                      "Ticket satisfaction feedback", "👍 satisfied" if satisfied else "👎 not satisfied")
+        await interaction.followup.send("Thanks for the feedback! 🙏", ephemeral=True)
+
+    @discord.ui.button(label="Good experience", style=discord.ButtonStyle.success, emoji="👍", custom_id="nexus_satisfaction_up")
+    async def satisfied(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._record(interaction, True)
+
+    @discord.ui.button(label="Could be better", style=discord.ButtonStyle.secondary, emoji="👎", custom_id="nexus_satisfaction_down")
+    async def unsatisfied(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._record(interaction, False)
+
+
 class TicketCloseView(discord.ui.View):
     """Bouton persistant dans chaque ticket ouvert pour le fermer."""
     def __init__(self):
@@ -2002,6 +2449,19 @@ class TicketCloseView(discord.ui.View):
         button.disabled = True
         button.label = "Closed"
         await interaction.response.edit_message(view=self)
+
+        # Note de satisfaction : DM à la personne qui a ouvert le ticket,
+        # indépendamment de l'archivage ou de la suppression qui suit.
+        opener_id = channel.topic
+        if opener_id and opener_id.isdigit():
+            try:
+                opener_user = await bot.fetch_user(int(opener_id))
+                await opener_user.send(
+                    content="How was your experience with this ticket?",
+                    view=SatisfactionSurveyView(),
+                )
+            except discord.HTTPException:
+                pass
 
         archive_category = None
         archive_category_id = cfg.get("ticket_archive_category_id")
@@ -2769,6 +3229,91 @@ INVITE_LINK_RE = re.compile(r"(discord\.gg/|discord(?:app)?\.com/invite/)", re.I
 RAID_JOIN_COUNT = 5
 RAID_WINDOW_SECONDS = 10
 
+# Suivi en mémoire des actions destructrices récentes par (serveur, auteur),
+# pour l'anti-nuke. Repart à zéro si le bot redémarre — acceptable ici, un
+# nuke se joue en secondes, pas sur plusieurs redémarrages.
+_antinuke_tracker = {}  # {(guild_id, actor_id): [timestamps]}
+ANTINUKE_WINDOW_SECONDS = 60
+ANTINUKE_ACTIONS = {
+    discord.AuditLogAction.channel_delete,
+    discord.AuditLogAction.role_delete,
+    discord.AuditLogAction.ban,
+    discord.AuditLogAction.kick,
+}
+
+
+@bot.event
+async def on_audit_log_entry_create(entry: discord.AuditLogEntry):
+    """Anti-nuke : repose sur l'Audit Log natif de Discord, donc détecte une
+    action destructrice même faite en dehors du bot (ex: compte admin
+    compromis agissant directement via le client Discord)."""
+    if entry.action not in ANTINUKE_ACTIONS:
+        return
+    guild = entry.guild
+    cfg = get_config(guild.id)
+    if not cfg.get("antinuke_enabled"):
+        return
+
+    actor = entry.user
+    if actor is None or actor.id == bot.user.id or actor.id == guild.owner_id:
+        return  # jamais quarantainer le bot lui-même ou le vrai propriétaire
+
+    key = (guild.id, actor.id)
+    now = time.time()
+    timestamps = [t for t in _antinuke_tracker.get(key, []) if now - t < ANTINUKE_WINDOW_SECONDS]
+    timestamps.append(now)
+    _antinuke_tracker[key] = timestamps
+
+    threshold = cfg.get("antinuke_threshold", 5)
+    if len(timestamps) < threshold:
+        return
+
+    # Seuil dépassé : quarantaine immédiate, une seule fois (on vide le
+    # compteur pour ne pas re-déclencher en boucle sur les mêmes actions).
+    _antinuke_tracker[key] = []
+
+    member = guild.get_member(actor.id)
+    quarantined = False
+    if member is not None:
+        try:
+            removable_roles = [r for r in member.roles if r != guild.default_role and r < guild.me.top_role]
+            if removable_roles:
+                await member.remove_roles(*removable_roles, reason="Anti-nuke: abnormal spike of destructive actions")
+                quarantined = True
+        except discord.HTTPException as e:
+            print(f"[ANTINUKE] Failed to strip roles: {e}", flush=True)
+
+    bot.locked_guilds.add(guild.id)
+    record_audit(
+        guild.id, actor.id, str(actor), "Anti-nuke triggered",
+        f"{len(timestamps)} destructive actions in {ANTINUKE_WINDOW_SECONDS}s — "
+        f"{'roles stripped' if quarantined else 'could not strip roles'}, bot locked",
+    )
+
+    try:
+        owner = guild.owner or await bot.fetch_user(guild.owner_id)
+        await owner.send(
+            f"🚨 **Anti-nuke triggered on {guild.name}**\n"
+            f"**{actor}** performed {len(timestamps)} destructive actions (bans/kicks/channel or role "
+            f"deletions) in under {ANTINUKE_WINDOW_SECONDS} seconds.\n"
+            + ("Their roles have been stripped and " if quarantined else "I couldn't strip their roles (role hierarchy?), but ")
+            + "the bot is now locked on this server. Review what happened, then use `/botunlock` when it's safe."
+        )
+    except discord.HTTPException:
+        pass
+
+    log_channel = discord.utils.get(guild.text_channels, name=cfg.get("logs_channel", "logs"))
+    if log_channel:
+        embed = discord.Embed(title="🚨 Anti-Nuke Triggered", color=0xff0000)
+        embed.add_field(name="User", value=f"**{actor}**", inline=True)
+        embed.add_field(name="Actions detected", value=str(len(timestamps)), inline=True)
+        embed.add_field(
+            name="Result",
+            value="Roles stripped + bot locked" if quarantined else "Bot locked (couldn't strip roles)",
+            inline=False,
+        )
+        await log_channel.send(embed=embed)
+
 
 def is_automod_exempt(member, cfg):
     """Les modérateurs (rôles autorisés ou permission gérer les messages) ne sont jamais auto-modérés."""
@@ -2813,6 +3358,17 @@ def check_caps(content):
 
 def check_invite_link(content):
     return bool(INVITE_LINK_RE.search(content))
+
+def check_banned_words(content, banned_words):
+    """Détection simple par mot entier (insensible à la casse) — évite de
+    flag un mot innocent qui contiendrait juste une sous-chaîne interdite."""
+    if not banned_words:
+        return False
+    lowered = content.lower()
+    for word in banned_words:
+        if re.search(r"\b" + re.escape(word.lower()) + r"\b", lowered):
+            return True
+    return False
 
 
 async def apply_automod_action(message, violation_type, reason):
@@ -2866,6 +3422,9 @@ async def on_message(message):
             return
         if check_caps(message.content):
             await apply_automod_action(message, "automod_caps", "excessive use of capital letters")
+            return
+        if check_banned_words(message.content, cfg.get("banned_words", [])):
+            await apply_automod_action(message, "automod_badword", "using a banned word")
             return
 
     # Message épinglé (sticky) : republié en bas du salon après le passage
@@ -2949,9 +3508,11 @@ async def on_member_remove(member):
 
 @bot.event
 async def on_member_update(before, after):
+    cfg = get_config(after.guild.id)
+
     # Détecte un boost qui vient de démarrer (premium_since passe de None à une date)
+    # -- toujours actif, indépendamment du toggle "detailed logs".
     if before.premium_since is None and after.premium_since is not None:
-        cfg = get_config(after.guild.id)
         channel_id = cfg.get("boost_channel_id")
         channel = after.guild.get_channel(int(channel_id)) if channel_id else None
         if channel is None:
@@ -2967,6 +3528,56 @@ async def on_member_update(before, after):
             if boost_count:
                 embed.set_footer(text=f"{after.guild.name} now has {boost_count} boosts")
             await channel.send(embed=embed)
+
+    if not cfg.get("detailed_logs_enabled"):
+        return
+    log_channel = discord.utils.get(after.guild.text_channels, name=cfg.get("logs_channel", "logs"))
+    if log_channel is None:
+        return
+
+    if before.nick != after.nick:
+        embed = discord.Embed(title="✏️ Nickname Changed", color=0x3399ff)
+        embed.add_field(name="Member", value=f"**{after}**", inline=True)
+        embed.add_field(name="Before", value=before.nick or "*(none)*", inline=True)
+        embed.add_field(name="After", value=after.nick or "*(none)*", inline=True)
+        await log_channel.send(embed=embed)
+
+    before_roles = set(before.roles)
+    after_roles = set(after.roles)
+    if before_roles != after_roles:
+        added = after_roles - before_roles
+        removed = before_roles - after_roles
+        if added or removed:
+            embed = discord.Embed(title="🎭 Roles Updated", color=0x3399ff)
+            embed.add_field(name="Member", value=f"**{after}**", inline=False)
+            if added:
+                embed.add_field(name="Added", value=", ".join(r.mention for r in added), inline=True)
+            if removed:
+                embed.add_field(name="Removed", value=", ".join(r.mention for r in removed), inline=True)
+            await log_channel.send(embed=embed)
+
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    cfg = get_config(member.guild.id)
+    if not cfg.get("detailed_logs_enabled"):
+        return
+    log_channel = discord.utils.get(member.guild.text_channels, name=cfg.get("logs_channel", "logs"))
+    if log_channel is None:
+        return
+
+    if before.channel is None and after.channel is not None:
+        embed = discord.Embed(description=f"🔊 **{member}** joined voice channel {after.channel.mention}", color=0x00cc00)
+        await log_channel.send(embed=embed)
+    elif before.channel is not None and after.channel is None:
+        embed = discord.Embed(description=f"🔇 **{member}** left voice channel {before.channel.mention}", color=0xff6600)
+        await log_channel.send(embed=embed)
+    elif before.channel is not None and after.channel is not None and before.channel.id != after.channel.id:
+        embed = discord.Embed(
+            description=f"🔀 **{member}** moved from {before.channel.mention} to {after.channel.mention}",
+            color=0x3399ff,
+        )
+        await log_channel.send(embed=embed)
 
 @bot.event
 async def on_message_delete(message):
