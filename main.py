@@ -645,15 +645,18 @@ async def on_ready():
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} global commands (can take up to 1h to show up everywhere)")
-        dev_guild_id = os.getenv("DEV_GUILD_ID")
-        if dev_guild_id:
-            # Sync instantanée sur un serveur de test/dev, en plus de la sync
-            # globale (qui reste lente à se propager) — pratique pour voir
-            # les nouvelles commandes tout de suite pendant le développement.
-            dev_guild = discord.Object(id=int(dev_guild_id))
-            bot.tree.copy_global_to(guild=dev_guild)
-            dev_synced = await bot.tree.sync(guild=dev_guild)
-            print(f"Synced {len(dev_synced)} commands instantly to dev guild {dev_guild_id}")
+        # Sync instantanée sur CHAQUE serveur où le bot est déjà présent —
+        # plus besoin d'attendre la propagation globale de Discord pour voir
+        # les nouvelles commandes, sur aucun de tes serveurs.
+        instant_count = 0
+        for guild in bot.guilds:
+            try:
+                bot.tree.copy_global_to(guild=guild)
+                await bot.tree.sync(guild=guild)
+                instant_count += 1
+            except Exception as e:
+                print(f"[SYNC] Failed to instantly sync guild {guild.id}: {e}", flush=True)
+        print(f"Instantly synced commands to {instant_count}/{len(bot.guilds)} server(s)")
     except Exception as e:
         print(f"Sync error: {e}")
     print(f"{bot.user} is online!")
@@ -671,6 +674,11 @@ async def on_ready():
 async def on_guild_join(guild: discord.Guild):
     """Quand le bot rejoint un nouveau serveur : crée sa config par défaut et prévient le owner."""
     get_config(guild.id)  # crée le document de config par défaut pour ce serveur
+    try:
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
+    except Exception as e:
+        print(f"[SYNC] Failed to instantly sync new guild {guild.id}: {e}", flush=True)
     try:
         owner = guild.owner or await guild.fetch_owner()
         embed = discord.Embed(
