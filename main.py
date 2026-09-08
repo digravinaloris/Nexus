@@ -428,6 +428,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 bot.locked_guilds = set()  # {guild_id, ...} — serveurs actuellement verrouillés (par serveur, pas global)
 bot.start_time = time.time()
 bot.ready_event = None  # set in on_ready, used so Flask waits until bot is ready
+_cached_global_commands = []  # snapshot des commandes, pris avant de vider le bucket global (voir on_ready) ; réutilisé par on_guild_join pour les serveurs qui rejoignent en cours de route
 
 # ============================================================
 # ==================== GLOBAL KILL-SWITCH ====================
@@ -654,9 +655,14 @@ async def check_access(interaction: discord.Interaction, command_name: str, nati
 @bot.event
 async def on_ready():
     init_mongo()
+    global _cached_global_commands
     try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} global commands (can take up to 1h to show up everywhere)", flush=True)
+        # On garde une copie des commandes déclarées (via les décorateurs)
+        # AVANT de vider le bucket global — sert à alimenter les nouveaux
+        # serveurs qui rejoignent plus tard dans la même session (voir
+        # on_guild_join), une fois que le bucket global aura été vidé.
+        _cached_global_commands = list(bot.tree.get_commands())
+
         # Sync instantanée sur CHAQUE serveur où le bot est déjà présent —
         # plus besoin d'attendre la propagation globale de Discord pour voir
         # les nouvelles commandes, sur aucun de tes serveurs.
@@ -669,6 +675,14 @@ async def on_ready():
             except Exception as e:
                 print(f"[SYNC] Failed to instantly sync guild {guild.id}: {e}", flush=True)
         print(f"Instantly synced commands to {instant_count}/{len(bot.guilds)} server(s)", flush=True)
+
+        # On ne garde JAMAIS de commandes globales en parallèle : ça créait
+        # un doublon de chaque commande (une copie globale + une copie par
+        # serveur). On vide le bucket global et on pousse la liste vide à
+        # Discord pour effacer les anciennes commandes globales déjà enregistrées.
+        bot.tree.clear_commands(guild=None)
+        await bot.tree.sync()
+        print("Cleared global commands — running per-server only from now on", flush=True)
     except Exception as e:
         print(f"Sync error: {e}", flush=True)
     print(f"{bot.user} is online!", flush=True)
@@ -687,7 +701,11 @@ async def on_guild_join(guild: discord.Guild):
     """Quand le bot rejoint un nouveau serveur : crée sa config par défaut et prévient le owner."""
     get_config(guild.id)  # crée le document de config par défaut pour ce serveur
     try:
-        bot.tree.copy_global_to(guild=guild)
+        # Le bucket global est vidé après le démarrage (voir on_ready), donc
+        # copy_global_to n'aurait plus rien à copier ici — on repart du
+        # snapshot pris juste avant ce nettoyage.
+        for cmd in _cached_global_commands:
+            bot.tree.add_command(cmd, guild=guild, override=True)
         await bot.tree.sync(guild=guild)
     except Exception as e:
         print(f"[SYNC] Failed to instantly sync new guild {guild.id}: {e}", flush=True)
