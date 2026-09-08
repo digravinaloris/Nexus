@@ -642,12 +642,18 @@ async def check_access(interaction: discord.Interaction, command_name: str, nati
 @bot.event
 async def on_ready():
     init_mongo()
-    if not hasattr(bot, "start_time"):
-        bot.start_time = datetime.datetime.now(datetime.timezone.utc)
     try:
-        await bot.tree.sync()
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} commands")
+        print(f"Synced {len(synced)} global commands (can take up to 1h to show up everywhere)")
+        dev_guild_id = os.getenv("DEV_GUILD_ID")
+        if dev_guild_id:
+            # Sync instantanée sur un serveur de test/dev, en plus de la sync
+            # globale (qui reste lente à se propager) — pratique pour voir
+            # les nouvelles commandes tout de suite pendant le développement.
+            dev_guild = discord.Object(id=int(dev_guild_id))
+            bot.tree.copy_global_to(guild=dev_guild)
+            dev_synced = await bot.tree.sync(guild=dev_guild)
+            print(f"Synced {len(dev_synced)} commands instantly to dev guild {dev_guild_id}")
     except Exception as e:
         print(f"Sync error: {e}")
     print(f"{bot.user} is online!")
@@ -5308,8 +5314,8 @@ STATUS_PAGE_TEMPLATE = BASE_STYLE + """
 </div>
 """
 
-def _format_uptime(delta):
-    total_seconds = int(delta.total_seconds())
+def _format_uptime(total_seconds):
+    total_seconds = int(total_seconds)
     days, rem = divmod(total_seconds, 86400)
     hours, rem = divmod(rem, 3600)
     minutes, _ = divmod(rem, 60)
@@ -5325,7 +5331,7 @@ def public_status_page():
     online = bot.is_ready()
     if not online:
         return render_template_string(STATUS_PAGE_TEMPLATE, online=False), 503
-    uptime = _format_uptime(datetime.datetime.now(datetime.timezone.utc) - bot.start_time) if hasattr(bot, "start_time") else "unknown"
+    uptime = _format_uptime(time.time() - bot.start_time) if hasattr(bot, "start_time") else "unknown"
     return render_template_string(
         STATUS_PAGE_TEMPLATE,
         online=True,
