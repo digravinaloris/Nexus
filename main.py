@@ -592,6 +592,10 @@ API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à défini
 def has_admin():
     """Decorator: réservé aux membres avec la permission Discord Administrator."""
     async def predicate(interaction: discord.Interaction):
+        if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+            embed = discord.Embed(description="❌ This command can only be used in a server.", color=0xff0000)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
         if not interaction.user.guild_permissions.administrator:
             embed = discord.Embed(description="❌ You need Administrator permission to use this command.", color=0xff0000)
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -602,6 +606,10 @@ def has_admin():
 def has_owner():
     """Decorator: réservé au owner du serveur (interaction.guild.owner_id), même les admins ne passent pas."""
     async def predicate(interaction: discord.Interaction):
+        if interaction.guild is None:
+            embed = discord.Embed(description="❌ This command can only be used in a server.", color=0xff0000)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
         if interaction.user.id != interaction.guild.owner_id:
             embed = discord.Embed(description="❌ Only the server owner can use this command.", color=0xff0000)
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -616,6 +624,10 @@ async def check_access(interaction: discord.Interaction, command_name: str, nati
     - Si des rôles ont été configurés pour cette commande via /config allow, seuls ces rôles (ou un admin) peuvent l'utiliser.
     - Sinon, retombe sur la permission Discord native fournie (ou ouvert à tous si aucune n'est fournie).
     """
+    if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+        embed = discord.Embed(description="❌ This command can only be used in a server.", color=0xff0000)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return False
     if interaction.guild_id in bot.locked_guilds and not interaction.user.guild_permissions.administrator:
         embed = discord.Embed(description="🔒 The bot is currently locked on this server.", color=0xff0000)
         await interaction.response.send_message(embed=embed)
@@ -1929,7 +1941,7 @@ async def backup_list(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@backup_group.command(name="restore", description="Restore roles/channels from a backup — server owner only. Only creates what's missing, never deletes.")
+@backup_group.command(name="restore", description="Restore missing roles/channels from a backup — owner only. Never deletes anything.")
 @app_commands.describe(backup_id="The backup ID from /backup list", confirm="Set to true to actually run the restore")
 @has_owner()
 async def backup_restore(interaction: discord.Interaction, backup_id: str, confirm: bool = False):
