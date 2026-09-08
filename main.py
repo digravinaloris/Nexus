@@ -644,7 +644,7 @@ async def on_ready():
     init_mongo()
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} global commands (can take up to 1h to show up everywhere)")
+        print(f"Synced {len(synced)} global commands (can take up to 1h to show up everywhere)", flush=True)
         # Sync instantanée sur CHAQUE serveur où le bot est déjà présent —
         # plus besoin d'attendre la propagation globale de Discord pour voir
         # les nouvelles commandes, sur aucun de tes serveurs.
@@ -656,10 +656,10 @@ async def on_ready():
                 instant_count += 1
             except Exception as e:
                 print(f"[SYNC] Failed to instantly sync guild {guild.id}: {e}", flush=True)
-        print(f"Instantly synced commands to {instant_count}/{len(bot.guilds)} server(s)")
+        print(f"Instantly synced commands to {instant_count}/{len(bot.guilds)} server(s)", flush=True)
     except Exception as e:
-        print(f"Sync error: {e}")
-    print(f"{bot.user} is online!")
+        print(f"Sync error: {e}", flush=True)
+    print(f"{bot.user} is online!", flush=True)
     if not getattr(bot, "_nexus_persistent_views_added", False):
         bot.add_view(TicketPanelView())
         bot.add_view(TicketCloseView())
@@ -697,7 +697,7 @@ async def on_guild_join(guild: discord.Guild):
         )
         await owner.send(embed=embed)
     except Exception as e:
-        print(f"on_guild_join welcome DM failed: {e}")
+        print(f"on_guild_join welcome DM failed: {e}", flush=True)
 
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
@@ -710,9 +710,9 @@ async def on_guild_remove(guild: discord.Guild):
         sanctions_col.delete_many({"guild_id": guild_id})
         reaction_roles_col.delete_many({"guild_id": guild_id})
         notes_col.delete_many({"guild_id": guild_id})
-        print(f"Cleaned up data for removed guild {guild_id}")
+        print(f"Cleaned up data for removed guild {guild_id}", flush=True)
     except Exception as e:
-        print(f"on_guild_remove cleanup failed: {e}")
+        print(f"on_guild_remove cleanup failed: {e}", flush=True)
 
 # /ban
 @bot.tree.command(name="ban", description="Ban a member")
@@ -1032,7 +1032,7 @@ async def vlock(interaction: discord.Interaction, channel: discord.VoiceChannel 
             await member.move_to(None)
             disconnected.append(member)
         except Exception as e:
-            print(f"Failed to disconnect {member} from voice channel: {e}")
+            print(f"Failed to disconnect {member} from voice channel: {e}", flush=True)
 
     embed = discord.Embed(title="🔒 Voice Channel Locked", color=0xff0000)
     embed.add_field(name="Channel", value=channel.mention, inline=True)
@@ -2060,10 +2060,10 @@ async def tempban_check_loop():
                                 embed.add_field(name="User", value=f"**{user}**", inline=True)
                                 await log_ch.send(embed=embed)
                         except Exception as e:
-                            print(f"Tempban unban error: {e}")
+                            print(f"Tempban unban error: {e}", flush=True)
                             remove_tempban(doc["guild_id"], doc["user_id"])
         except Exception as e:
-            print(f"Tempban loop error: {e}")
+            print(f"Tempban loop error: {e}", flush=True)
         await asyncio.sleep(60)
 
 
@@ -2414,7 +2414,7 @@ class ApplicationModal(discord.ui.Modal):
         try:
             await owner.send(embed=embed, view=view)
         except Exception as e:
-            print(f"Apply DM error: {e}")
+            print(f"Apply DM error: {e}", flush=True)
 
 
 class SatisfactionSurveyView(discord.ui.View):
@@ -2690,10 +2690,10 @@ async def apply(interaction: discord.Interaction, role: discord.Role):
 import imageio_ffmpeg
 try:
     FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
-    print(f"[FFMPEG] Using imageio-ffmpeg binary at: {FFMPEG_PATH}")
-    print(f"[FFMPEG] File exists: {os.path.isfile(FFMPEG_PATH)}, executable: {os.access(FFMPEG_PATH, os.X_OK)}")
+    print(f"[FFMPEG] Using imageio-ffmpeg binary at: {FFMPEG_PATH}", flush=True)
+    print(f"[FFMPEG] File exists: {os.path.isfile(FFMPEG_PATH)}, executable: {os.access(FFMPEG_PATH, os.X_OK)}", flush=True)
 except Exception as e:
-    print(f"[FFMPEG] imageio_ffmpeg failed to provide a binary, falling back to system ffmpeg: {e}")
+    print(f"[FFMPEG] imageio_ffmpeg failed to provide a binary, falling back to system ffmpeg: {e}", flush=True)
     FFMPEG_PATH = "ffmpeg"
 
 # Cookies YouTube : Render bloque souvent les requêtes anonymes ("Sign in to confirm you're not a bot").
@@ -2861,20 +2861,20 @@ async def play_next(guild_id):
             "before_options": FFMPEG_OPTIONS_TEMPLATE["before_options"],
             "options": FFMPEG_OPTIONS_TEMPLATE["options"].format(volume=state.volume),
         }
-        print(f"[FFMPEG] Launching with executable={FFMPEG_PATH}, file={track.filepath}")
-        print(f"[FFMPEG] File exists: {os.path.isfile(track.filepath)}")
+        print(f"[FFMPEG] Launching with executable={FFMPEG_PATH}, file={track.filepath}", flush=True)
+        print(f"[FFMPEG] File exists: {os.path.isfile(track.filepath)}", flush=True)
         try:
             source = discord.FFmpegPCMAudio(
                 track.filepath, executable=FFMPEG_PATH, stderr=sys.stdout, **ffmpeg_options
             )
         except Exception as e:
-            print(f"[FFMPEG] Failed to start FFmpeg process: {e}")
+            print(f"[FFMPEG] Failed to start FFmpeg process: {e}", flush=True)
             state.current = None
             return
 
         def after_play(error):
             if error:
-                print(f"Player error: {error}")
+                print(f"Player error: {error}", flush=True)
             # Nettoie le fichier mp3 seulement s'il n'est pas remis en queue (cas /volume qui relance le morceau courant)
             still_queued = state.queue and state.queue[0] is track
             if not still_queued:
@@ -2882,12 +2882,12 @@ async def play_next(guild_id):
                     if os.path.isfile(track.filepath):
                         os.remove(track.filepath)
                 except Exception as cleanup_error:
-                    print(f"Cleanup error: {cleanup_error}")
+                    print(f"Cleanup error: {cleanup_error}", flush=True)
             fut = asyncio.run_coroutine_threadsafe(play_next(guild_id), bot.loop)
             try:
                 fut.result()
             except Exception as e:
-                print(f"after_play error: {e}")
+                print(f"after_play error: {e}", flush=True)
 
         state.voice_client.play(source, after=after_play)
 
@@ -2953,10 +2953,10 @@ async def play_autocomplete(interaction: discord.Interaction, current: str):
             # Discord coupe la connexion après ~3s ; on se laisse une marge pour répondre à temps
             entries = await asyncio.wait_for(search_youtube(current, max_results=5), timeout=2.5)
         except asyncio.TimeoutError:
-            print(f"autocomplete search timeout for query: {current}")
+            print(f"autocomplete search timeout for query: {current}", flush=True)
             return []
         except Exception as e:
-            print(f"autocomplete search error: {e}")
+            print(f"autocomplete search error: {e}", flush=True)
             return []
         _autocomplete_cache[cache_key] = (now, entries)
 
@@ -3000,7 +3000,7 @@ async def play(interaction: discord.Interaction, query: str):
             color=0xff0000,
         )
         await interaction.followup.send(embed=embed)
-        print(f"resolve_query error: {e}")
+        print(f"resolve_query error: {e}", flush=True)
         return
 
     await queue_and_play(interaction, state, track)
@@ -3061,7 +3061,7 @@ class SearchResultSelect(discord.ui.Select):
                 color=0xff0000,
             )
             await interaction.followup.send(embed=embed)
-            print(f"resolve_query error (search select): {e}")
+            print(f"resolve_query error (search select): {e}", flush=True)
             return
 
         await queue_and_play(interaction, state, track)
@@ -3092,7 +3092,7 @@ async def search(interaction: discord.Interaction, query: str):
     except Exception as e:
         embed = discord.Embed(description="❌ Search failed, try again.", color=0xff0000)
         await interaction.followup.send(embed=embed)
-        print(f"search_youtube error: {e}")
+        print(f"search_youtube error: {e}", flush=True)
         return
 
     if not results:
@@ -3186,7 +3186,7 @@ async def stop(interaction: discord.Interaction):
             if os.path.isfile(queued_track.filepath):
                 os.remove(queued_track.filepath)
         except Exception as e:
-            print(f"Cleanup error on stop: {e}")
+            print(f"Cleanup error on stop: {e}", flush=True)
     state.queue.clear()
     state.current = None
     if state.voice_client:
@@ -3390,7 +3390,7 @@ async def apply_automod_action(message, violation_type, reason):
     try:
         await message.delete()
     except Exception as e:
-        print(f"AutoMod: failed to delete message: {e}")
+        print(f"AutoMod: failed to delete message: {e}", flush=True)
 
     count = get_warns(message.guild.id, message.author.id) + 1
     set_warns(message.guild.id, message.author.id, count)
@@ -3405,7 +3405,7 @@ async def apply_automod_action(message, violation_type, reason):
         await asyncio.sleep(5)
         await warning_msg.delete()
     except Exception as e:
-        print(f"AutoMod: failed to send/delete warning message: {e}")
+        print(f"AutoMod: failed to send/delete warning message: {e}", flush=True)
 
     cfg = get_config(message.guild.id)
     log_channel = discord.utils.get(message.guild.text_channels, name=cfg.get("logs_channel", "logs"))
@@ -3508,7 +3508,7 @@ async def on_member_join(member):
             owner = member.guild.owner or await member.guild.fetch_owner()
             await owner.send(embed=alert)
         except Exception as e:
-            print(f"Anti-raid owner DM failed: {e}")
+            print(f"Anti-raid owner DM failed: {e}", flush=True)
 
 @bot.event
 async def on_member_remove(member):
@@ -3637,7 +3637,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         try:
             await payload.member.add_roles(role, reason="Reaction role")
         except Exception as e:
-            print(f"Reaction role add error: {e}")
+            print(f"Reaction role add error: {e}", flush=True)
 
 
 @bot.event
@@ -3659,7 +3659,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
         try:
             await member.remove_roles(role, reason="Reaction role removed")
         except Exception as e:
-            print(f"Reaction role remove error: {e}")
+            print(f"Reaction role remove error: {e}", flush=True)
 
 
 # ============================================================
