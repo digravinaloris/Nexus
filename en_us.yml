@@ -60,3 +60,25 @@ label_log_dashboard: Log dashboard actions to the logs channel
 panel_audit_title: Audit log
 panel_audit_desc: Recent changes made from this dashboard, with who did what and when.
 audit_empty: No changes recorded yet.
+panel_onboarding_title: Setup checklist
+panel_onboarding_desc: Things you haven't configured yet.
+panel_tickets_title: Open tickets
+panel_tickets_desc: Tickets currently open on this server.
+no_open_tickets: No open tickets right now.
+btn_open_link: Open
+onboard_logs: Logs channel isn't set up
+onboard_autorole: No auto-role configured
+onboard_tickets: Ticket system isn't enabled
+onboard_appeals: Sanction appeals aren't enabled
+onboard_antinuke: Anti-nuke protection is off
+nav_cases: View all cases
+nav_appeals: Review appeals
+cases_title: Case browser
+cases_filter_type: Filter by type
+cases_empty: No cases recorded yet.
+appeals_title: Pending appeals
+appeals_empty: No pending appeals right now.
+appeals_original_reason: Original reason
+appeals_appeal_text: Their appeal
+btn_accept: Accept
+btn_deny: Deny

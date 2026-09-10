@@ -54,6 +54,19 @@ All notable changes to Nexus are documented here.
 - **Anti-nuke** (opt-in via `/config antinuke`) — watches Discord's own audit log for a burst of destructive actions (bans, kicks, channel/role deletions) by the same person within 60 seconds; strips their roles and locks the bot on that server, then DMs the owner with what happened
 - **Server backups** — `/backup create` snapshots roles, channels, and role-based permissions; `/backup list` shows saved backups; `/backup restore` re-creates whatever's missing (matched by name), never deleting or overwriting anything
 - **Weekly digest** (opt-in via `/config digest`) — a DM to the server owner roughly every 7 days with member count and a breakdown of moderation actions taken that week
+- **Sanction appeals for every sanction type** (not just bans) — `ban`, `kick`, `mute`, `warn`, `tempban`, and `softban` now DM the sanctioned person a case number and, if appeals are enabled, an in-Discord **Appeal this** button that opens a form and submits directly (no website needed); `/appeal accept` now reverses the specific sanction type automatically where possible (unban, remove timeout, remove a warning)
+- `/case edit` — correct the reason on an existing case after the fact
+- `/clear` now requires the number of messages explicitly, no more accidental default
+- **Invite tracking** — `/invites leaderboard` and `/invites who <member>` show who invited whom
+- `/export sanctions` / `/export audit` — download a server's moderation history or dashboard audit log as a CSV file
+- A small 2-second cooldown between commands per person, to prevent accidental spam
+- **Account age gate** — `/config accountage` auto-kicks (with a DM explaining why) accounts younger than a configurable number of days
+- **Blocked domains list** — `/config domains add/remove/list`, checked against links in messages the same way the banned words list is
+- Dashboard: a case browser page, filterable by sanction type
+- Dashboard: an appeals review page — accept or deny sanction appeals from the browser instead of only Discord commands
+- Dashboard: an onboarding checklist showing what isn't configured yet
+- Dashboard: the audit log panel is now a real multi-admin activity feed — it merges dashboard changes with sanctions issued through commands (bans, kicks, etc.), not just web actions
+- Dashboard: an "open tickets" panel listing currently open ticket channels with direct links
 
 ### Changed
 - Warnings are now scoped per server (previously shared across all servers a user was in)
@@ -91,3 +104,4 @@ All notable changes to Nexus are documented here.
 - Ticket and template systems restrict structural changes (`/config ticket setup`, `/config template set`) to the server owner
 - Global kill-switch requires two independent factors (a single-use emailed link + a TOTP code) and is enforced through one central command check rather than scattered per-command guards
 - See `SECURITY.md` for the full security policy and how to report a vulnerability
+

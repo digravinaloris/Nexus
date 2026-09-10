@@ -60,3 +60,25 @@ label_log_dashboard: Journaliser les actions du dashboard dans le salon de logs
 panel_audit_title: Journal d'audit
 panel_audit_desc: Changements récents effectués depuis ce dashboard, avec qui a fait quoi et quand.
 audit_empty: Aucun changement enregistré pour l'instant.
+panel_onboarding_title: Liste de configuration
+panel_onboarding_desc: Ce qui n'est pas encore configuré.
+panel_tickets_title: Tickets ouverts
+panel_tickets_desc: Tickets actuellement ouverts sur ce serveur.
+no_open_tickets: Aucun ticket ouvert pour l'instant.
+btn_open_link: Ouvrir
+onboard_logs: Le salon de logs n'est pas configuré
+onboard_autorole: Aucun rôle automatique configuré
+onboard_tickets: Le système de tickets n'est pas activé
+onboard_appeals: Les appels de sanction ne sont pas activés
+onboard_antinuke: La protection anti-nuke est désactivée
+nav_cases: Voir tous les cas
+nav_appeals: Revoir les appels
+cases_title: Navigateur de cas
+cases_filter_type: Filtrer par type
+cases_empty: Aucun cas enregistré pour l'instant.
+appeals_title: Appels en attente
+appeals_empty: Aucun appel en attente pour l'instant.
+appeals_original_reason: Raison d'origine
+appeals_appeal_text: Leur appel
+btn_accept: Accepter
+btn_deny: Refuser

@@ -17,6 +17,8 @@ import yt_dlp
 import re
 import secrets
 import subprocess
+import csv
+import io
 import sys
 
 # MongoDB setup
@@ -35,9 +37,10 @@ case_counters_col = None
 sticky_messages_col = None
 ban_appeals_col = None
 server_backups_col = None
+invite_uses_col = None
 
 def init_mongo():
-    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col
+    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col, invite_uses_col
     mongo = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
     db = mongo["discordbot"]
     warns_col = db["warns"]
@@ -53,6 +56,7 @@ def init_mongo():
     sticky_messages_col = db["sticky_messages"]
     ban_appeals_col = db["ban_appeals"]
     server_backups_col = db["server_backups"]
+    invite_uses_col = db["invite_uses"]
 
 def record_audit(guild_id, actor_id, actor_name, action, details=""):
     """Trace de chaque changement de config (dashboard ou commande) pour
@@ -71,11 +75,46 @@ def record_audit(guild_id, actor_id, actor_name, action, details=""):
         print(f"[AUDIT] Failed to record audit entry: {e}", flush=True)
 
 def get_audit_log(guild_id, limit=20):
+    """Fil d'activité multi-source : fusionne les changements faits depuis
+    le dashboard (audit_col) et les sanctions prises via les commandes
+    (sanctions_col), triés chronologiquement — une vraie vue multi-admin,
+    pas juste les actions web."""
+    entries = []
     try:
-        return list(audit_col.find({"guild_id": str(guild_id)}).sort("timestamp", -1).limit(limit))
+        entries.extend(audit_col.find({"guild_id": str(guild_id)}).sort("timestamp", -1).limit(limit))
     except Exception as e:
         print(f"[AUDIT] Failed to fetch audit log: {e}", flush=True)
-        return []
+
+    try:
+        for doc in sanctions_col.find({"guild_id": str(guild_id)}).sort("timestamp", -1).limit(limit):
+            mod_id = doc.get("moderator_id", "")
+            if mod_id == "mobile_app":
+                actor_name = "📱 Mobile App"
+            elif mod_id == "automod":
+                actor_name = "🤖 AutoMod"
+            else:
+                try:
+                    cached_user = bot.get_user(int(mod_id))
+                    actor_name = str(cached_user) if cached_user else f"Moderator {mod_id}"
+                except (ValueError, TypeError):
+                    actor_name = f"Moderator {mod_id}"
+            entries.append({
+                "actor_name": actor_name,
+                "action": f"{doc.get('type', 'sanction').replace('_', ' ').title()} (case #{doc.get('case_id', '?')})",
+                "details": doc.get("reason", ""),
+                "timestamp": doc["timestamp"],
+            })
+    except Exception as e:
+        print(f"[AUDIT] Failed to fetch sanctions for activity feed: {e}", flush=True)
+
+    def _sort_key(entry):
+        ts = entry["timestamp"]
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=datetime.timezone.utc)
+        return ts
+
+    entries.sort(key=_sort_key, reverse=True)
+    return entries[:limit]
 
 def get_config(guild_id):
     doc = config_col.find_one({"guild_id": str(guild_id)})
@@ -102,6 +141,8 @@ def get_config(guild_id):
             "weekly_digest_enabled": False,
             "last_digest_sent_at": None,
             "member_count_channel_id": None,
+            "min_account_age_days": 0,
+            "banned_domains": [],
         }
         config_col.insert_one(doc)
     return doc
@@ -189,14 +230,15 @@ def get_case(guild_id, case_id):
     return sanctions_col.find_one({"guild_id": str(guild_id), "case_id": case_id})
 
 
-def create_ban_appeal(guild_id, case_id, user_id, user_name, ban_reason, token):
+def create_sanction_appeal(guild_id, case_id, sanction_type, user_id, user_name, reason, token):
     ban_appeals_col.insert_one({
         "token": token,
         "guild_id": str(guild_id),
         "case_id": case_id,
+        "sanction_type": sanction_type,
         "user_id": str(user_id),
         "user_name": user_name,
-        "ban_reason": ban_reason,
+        "ban_reason": reason,  # nom de champ conservé pour compat avec les anciens enregistrements
         "status": "pending",  # pending -> submitted -> accepted / denied
         "appeal_text": None,
         "created_at": datetime.datetime.now(datetime.timezone.utc),
@@ -217,12 +259,72 @@ async def post_appeal_for_review(guild, appeal, appeal_text):
     channel = guild.get_channel(int(channel_id)) if channel_id else None
     if channel is None:
         return
-    embed = discord.Embed(title=f"📨 Ban Appeal — Case #{appeal['case_id']}", color=0xffb84d)
+    sanction_type = appeal.get("sanction_type", "ban")
+    icon = SANCTION_ICONS.get(sanction_type, "📨")
+    embed = discord.Embed(title=f"{icon} Appeal — Case #{appeal['case_id']} ({sanction_type})", color=0xffb84d)
     embed.add_field(name="User", value=f"{appeal['user_name']} ({appeal['user_id']})", inline=False)
-    embed.add_field(name="Original ban reason", value=appeal["ban_reason"][:1000] or "No reason provided", inline=False)
+    embed.add_field(name="Original reason", value=appeal["ban_reason"][:1000] or "No reason provided", inline=False)
     embed.add_field(name="Appeal", value=appeal_text[:1000], inline=False)
     embed.set_footer(text=f"Review with: /appeal accept case_id:{appeal['case_id']}  or  /appeal deny case_id:{appeal['case_id']}")
     await channel.send(embed=embed)
+
+
+async def reverse_sanction(guild, sanction_type, user_id):
+    """Tente d'annuler les effets d'une sanction acceptée en appel. Retourne
+    une courte description de ce qui a été fait (ou pas) pour informer le
+    staff, même quand aucune action automatique n'est possible."""
+    if sanction_type in ("ban", "tempban", "softban"):
+        try:
+            await guild.unban(discord.Object(id=int(user_id)), reason="Appeal accepted")
+            return "user unbanned"
+        except discord.HTTPException:
+            return "user was already not banned"
+    if sanction_type == "mute":
+        member = guild.get_member(int(user_id))
+        if member is not None and member.timed_out_until:
+            try:
+                await member.timeout(None, reason="Appeal accepted")
+                return "timeout removed"
+            except discord.HTTPException:
+                return "couldn't remove the timeout"
+        return "user isn't currently timed out"
+    if sanction_type == "warn":
+        count = get_warns(guild.id, user_id)
+        if count > 0:
+            set_warns(guild.id, user_id, count - 1)
+            return "one warning removed"
+        return "no warnings left to remove"
+    return "no automatic action for this sanction type — reviewed manually"
+
+
+async def send_sanction_dm(member_or_user, guild, sanction_type, reason):
+    """Envoie le DM de sanction avec, si un salon de revue d'appels est
+    configuré pour ce serveur, un bouton pour faire appel. Retourne
+    (dm_sent: bool, appeal_token: str|None) — le token doit être associé
+    au case_id via create_sanction_appeal() une fois celui-ci connu
+    (généralement juste après log_sanction())."""
+    cfg = get_config(guild.id)
+    appeals_configured = bool(cfg.get("appeal_channel_id"))
+    appeal_token = secrets.token_urlsafe(16) if appeals_configured else None
+
+    label = sanction_type.replace("_", " ")
+    message = f"You have received a **{label}** in **{guild.name}**.\nReason: {reason}"
+    view = None
+    if appeals_configured:
+        message += "\n\nIf you believe this is a mistake, you can appeal below."
+        view = discord.ui.View(timeout=None)
+        view.add_item(AppealButton(appeal_token))
+
+    dm_sent = True
+    try:
+        if view is not None:
+            await member_or_user.send(message, view=view)
+        else:
+            await member_or_user.send(message)
+    except discord.HTTPException:
+        dm_sent = False
+
+    return dm_sent, appeal_token
 
 
 def _serialize_overwrites(channel_or_category):
@@ -446,19 +548,38 @@ def set_global_lock(locked: bool):
     bot_state_col.update_one({"_id": "global"}, {"$set": {"locked": locked}}, upsert=True)
 
 
+_command_cooldowns = {}  # {user_id: last_invocation_timestamp}
+COMMAND_COOLDOWN_SECONDS = 2
+
+_invite_cache = {}  # {guild_id: {invite_code: uses}} — snapshot pour détecter quelle invite a servi à un join
+
+async def refresh_invite_cache(guild):
+    try:
+        invites = await guild.invites()
+        _invite_cache[guild.id] = {inv.code: (inv.uses or 0) for inv in invites}
+    except discord.HTTPException:
+        pass  # probablement pas la permission Manage Server
+
 async def global_interaction_check(interaction: discord.Interaction) -> bool:
     """Appliqué à TOUTES les commandes, sur TOUS les serveurs. Un seul
     point de contrôle, pour ne jamais risquer d'oublier une vérif
-    éparpillée dans chaque commande."""
-    if not get_global_lock():
-        return True
-    if await bot.is_owner(interaction.user):
-        return True
-    await interaction.response.send_message(
-        "🔒 Nexus is currently locked down by its owner. Please try again later.",
-        ephemeral=True,
-    )
-    return False
+    éparpillée dans chaque commande : lockdown global + cooldown anti-spam."""
+    if get_global_lock() and not await bot.is_owner(interaction.user):
+        await interaction.response.send_message(
+            "🔒 Nexus is currently locked down by its owner. Please try again later.",
+            ephemeral=True,
+        )
+        return False
+
+    now = time.time()
+    last = _command_cooldowns.get(interaction.user.id, 0)
+    if now - last < COMMAND_COOLDOWN_SECONDS:
+        await interaction.response.send_message(
+            "⏳ Slow down a little — wait a couple seconds between commands.", ephemeral=True
+        )
+        return False
+    _command_cooldowns[interaction.user.id] = now
+    return True
 
 bot.tree.interaction_check = global_interaction_check
 
@@ -690,11 +811,22 @@ async def on_ready():
         bot.add_view(TicketPanelView())
         bot.add_view(TicketCloseView())
         bot.add_view(SatisfactionSurveyView())
+        bot.add_dynamic_items(AppealButton)
         bot._nexus_persistent_views_added = True
     bot.loop.create_task(tempban_check_loop())
     bot.loop.create_task(member_count_loop())
     bot.loop.create_task(daily_killswitch_email_loop())
     bot.loop.create_task(weekly_digest_loop())
+    for guild in bot.guilds:
+        await refresh_invite_cache(guild)
+
+@bot.event
+async def on_invite_create(invite: discord.Invite):
+    await refresh_invite_cache(invite.guild)
+
+@bot.event
+async def on_invite_delete(invite: discord.Invite):
+    await refresh_invite_cache(invite.guild)
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
@@ -756,19 +888,7 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
     # Le DM doit partir AVANT le ban : une fois banni, le bot ne partage
     # plus de serveur avec la personne et ne peut généralement plus lui
     # écrire pour la première fois.
-    cfg = get_config(interaction.guild_id)
-    base_url = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
-    appeals_configured = bool(base_url and cfg.get("appeal_channel_id"))
-    appeal_token = secrets.token_urlsafe(16) if appeals_configured else None
-
-    dm_message = f"You have been banned from **{interaction.guild.name}**.\nReason: {reason}"
-    if appeals_configured:
-        dm_message += f"\n\nIf you believe this is a mistake, you can submit an appeal here:\n{base_url}/appeal/{appeal_token}"
-    dm_sent = True
-    try:
-        await member.send(dm_message)
-    except discord.HTTPException:
-        dm_sent = False
+    dm_sent, appeal_token = await send_sanction_dm(member, interaction.guild, "ban", reason)
 
     try:
         await member.ban(reason=reason)
@@ -778,8 +898,8 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
         return
 
     case_id = log_sanction(interaction.guild_id, member.id, "ban", reason, interaction.user.id)
-    if appeals_configured:
-        create_ban_appeal(interaction.guild_id, case_id, member.id, str(member), reason, appeal_token)
+    if appeal_token:
+        create_sanction_appeal(interaction.guild_id, case_id, "ban", member.id, str(member), reason, appeal_token)
 
     embed = discord.Embed(title="🔨 Member Banned", color=0xff0000)
     embed.add_field(name="Case", value=f"#{case_id}", inline=True)
@@ -799,18 +919,31 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
         embed = discord.Embed(description="❌ I can't kick this member, their role is too high.", color=0xff0000)
         await interaction.response.send_message(embed=embed)
         return
+
+    # Comme pour le ban : le DM doit partir avant, sinon le bot ne peut
+    # plus écrire à quelqu'un avec qui il ne partage plus de serveur.
+    dm_sent, appeal_token = await send_sanction_dm(member, interaction.guild, "kick", reason)
+
     try:
         await member.kick(reason=reason)
-        log_sanction(interaction.guild_id, member.id, "kick", reason, interaction.user.id)
-        embed = discord.Embed(title="👢 Member Kicked", color=0xff0000)
-        embed.add_field(name="User", value=f"**{member}**", inline=True)
-        embed.add_field(name="Kicked by", value=f"**{interaction.user.top_role.name}** · {interaction.user.name}", inline=True)
-        embed.add_field(name="Reason", value=reason, inline=False)
-        embed.set_thumbnail(url=member.display_avatar.url)
-        await interaction.response.send_message(embed=embed)
-    except:
+    except Exception:
         embed = discord.Embed(description="❌ I can't kick this member.", color=0xff0000)
         await interaction.response.send_message(embed=embed)
+        return
+
+    case_id = log_sanction(interaction.guild_id, member.id, "kick", reason, interaction.user.id)
+    if appeal_token:
+        create_sanction_appeal(interaction.guild_id, case_id, "kick", member.id, str(member), reason, appeal_token)
+
+    embed = discord.Embed(title="👢 Member Kicked", color=0xff0000)
+    embed.add_field(name="Case", value=f"#{case_id}", inline=True)
+    embed.add_field(name="User", value=f"**{member}**", inline=True)
+    embed.add_field(name="Kicked by", value=f"**{interaction.user.top_role.name}** · {interaction.user.name}", inline=True)
+    embed.add_field(name="Reason", value=reason, inline=False)
+    if not dm_sent:
+        embed.set_footer(text="Couldn't DM the user (DMs closed or the bot is blocked).")
+    embed.set_thumbnail(url=member.display_avatar.url)
+    await interaction.response.send_message(embed=embed)
 
 # /mute
 @bot.tree.command(name="mute", description="Timeout a member")
@@ -820,20 +953,31 @@ async def mute(interaction: discord.Interaction, member: discord.Member, minutes
         embed = discord.Embed(description="❌ I can't mute this member, their role is too high.", color=0xff6600)
         await interaction.response.send_message(embed=embed)
         return
+
+    dm_sent, appeal_token = await send_sanction_dm(member, interaction.guild, "mute", f"{reason} ({minutes} min)")
+
     try:
         duration = datetime.timedelta(minutes=minutes)
         await member.timeout(duration, reason=reason)
-        log_sanction(interaction.guild_id, member.id, "mute", f"{reason} ({minutes} min)", interaction.user.id)
-        embed = discord.Embed(title="🔇 Member Muted", color=0xff6600)
-        embed.add_field(name="User", value=f"**{member}**", inline=True)
-        embed.add_field(name="Muted by", value=f"**{interaction.user.top_role.name}** · {interaction.user.name}", inline=True)
-        embed.add_field(name="Duration", value=f"{minutes} minutes", inline=True)
-        embed.add_field(name="Reason", value=reason, inline=False)
-        embed.set_thumbnail(url=member.display_avatar.url)
-        await interaction.response.send_message(embed=embed)
-    except:
+    except Exception:
         embed = discord.Embed(description="❌ I can't mute this member.", color=0xff6600)
         await interaction.response.send_message(embed=embed)
+        return
+
+    case_id = log_sanction(interaction.guild_id, member.id, "mute", f"{reason} ({minutes} min)", interaction.user.id)
+    if appeal_token:
+        create_sanction_appeal(interaction.guild_id, case_id, "mute", member.id, str(member), f"{reason} ({minutes} min)", appeal_token)
+
+    embed = discord.Embed(title="🔇 Member Muted", color=0xff6600)
+    embed.add_field(name="Case", value=f"#{case_id}", inline=True)
+    embed.add_field(name="User", value=f"**{member}**", inline=True)
+    embed.add_field(name="Muted by", value=f"**{interaction.user.top_role.name}** · {interaction.user.name}", inline=True)
+    embed.add_field(name="Duration", value=f"{minutes} minutes", inline=True)
+    embed.add_field(name="Reason", value=reason, inline=False)
+    if not dm_sent:
+        embed.set_footer(text="Couldn't DM the user (DMs closed or the bot is blocked).")
+    embed.set_thumbnail(url=member.display_avatar.url)
+    await interaction.response.send_message(embed=embed)
 
 # /unmute
 @bot.tree.command(name="unmute", description="Remove timeout from a member")
@@ -875,14 +1019,20 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
         await interaction.response.send_message(embed=embed)
         return
     await interaction.response.defer()
+    dm_sent, appeal_token = await send_sanction_dm(member, interaction.guild, "warn", reason)
     count = get_warns(interaction.guild_id, member.id) + 1
     set_warns(interaction.guild_id, member.id, count)
-    log_sanction(interaction.guild_id, member.id, "warn", reason, interaction.user.id)
+    case_id = log_sanction(interaction.guild_id, member.id, "warn", reason, interaction.user.id)
+    if appeal_token:
+        create_sanction_appeal(interaction.guild_id, case_id, "warn", member.id, str(member), reason, appeal_token)
     embed = discord.Embed(title="⚠️ Member Warned", color=0xffcc00)
+    embed.add_field(name="Case", value=f"#{case_id}", inline=True)
     embed.add_field(name="User", value=f"**{member}**", inline=True)
     embed.add_field(name="Warned by", value=f"**{interaction.user.top_role.name}** · {interaction.user.name}", inline=True)
     embed.add_field(name="Reason", value=reason, inline=False)
     embed.add_field(name="Total Warnings", value=f"{count}", inline=True)
+    if not dm_sent:
+        embed.set_footer(text="Couldn't DM the user (DMs closed or the bot is blocked).")
     embed.set_thumbnail(url=member.display_avatar.url)
     await interaction.followup.send(embed=embed)
 
@@ -920,14 +1070,14 @@ async def warnings(interaction: discord.Interaction, member: discord.Member):
 # /clear
 @bot.tree.command(name="clear", description="Cleans messages from a channel")
 @app_commands.describe(
-    amount="Number of messages to scan",
+    amount="Number of messages to scan (required)",
     filter_by_user="Only delete messages from this user",
     filter_by_role="Only delete messages from members with this role",
     filter_by_bots="Only delete messages sent by bots",
 )
 async def clear(
     interaction: discord.Interaction,
-    amount: int = 10,
+    amount: int,
     filter_by_user: discord.Member = None,
     filter_by_role: discord.Role = None,
     filter_by_bots: bool = False,
@@ -1256,7 +1406,10 @@ async def history(interaction: discord.Interaction, member: discord.Member):
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="case", description="Look up a moderation case by its ID")
+case_group = app_commands.Group(name="case", description="View or edit moderation cases")
+
+
+@case_group.command(name="view", description="Look up a moderation case by its ID")
 @app_commands.describe(case_id="The case number shown when a sanction was issued")
 async def case_view(interaction: discord.Interaction, case_id: int):
     if not await check_access(interaction, "case", None): return
@@ -1285,13 +1438,45 @@ async def case_view(interaction: discord.Interaction, case_id: int):
         target_str = f"ID {case['user_id']}"
 
     icon = SANCTION_ICONS.get(case["type"], "•")
+    reason_value = case["reason"]
+    if case.get("edited"):
+        reason_value += f"\n*(edited by {case.get('edited_by_name', 'unknown')})*"
     embed = discord.Embed(title=f"{icon} Case #{case_id}", color=0x3399ff)
     embed.add_field(name="Type", value=case["type"].replace("_", " ").title(), inline=True)
     embed.add_field(name="User", value=target_str, inline=True)
     embed.add_field(name="Moderator", value=mod_str, inline=True)
-    embed.add_field(name="Reason", value=case["reason"], inline=False)
+    embed.add_field(name="Reason", value=reason_value, inline=False)
     embed.set_footer(text=case["timestamp"].strftime("%Y-%m-%d %H:%M UTC"))
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@case_group.command(name="edit", description="Edit the reason on an existing case — admin only")
+@app_commands.describe(case_id="The case number to edit", reason="The new reason")
+@has_admin()
+async def case_edit(interaction: discord.Interaction, case_id: int, reason: str):
+    case = get_case(interaction.guild_id, case_id)
+    if not case:
+        await interaction.response.send_message(f"❌ No case **#{case_id}** found on this server.", ephemeral=True)
+        return
+    old_reason = case["reason"]
+    sanctions_col.update_one(
+        {"guild_id": str(interaction.guild_id), "case_id": case_id},
+        {"$set": {
+            "reason": reason,
+            "edited": True,
+            "edited_by": str(interaction.user.id),
+            "edited_by_name": str(interaction.user),
+            "edited_at": datetime.datetime.now(datetime.timezone.utc),
+        }},
+    )
+    record_audit(
+        interaction.guild_id, interaction.user.id, str(interaction.user),
+        f"Edited case #{case_id}", f"Old reason: {old_reason} → New reason: {reason}",
+    )
+    await interaction.response.send_message(f"✅ Case **#{case_id}** updated with the new reason.", ephemeral=True)
+
+
+bot.tree.add_command(case_group)
 
 
 @bot.tree.command(name="note", description="Add an internal staff note on a member (not visible to them)")
@@ -1341,15 +1526,23 @@ async def softban(interaction: discord.Interaction, member: discord.Member, reas
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     delete_days = max(0, min(delete_days, 7))
+
+    dm_sent, appeal_token = await send_sanction_dm(member, interaction.guild, "softban", reason)
+
     try:
         await member.ban(reason=f"[Softban] {reason}", delete_message_days=delete_days)
         await interaction.guild.unban(member, reason="Softban — automatic unban")
-        log_sanction(interaction.guild_id, member.id, "softban", reason, interaction.user.id)
+        case_id = log_sanction(interaction.guild_id, member.id, "softban", reason, interaction.user.id)
+        if appeal_token:
+            create_sanction_appeal(interaction.guild_id, case_id, "softban", member.id, str(member), reason, appeal_token)
         embed = discord.Embed(title="🧹 Member Softbanned", color=0xff6600)
+        embed.add_field(name="Case", value=f"#{case_id}", inline=True)
         embed.add_field(name="User", value=f"**{member}**", inline=True)
         embed.add_field(name="By", value=f"**{interaction.user}**", inline=True)
         embed.add_field(name="Messages deleted", value=f"Last {delete_days} day(s)", inline=True)
         embed.add_field(name="Reason", value=reason, inline=False)
+        if not dm_sent:
+            embed.set_footer(text="Couldn't DM the user (DMs closed or the bot is blocked).")
         embed.set_thumbnail(url=member.display_avatar.url)
         await interaction.response.send_message(embed=embed)
     except Exception as e:
@@ -1600,23 +1793,31 @@ async def config_membercount(interaction: discord.Interaction, channel: discord.
     )
 
 
-@config_group.command(name="appeals", description="Set the channel where ban appeals are reviewed — admin only. Leave empty to disable appeals.")
+@config_group.command(name="accountage", description="Auto-kick new joins whose Discord account is younger than X days — admin only. 0 to disable.")
+@app_commands.describe(days="Minimum account age in days required to join (0 = disabled)")
+@has_admin()
+async def config_accountage(interaction: discord.Interaction, days: int):
+    days = max(0, min(days, 365))
+    update_config(interaction.guild_id, "min_account_age_days", days)
+    if days == 0:
+        await interaction.response.send_message("🛡️ Account age check disabled.", ephemeral=True)
+    else:
+        await interaction.response.send_message(
+            f"🛡️ Accounts younger than **{days} day(s)** will now be kicked automatically on join.", ephemeral=True
+        )
+
+
+@config_group.command(name="appeals", description="Set the channel where sanction appeals are reviewed — admin only. Leave empty to disable.")
 @app_commands.describe(channel="Channel where submitted ban appeals will be posted for staff review")
 @has_admin()
 async def config_appeals(interaction: discord.Interaction, channel: discord.TextChannel = None):
     if channel is None:
         update_config(interaction.guild_id, "appeal_channel_id", None)
-        await interaction.response.send_message("📨 Ban appeals disabled — future ban DMs won't include an appeal link.", ephemeral=True)
-        return
-    if not os.getenv("PUBLIC_BASE_URL"):
-        await interaction.response.send_message(
-            "⚠️ `PUBLIC_BASE_URL` isn't set on the bot's hosting — appeal links can't be built until it is. Ask whoever manages the deployment to set it.",
-            ephemeral=True,
-        )
+        await interaction.response.send_message("📨 Sanction appeals disabled — future sanction DMs won't include an appeal button.", ephemeral=True)
         return
     update_config(interaction.guild_id, "appeal_channel_id", channel.id)
     await interaction.response.send_message(
-        f"📨 Ban appeals will now be reviewed in {channel.mention}. Future ban DMs will include a link to appeal.",
+        f"📨 Sanction appeals will now be reviewed in {channel.mention}. Future sanction DMs will include an appeal button.",
         ephemeral=True,
     )
 
@@ -1831,6 +2032,56 @@ async def config_ticket_disable(interaction: discord.Interaction):
     await interaction.response.send_message("🎫 Ticket system disabled. Existing open tickets are unaffected.", ephemeral=True)
 
 
+# Liste noire de domaines/liens — /config domains add|remove|list
+domains_group = app_commands.Group(
+    name="domains",
+    description="Manage a blocked domains/links list for this server — admin only",
+    parent=config_group,
+)
+
+
+@domains_group.command(name="add", description="Block a domain (and its subdomains) — admin only")
+@app_commands.describe(domain="Domain to block, e.g. scam-site.com")
+@has_admin()
+async def config_domains_add(interaction: discord.Interaction, domain: str):
+    domain = domain.strip().lower().removeprefix("http://").removeprefix("https://").removeprefix("www.").split("/")[0]
+    if not domain:
+        await interaction.response.send_message("❌ Can't add an empty domain.", ephemeral=True)
+        return
+    cfg = get_config(interaction.guild_id)
+    banned = set(cfg.get("banned_domains", []))
+    banned.add(domain)
+    update_config(interaction.guild_id, "banned_domains", sorted(banned))
+    await interaction.response.send_message(f"🚫 Blocked **{domain}** (and its subdomains). {len(banned)} domain(s) total.", ephemeral=True)
+
+
+@domains_group.command(name="remove", description="Unblock a domain — admin only")
+@app_commands.describe(domain="Domain to unblock")
+@has_admin()
+async def config_domains_remove(interaction: discord.Interaction, domain: str):
+    domain = domain.strip().lower()
+    cfg = get_config(interaction.guild_id)
+    banned = set(cfg.get("banned_domains", []))
+    if domain not in banned:
+        await interaction.response.send_message(f"**{domain}** isn't in the list.", ephemeral=True)
+        return
+    banned.discard(domain)
+    update_config(interaction.guild_id, "banned_domains", sorted(banned))
+    await interaction.response.send_message(f"✅ Unblocked **{domain}**. {len(banned)} domain(s) remaining.", ephemeral=True)
+
+
+@domains_group.command(name="list", description="Show the current blocked domains list")
+@has_admin()
+async def config_domains_list(interaction: discord.Interaction):
+    cfg = get_config(interaction.guild_id)
+    banned = sorted(cfg.get("banned_domains", []))
+    if not banned:
+        await interaction.response.send_message("No domains blocked yet.", ephemeral=True)
+        return
+    embed = discord.Embed(title=f"🚫 Blocked Domains ({len(banned)})", description="\n".join(f"`{d}`" for d in banned)[:4000], color=0xff6600)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 bot.tree.add_command(config_group)
 
 
@@ -1871,7 +2122,7 @@ bot.tree.add_command(admin_group)
 
 
 # Revue des appels de ban : /appeal accept|deny — admin only
-appeal_group = app_commands.Group(name="appeal", description="Review ban appeals — admin only")
+appeal_group = app_commands.Group(name="appeal", description="Review sanction appeals — admin only")
 
 
 @appeal_group.command(name="accept", description="Accept a ban appeal and unban the user — admin only")
@@ -1885,22 +2136,21 @@ async def appeal_accept(interaction: discord.Interaction, case_id: int):
     if appeal["status"] != "submitted":
         await interaction.response.send_message(f"⚠️ This appeal is already **{appeal['status']}**.", ephemeral=True)
         return
-    try:
-        await interaction.guild.unban(discord.Object(id=int(appeal["user_id"])), reason=f"Ban appeal accepted by {interaction.user}")
-    except discord.HTTPException as e:
-        await interaction.response.send_message(f"❌ Couldn't unban: {e}", ephemeral=True)
-        return
+
+    sanction_type = appeal.get("sanction_type", "ban")
+    result = await reverse_sanction(interaction.guild, sanction_type, appeal["user_id"])
+
     ban_appeals_col.update_one(
         {"token": appeal["token"]},
         {"$set": {"status": "accepted", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}},
     )
-    record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), "Accepted ban appeal", f"Case #{case_id}")
+    record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), "Accepted appeal", f"Case #{case_id} ({sanction_type}) — {result}")
     try:
         user = await bot.fetch_user(int(appeal["user_id"]))
-        await user.send(f"✅ Your ban appeal for **{interaction.guild.name}** (case #{case_id}) was accepted. You've been unbanned.")
+        await user.send(f"✅ Your appeal for **{interaction.guild.name}** (case #{case_id}) was accepted — {result}.")
     except discord.HTTPException:
         pass
-    await interaction.response.send_message(f"✅ Case #{case_id} accepted — {appeal['user_name']} has been unbanned.", ephemeral=True)
+    await interaction.response.send_message(f"✅ Case #{case_id} accepted — {result}.", ephemeral=True)
 
 
 @appeal_group.command(name="deny", description="Deny a ban appeal — admin only")
@@ -1918,10 +2168,10 @@ async def appeal_deny(interaction: discord.Interaction, case_id: int, note: str 
         {"token": appeal["token"]},
         {"$set": {"status": "denied", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}},
     )
-    record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), "Denied ban appeal", f"Case #{case_id}" + (f" — {note}" if note else ""))
+    record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), "Denied appeal", f"Case #{case_id}" + (f" — {note}" if note else ""))
     try:
         user = await bot.fetch_user(int(appeal["user_id"]))
-        await user.send(f"❌ Your ban appeal for **{interaction.guild.name}** (case #{case_id}) was reviewed and denied.")
+        await user.send(f"❌ Your appeal for **{interaction.guild.name}** (case #{case_id}) was reviewed and denied.")
     except discord.HTTPException:
         pass
     await interaction.response.send_message(f"Case #{case_id} denied.", ephemeral=True)
@@ -1990,6 +2240,85 @@ async def backup_restore(interaction: discord.Interaction, backup_id: str, confi
 
 
 bot.tree.add_command(backup_group)
+
+
+invites_group = app_commands.Group(name="invites", description="Track who invited whom on this server")
+
+
+@invites_group.command(name="leaderboard", description="Show the top inviters on this server")
+async def invites_leaderboard(interaction: discord.Interaction):
+    pipeline = [
+        {"$match": {"guild_id": str(interaction.guild_id)}},
+        {"$group": {"_id": "$inviter_id", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10},
+    ]
+    results = list(invite_uses_col.aggregate(pipeline))
+    if not results:
+        await interaction.response.send_message("No tracked invites yet on this server.", ephemeral=True)
+        return
+    lines = []
+    for i, r in enumerate(results, start=1):
+        lines.append(f"**{i}.** <@{r['_id']}> — {r['count']} invite(s)")
+    embed = discord.Embed(title="🏆 Top Inviters", description="\n".join(lines), color=0x3399ff)
+    await interaction.response.send_message(embed=embed)
+
+
+@invites_group.command(name="who", description="Show who invited a specific member")
+@app_commands.describe(member="The member to check")
+async def invites_who(interaction: discord.Interaction, member: discord.Member):
+    record = invite_uses_col.find_one({"guild_id": str(interaction.guild_id), "invited_user_id": str(member.id)})
+    if not record:
+        await interaction.response.send_message(f"No invite record found for **{member}** (may have joined before tracking was enabled, or via a discoverable/vanity link).", ephemeral=True)
+        return
+    embed = discord.Embed(description=f"**{member}** was invited by <@{record['inviter_id']}> using code `{record['invite_code']}`.", color=0x3399ff)
+    await interaction.response.send_message(embed=embed)
+
+
+bot.tree.add_command(invites_group)
+
+
+export_group = app_commands.Group(name="export", description="Export server data as CSV — admin only")
+
+
+@export_group.command(name="sanctions", description="Export this server's moderation history as a CSV file — admin only")
+@has_admin()
+async def export_sanctions(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    records = list(sanctions_col.find({"guild_id": str(interaction.guild_id)}).sort("timestamp", -1))
+    if not records:
+        await interaction.followup.send("No sanctions to export.", ephemeral=True)
+        return
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["case_id", "type", "user_id", "moderator_id", "reason", "timestamp"])
+    for r in records:
+        writer.writerow([
+            r.get("case_id", ""), r.get("type", ""), r.get("user_id", ""),
+            r.get("moderator_id", ""), r.get("reason", ""), r.get("timestamp", ""),
+        ])
+    file = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename=f"sanctions_{interaction.guild_id}.csv")
+    await interaction.followup.send("📄 Here's the export:", file=file, ephemeral=True)
+
+
+@export_group.command(name="audit", description="Export this server's dashboard audit log as a CSV file — admin only")
+@has_admin()
+async def export_audit(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    records = list(audit_col.find({"guild_id": str(interaction.guild_id)}).sort("timestamp", -1))
+    if not records:
+        await interaction.followup.send("No audit entries to export.", ephemeral=True)
+        return
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["actor_name", "action", "details", "timestamp"])
+    for r in records:
+        writer.writerow([r.get("actor_name", ""), r.get("action", ""), r.get("details", ""), r.get("timestamp", "")])
+    file = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename=f"audit_{interaction.guild_id}.csv")
+    await interaction.followup.send("📄 Here's the export:", file=file, ephemeral=True)
+
+
+bot.tree.add_command(export_group)
 
 
 # Interrupteur unique pour toutes les fonctionnalités à bascule simple
@@ -2325,16 +2654,25 @@ async def tempban(interaction: discord.Interaction, member: discord.Member, dura
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     unban_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)
+    full_reason = f"[Tempban {duration}] {reason}"
+
+    dm_sent, appeal_token = await send_sanction_dm(member, interaction.guild, "tempban", full_reason)
+
     try:
-        await member.ban(reason=f"[Tempban {duration}] {reason}")
+        await member.ban(reason=full_reason)
         save_tempban(interaction.guild_id, member.id, unban_at)
-        log_sanction(interaction.guild_id, member.id, "ban", f"[Tempban {duration}] {reason}", interaction.user.id)
+        case_id = log_sanction(interaction.guild_id, member.id, "ban", full_reason, interaction.user.id)
+        if appeal_token:
+            create_sanction_appeal(interaction.guild_id, case_id, "tempban", member.id, str(member), full_reason, appeal_token)
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xff6600)
+        embed.add_field(name="Case", value=f"#{case_id}", inline=True)
         embed.add_field(name="User", value=f"**{member}**", inline=True)
         embed.add_field(name="Duration", value=duration, inline=True)
         embed.add_field(name="Unbanned at", value=unban_at.strftime("%Y-%m-%d %H:%M UTC"), inline=True)
         embed.add_field(name="Reason", value=reason, inline=False)
         embed.add_field(name="Banned by", value=f"**{interaction.user.top_role.name}** · {interaction.user.name}", inline=True)
+        if not dm_sent:
+            embed.set_footer(text="Couldn't DM the user (DMs closed or the bot is blocked).")
         embed.set_thumbnail(url=member.display_avatar.url)
         await interaction.response.send_message(embed=embed)
     except Exception as e:
@@ -2445,6 +2783,77 @@ class ApplicationModal(discord.ui.Modal):
             await owner.send(embed=embed, view=view)
         except Exception as e:
             print(f"Apply DM error: {e}", flush=True)
+
+
+class AppealModal(discord.ui.Modal, title="Submit your appeal"):
+    def __init__(self, token: str):
+        super().__init__()
+        self.token = token
+
+    reason = discord.ui.TextInput(
+        label="Why should this be reconsidered?",
+        style=discord.TextStyle.paragraph,
+        placeholder="Explain your side...",
+        max_length=1000,
+        required=True,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        appeal = get_ban_appeal(self.token)
+        if not appeal or appeal["status"] != "pending":
+            await interaction.response.send_message("This appeal is no longer available.", ephemeral=True)
+            return
+        ban_appeals_col.update_one(
+            {"token": self.token},
+            {"$set": {
+                "status": "submitted",
+                "appeal_text": self.reason.value,
+                "submitted_at": datetime.datetime.now(datetime.timezone.utc),
+            }},
+        )
+        guild = bot.get_guild(int(appeal["guild_id"]))
+        if guild:
+            await post_appeal_for_review(guild, appeal, self.reason.value)
+        await interaction.response.send_message(
+            "✅ Your appeal has been submitted. You'll get a DM once it's reviewed.", ephemeral=True
+        )
+
+
+class AppealButton(discord.ui.DynamicItem[discord.ui.Button], template=r"nexus_appeal:(?P<token>[a-zA-Z0-9_\-]+)"):
+    """Bouton persistant attaché au DM de sanction. Le token est encodé
+    directement dans le custom_id (via DynamicItem) pour survivre aux
+    redémarrages du bot sans avoir à tout garder en mémoire."""
+    def __init__(self, token: str):
+        super().__init__(
+            discord.ui.Button(
+                label="Appeal this",
+                style=discord.ButtonStyle.secondary,
+                emoji="📨",
+                custom_id=f"nexus_appeal:{token}",
+            )
+        )
+        self.token = token
+
+    @classmethod
+    async def from_custom_id(cls, interaction: discord.Interaction, item: discord.ui.Button, match: re.Match):
+        return cls(match["token"])
+
+    async def callback(self, interaction: discord.Interaction):
+        appeal = get_ban_appeal(self.token)
+        if not appeal:
+            await interaction.response.send_message("This appeal link is no longer valid.", ephemeral=True)
+            return
+        if appeal["status"] != "pending":
+            status_msgs = {
+                "submitted": "You've already submitted an appeal for this — it's awaiting review.",
+                "accepted": "This appeal was already accepted.",
+                "denied": "This appeal was already reviewed and denied.",
+            }
+            await interaction.response.send_message(
+                status_msgs.get(appeal["status"], "This appeal has already been processed."), ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(AppealModal(self.token))
 
 
 class SatisfactionSurveyView(discord.ui.View):
@@ -3414,6 +3823,21 @@ def check_banned_words(content, banned_words):
             return True
     return False
 
+URL_RE = re.compile(r"https?://([a-zA-Z0-9_\-\.]+)", re.IGNORECASE)
+
+def check_banned_domains(content, banned_domains):
+    """Extrait les domaines des liens présents dans le message et les compare
+    à la liste noire (avec sous-domaines : 'evil.com' bloque aussi 'sub.evil.com')."""
+    if not banned_domains:
+        return False
+    found_domains = {m.group(1).lower() for m in URL_RE.finditer(content)}
+    for domain in found_domains:
+        for banned in banned_domains:
+            banned = banned.lower()
+            if domain == banned or domain.endswith("." + banned):
+                return True
+    return False
+
 
 async def apply_automod_action(message, violation_type, reason):
     """Supprime le message, ajoute un avertissement, logue la sanction et notifie dans le channel + logs."""
@@ -3470,6 +3894,9 @@ async def on_message(message):
         if check_banned_words(message.content, cfg.get("banned_words", [])):
             await apply_automod_action(message, "automod_badword", "using a banned word")
             return
+        if check_banned_domains(message.content, cfg.get("banned_domains", [])):
+            await apply_automod_action(message, "automod_domain", "sharing a blocked link/domain")
+            return
 
     # Message épinglé (sticky) : republié en bas du salon après le passage
     # d'un cooldown, pour rester visible sans spammer à chaque message.
@@ -3505,6 +3932,59 @@ async def on_message(message):
 @bot.event
 async def on_member_join(member):
     cfg = get_config(member.guild.id)
+
+    # Vérification par âge de compte : kick automatique si le compte est
+    # trop récent (protection contre les raids par comptes fraîchement créés).
+    min_age_days = cfg.get("min_account_age_days", 0)
+    if min_age_days > 0:
+        account_age = datetime.datetime.now(datetime.timezone.utc) - member.created_at
+        if account_age.days < min_age_days:
+            try:
+                await member.send(
+                    f"Your account is too new to join **{member.guild.name}** right now "
+                    f"(minimum account age: {min_age_days} day(s)). Feel free to try again later."
+                )
+            except discord.HTTPException:
+                pass
+            try:
+                await member.kick(reason=f"Account age check: account is younger than {min_age_days} day(s)")
+                log_sanction(member.guild.id, member.id, "kick", f"Account too new (< {min_age_days}d)", "automod")
+                log_channel = discord.utils.get(member.guild.text_channels, name=cfg.get("logs_channel", "logs"))
+                if log_channel:
+                    embed = discord.Embed(
+                        title="🛡️ Account Age Check",
+                        description=f"**{member}** was kicked automatically — account created {account_age.days} day(s) ago (minimum: {min_age_days}).",
+                        color=0xff6600,
+                    )
+                    await log_channel.send(embed=embed)
+            except discord.HTTPException as e:
+                print(f"[ACCOUNTAGE] Failed to kick {member.id}: {e}", flush=True)
+            return  # pas la peine de continuer le reste de on_member_join pour un membre qu'on vient de kick
+
+    # Suivi des invitations : compare le cache d'avant à l'état actuel pour
+    # repérer quelle invite a vu son compteur augmenter.
+    inviter_id = None
+    invite_code_used = None
+    try:
+        before = _invite_cache.get(member.guild.id, {})
+        current_invites = await member.guild.invites()
+        for inv in current_invites:
+            if inv.uses and inv.uses > before.get(inv.code, 0):
+                inviter_id = inv.inviter.id if inv.inviter else None
+                invite_code_used = inv.code
+                break
+        _invite_cache[member.guild.id] = {inv.code: (inv.uses or 0) for inv in current_invites}
+        if inviter_id:
+            invite_uses_col.insert_one({
+                "guild_id": str(member.guild.id),
+                "inviter_id": str(inviter_id),
+                "invited_user_id": str(member.id),
+                "invite_code": invite_code_used,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            })
+    except discord.HTTPException:
+        pass  # probablement pas la permission Manage Server
+
     autorole_id = cfg.get("autorole")
     # On ne file pas l'autorole si le serveur est déjà verrouillé (raid en cours) :
     # pas de vérification anti-alt/anti-raid en amont, donc mieux vaut ne rien
@@ -3517,6 +3997,8 @@ async def on_member_join(member):
     if channel:
         embed = discord.Embed(title="✅ Member Joined", color=0x00cc00)
         embed.add_field(name="User", value=f"**{member}**", inline=True)
+        if inviter_id:
+            embed.add_field(name="Invited by", value=f"<@{inviter_id}> (`{invite_code_used}`)", inline=True)
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
 
@@ -4467,8 +4949,8 @@ BASE_STYLE = """
   }
   button:hover, .btn:hover { filter: brightness(1.1); }
   button:active, .btn:active { transform: scale(.97); }
-  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
-  button.ghost:hover { border-color: var(--raspberry); }
+  button.ghost, a.ghost.btn { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button.ghost:hover, a.ghost.btn:hover { border-color: var(--raspberry); }
   button.warn { background: var(--amber); }
   button.stop { background: var(--surface-3); color: var(--raspberry); border: 1px solid rgba(255,95,143,.4); }
 
@@ -4506,6 +4988,11 @@ BASE_STYLE = """
   .audit-entry { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; animation: popIn .2s ease both; }
   .audit-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
   .audit-action { font-size: 13px; color: var(--text); }
+  .onboarding-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+  .onboarding-list li { font-size: 13px; color: var(--muted); background: var(--surface-2); border-radius: 8px; padding: 8px 12px; }
+  .open-tickets-list { display: flex; flex-direction: column; gap: 8px; }
+  .open-ticket-row { display: flex; justify-content: space-between; align-items: center; background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+  .open-ticket-row a { color: var(--raspberry); }
 </style>
 <script>
   function toggleKey(btn) {
@@ -4636,7 +5123,24 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
     {% if is_owner %}<span class="pill"><span class="pip" style="background: var(--amber);"></span> {{ t('status_owner') }}</span>{% endif %}
   </div>
 
+  <div class="row" style="margin-top:16px;">
+    <a class="btn ghost" href="{{ url_for('dash_cases_page', guild_id=guild.id) }}">{{ t('nav_cases') }}</a>
+    <a class="btn ghost" href="{{ url_for('dash_appeals_page', guild_id=guild.id) }}">{{ t('nav_appeals') }}</a>
+  </div>
+
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  {% if onboarding_missing %}
+  <div class="panel" style="animation-delay:.01s">
+    <div class="panel-head"><h2>{{ t('panel_onboarding_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('panel_onboarding_desc') }}</div>
+    <ul class="onboarding-list">
+      {% for item in onboarding_missing %}
+      <li>⚪ {{ item }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
 
   <form method="POST" action="{{ url_for('dash_guild_page', guild_id=guild.id) }}">
     <div class="panel" style="animation-delay:.02s">
@@ -4818,6 +5322,23 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
     </form>
   </div>
 
+  <div class="panel" style="animation-delay:.21s">
+    <div class="panel-head"><h2>{{ t('panel_tickets_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('panel_tickets_desc') }}</div>
+    {% if open_tickets %}
+    <div class="open-tickets-list">
+      {% for ch in open_tickets %}
+      <div class="open-ticket-row">
+        <span>#{{ ch.name }}</span>
+        <a href="https://discord.com/channels/{{ guild.id }}/{{ ch.id }}" target="_blank">{{ t('btn_open_link') }} →</a>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-perms">{{ t('no_open_tickets') }}</div>
+    {% endif %}
+  </div>
+
   <div class="panel" style="animation-delay:.22s">
     <div class="panel-head"><h2>{{ t('panel_audit_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
     <div class="desc">{{ t('panel_audit_desc') }}</div>
@@ -4951,6 +5472,28 @@ def dash_guild_page(guild_id):
 
     is_owner = dash_is_owner(guild)
     role_names = {r.id: r.name for r in guild.roles}
+
+    # Checklist d'onboarding : ce qui n'est pas encore configuré.
+    onboarding_missing = []
+    if not discord.utils.get(guild.text_channels, name=cfg.get("logs_channel", "logs")):
+        onboarding_missing.append(t("onboard_logs"))
+    if not cfg.get("autorole"):
+        onboarding_missing.append(t("onboard_autorole"))
+    if not cfg.get("tickets_enabled"):
+        onboarding_missing.append(t("onboard_tickets"))
+    if not cfg.get("appeal_channel_id"):
+        onboarding_missing.append(t("onboard_appeals"))
+    if not cfg.get("antinuke_enabled"):
+        onboarding_missing.append(t("onboard_antinuke"))
+
+    # Tickets actuellement ouverts (dans la catégorie ticket, hors archive).
+    open_tickets = []
+    ticket_category_id = cfg.get("ticket_category_id")
+    if ticket_category_id:
+        category = guild.get_channel(int(ticket_category_id))
+        if isinstance(category, discord.CategoryChannel):
+            open_tickets = list(category.text_channels)
+
     return render_template_string(
         GUILD_PAGE_TEMPLATE,
         guild=guild,
@@ -4962,6 +5505,8 @@ def dash_guild_page(guild_id):
         templates=COMMAND_TEMPLATES,
         custom_templates=cfg.get("command_templates", {}),
         audit_entries=get_audit_log(guild_id) if is_owner else [],
+        onboarding_missing=onboarding_missing,
+        open_tickets=open_tickets,
         is_owner=is_owner,
         is_locked=guild.id in bot.locked_guilds,
         user=session.get("dash_user"),
@@ -5377,6 +5922,158 @@ def public_status_page():
         latency_ms=round(bot.latency * 1000) if bot.latency == bot.latency else "—",  # NaN check avant le premier heartbeat
         uptime=uptime,
     )
+
+
+# ============================================================
+# =============== CASES BROWSER (dashboard) ===================
+# ============================================================
+
+CASES_TEMPLATE = BASE_STYLE + TOPBAR + """
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
+  <h1>{{ t('cases_title') }}</h1>
+
+  <form method="GET" class="row" style="margin-top:20px;">
+    <div>
+      <label for="type">{{ t('cases_filter_type') }}</label>
+      <select name="type" id="type" onchange="this.form.submit()">
+        <option value="">{{ t('option_none') }}</option>
+        {% for tp in all_types %}
+        <option value="{{ tp }}" {% if tp == filter_type %}selected{% endif %}>{{ tp.replace('_',' ')|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+
+  {% if cases %}
+  <div class="audit-list" style="max-height:none;">
+    {% for c in cases %}
+    <div class="audit-entry">
+      <div class="audit-meta">#{{ c.case_id }} · {{ c.type.replace('_',' ')|title }} · {{ c.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}</div>
+      <div class="audit-action">User: {{ c.user_id }} — {{ c.reason }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="no-perms">{{ t('cases_empty') }}</div>
+  {% endif %}
+</div>
+"""
+
+
+@api.route("/dashboard/<guild_id>/cases", methods=["GET"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_cases_page(guild_id):
+    guild = bot.get_guild(int(guild_id))
+    filter_type = request.args.get("type", "")
+    query = {"guild_id": str(guild_id)}
+    if filter_type:
+        query["type"] = filter_type
+    cases = list(sanctions_col.find(query).sort("timestamp", -1).limit(200))
+    all_types = sanctions_col.distinct("type", {"guild_id": str(guild_id)})
+    return render_template_string(
+        CASES_TEMPLATE, guild=guild, cases=cases, all_types=all_types, filter_type=filter_type,
+        user=session.get("dash_user"),
+    )
+
+
+# ============================================================
+# ============== APPEALS REVIEW (dashboard) ====================
+# ============================================================
+
+APPEALS_REVIEW_TEMPLATE = BASE_STYLE + TOPBAR + """
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
+  <h1>{{ t('appeals_title') }}</h1>
+
+  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  {% if appeals %}
+  {% for a in appeals %}
+  <div class="panel">
+    <div class="panel-head"><h2>Case #{{ a.case_id }} — {{ a.sanction_type|default('ban') }}</h2></div>
+    <div class="desc">{{ a.user_name }} ({{ a.user_id }})</div>
+    <p class="lead" style="margin-top:10px;"><strong>{{ t('appeals_original_reason') }}:</strong> {{ a.ban_reason }}</p>
+    <p class="lead"><strong>{{ t('appeals_appeal_text') }}:</strong> {{ a.appeal_text }}</p>
+    <div class="row" style="margin-top:16px;">
+      <form method="POST" action="{{ url_for('dash_appeal_accept', guild_id=guild.id, token=a.token) }}">
+        <button type="submit">{{ t('btn_accept') }}</button>
+      </form>
+      <form method="POST" action="{{ url_for('dash_appeal_deny', guild_id=guild.id, token=a.token) }}">
+        <button type="submit" class="stop">{{ t('btn_deny') }}</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="no-perms">{{ t('appeals_empty') }}</div>
+  {% endif %}
+</div>
+"""
+
+
+@api.route("/dashboard/<guild_id>/appeals", methods=["GET"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_appeals_page(guild_id):
+    guild = bot.get_guild(int(guild_id))
+    appeals = list(ban_appeals_col.find({"guild_id": str(guild_id), "status": "submitted"}).sort("submitted_at", -1))
+    return render_template_string(APPEALS_REVIEW_TEMPLATE, guild=guild, appeals=appeals, user=session.get("dash_user"))
+
+
+@api.route("/dashboard/<guild_id>/appeals/<token>/accept", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_appeal_accept(guild_id, token):
+    guild = bot.get_guild(int(guild_id))
+    appeal = get_ban_appeal(token)
+    if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
+        flash("This appeal is no longer available.")
+        return redirect(url_for("dash_appeals_page", guild_id=guild_id))
+
+    sanction_type = appeal.get("sanction_type", "ban")
+    result = run_coroutine(reverse_sanction(guild, sanction_type, appeal["user_id"]))
+    ban_appeals_col.update_one({"token": token}, {"$set": {"status": "accepted", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
+    actor_id, actor_name = dash_actor()
+    record_audit(guild_id, actor_id, actor_name, "Accepted appeal (via dashboard)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
+    try:
+        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], True, result))
+    except Exception as e:
+        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
+    flash(f"Case #{appeal['case_id']} accepted — {result}.")
+    return redirect(url_for("dash_appeals_page", guild_id=guild_id))
+
+
+@api.route("/dashboard/<guild_id>/appeals/<token>/deny", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_appeal_deny(guild_id, token):
+    guild = bot.get_guild(int(guild_id))
+    appeal = get_ban_appeal(token)
+    if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
+        flash("This appeal is no longer available.")
+        return redirect(url_for("dash_appeals_page", guild_id=guild_id))
+
+    ban_appeals_col.update_one({"token": token}, {"$set": {"status": "denied", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
+    actor_id, actor_name = dash_actor()
+    record_audit(guild_id, actor_id, actor_name, "Denied appeal (via dashboard)", f"Case #{appeal['case_id']}")
+    try:
+        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], False, None))
+    except Exception as e:
+        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
+    flash(f"Case #{appeal['case_id']} denied.")
+    return redirect(url_for("dash_appeals_page", guild_id=guild_id))
+
+
+async def _dm_user_appeal_result(user_id, guild_name, case_id, accepted, result):
+    user = await bot.fetch_user(user_id)
+    if accepted:
+        await user.send(f"✅ Your appeal for **{guild_name}** (case #{case_id}) was accepted — {result}.")
+    else:
+        await user.send(f"❌ Your appeal for **{guild_name}** (case #{case_id}) was reviewed and denied.")
 
 
 def run_api():
