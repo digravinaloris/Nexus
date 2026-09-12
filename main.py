@@ -17,6 +17,7 @@ import yt_dlp
 import re
 import secrets
 import subprocess
+import signal
 import csv
 import io
 import sys
@@ -143,6 +144,15 @@ def get_config(guild_id):
             "member_count_channel_id": None,
             "min_account_age_days": 0,
             "banned_domains": [],
+            "automod_spam_count": 10,
+            "automod_spam_window": 5,
+            "automod_caps_ratio": 0.7,
+            "automod_raid_count": 5,
+            "automod_raid_window": 10,
+            "warn_escalation_enabled": False,
+            "warn_mute_threshold": 3,
+            "warn_mute_minutes": 10,
+            "warn_kick_threshold": 5,
         }
         config_col.insert_one(doc)
     return doc
@@ -1025,12 +1035,37 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
     case_id = log_sanction(interaction.guild_id, member.id, "warn", reason, interaction.user.id)
     if appeal_token:
         create_sanction_appeal(interaction.guild_id, case_id, "warn", member.id, str(member), reason, appeal_token)
+
+    # Escalade automatique : mute ou kick une fois certains seuils de warns atteints.
+    escalation_note = None
+    cfg = get_config(interaction.guild_id)
+    if cfg.get("warn_escalation_enabled"):
+        kick_at = cfg.get("warn_kick_threshold", 5)
+        mute_at = cfg.get("warn_mute_threshold", 3)
+        if count == kick_at:
+            try:
+                await member.kick(reason=f"Auto-escalation: reached {count} warnings")
+                log_sanction(interaction.guild_id, member.id, "kick", f"Auto-escalation at {count} warnings", "automod")
+                escalation_note = f"🚨 Auto-kicked — reached {count} warnings."
+            except discord.HTTPException:
+                pass
+        elif count == mute_at:
+            try:
+                minutes = cfg.get("warn_mute_minutes", 10)
+                await member.timeout(datetime.timedelta(minutes=minutes), reason=f"Auto-escalation: reached {count} warnings")
+                log_sanction(interaction.guild_id, member.id, "mute", f"Auto-escalation at {count} warnings ({minutes} min)", "automod")
+                escalation_note = f"🚨 Auto-muted for {minutes} min — reached {count} warnings."
+            except discord.HTTPException:
+                pass
+
     embed = discord.Embed(title="⚠️ Member Warned", color=0xffcc00)
     embed.add_field(name="Case", value=f"#{case_id}", inline=True)
     embed.add_field(name="User", value=f"**{member}**", inline=True)
     embed.add_field(name="Warned by", value=f"**{interaction.user.top_role.name}** · {interaction.user.name}", inline=True)
     embed.add_field(name="Reason", value=reason, inline=False)
     embed.add_field(name="Total Warnings", value=f"{count}", inline=True)
+    if escalation_note:
+        embed.add_field(name="Escalation", value=escalation_note, inline=False)
     if not dm_sent:
         embed.set_footer(text="Couldn't DM the user (DMs closed or the bot is blocked).")
     embed.set_thumbnail(url=member.display_avatar.url)
@@ -1123,11 +1158,9 @@ async def mutelist(interaction: discord.Interaction):
         embed = discord.Embed(description="✅ No members are currently muted.", color=0x00cc00)
         await interaction.response.send_message(embed=embed)
         return
-    embed = discord.Embed(title="🔇 Muted Members", color=0xff6600)
-    for m in muted:
-        until = m.timed_out_until.strftime("%Y-%m-%d %H:%M UTC")
-        embed.add_field(name=f"{m}", value=f"Until: {until}", inline=False)
-    await interaction.response.send_message(embed=embed)
+    lines = [f"**{m}** — until {m.timed_out_until.strftime('%Y-%m-%d %H:%M UTC')}" for m in muted]
+    view = PaginatedEmbedView("🔇 Muted Members", lines, color=0xff6600, author_id=interaction.user.id)
+    await interaction.response.send_message(embed=view.build_embed(), view=view if view.max_page > 0 else None)
 
 # /roleadd
 @bot.tree.command(name="roleadd", description="Give a role to a member")
@@ -1348,14 +1381,15 @@ async def warnlist(interaction: discord.Interaction):
         embed = discord.Embed(description="✅ No members have warnings.", color=0x00cc00)
         await interaction.followup.send(embed=embed)
         return
-    embed = discord.Embed(title="⚠️ Warned Members", color=0xffcc00)
+    lines = []
     for doc in warned:
         try:
             user = await bot.fetch_user(int(doc["user_id"]))
-            embed.add_field(name=f"{user}", value=f"{doc['count']} warning(s)", inline=False)
-        except:
-            embed.add_field(name=f"Unknown ({doc['user_id']})", value=f"{doc['count']} warning(s)", inline=False)
-    await interaction.followup.send(embed=embed)
+            lines.append(f"**{user}** — {doc['count']} warning(s)")
+        except Exception:
+            lines.append(f"Unknown ({doc['user_id']}) — {doc['count']} warning(s)")
+    view = PaginatedEmbedView("⚠️ Warned Members", lines, color=0xffcc00, author_id=interaction.user.id)
+    await interaction.followup.send(embed=view.build_embed(), view=view if view.max_page > 0 else None)
 
 # /history
 SANCTION_ICONS = {
@@ -1374,14 +1408,13 @@ SANCTION_ICONS = {
 async def history(interaction: discord.Interaction, member: discord.Member):
     if not await check_access(interaction, "history", None): return
     await interaction.response.defer()
-    records = get_sanction_history(interaction.guild_id, member.id)
+    records = get_sanction_history(interaction.guild_id, member.id, limit=100)
     if not records:
         embed = discord.Embed(description=f"✅ No sanctions found for **{member}**.", color=0x00cc00)
         await interaction.followup.send(embed=embed)
         return
 
-    embed = discord.Embed(title=f"📋 Sanction History — {member}", color=0x3399ff)
-    embed.set_thumbnail(url=member.display_avatar.url)
+    lines = []
     for record in records:
         icon = SANCTION_ICONS.get(record["type"], "•")
         date_str = record["timestamp"].strftime("%Y-%m-%d %H:%M UTC")
@@ -1396,14 +1429,15 @@ async def history(interaction: discord.Interaction, member: discord.Member):
                 mod_str = str(mod_user)
             except Exception:
                 mod_str = f"ID {mod_id}"
-        embed.add_field(
-            name=f"{icon} Case #{record.get('case_id', '?')} — {record['type'].replace('_', ' ').title()} — {date_str}",
-            value=f"Reason: {record['reason']}\nBy: {mod_str}",
-            inline=False,
+        lines.append(
+            f"{icon} **Case #{record.get('case_id', '?')}** — {record['type'].replace('_', ' ').title()} — {date_str}\n"
+            f"Reason: {record['reason']} · By: {mod_str}"
         )
-    if len(records) >= 15:
-        embed.set_footer(text="Showing the 15 most recent sanctions")
-    await interaction.followup.send(embed=embed)
+
+    view = PaginatedEmbedView(f"📋 Sanction History — {member}", lines, color=0x3399ff, per_page=5, author_id=interaction.user.id)
+    embed = view.build_embed()
+    embed.set_thumbnail(url=member.display_avatar.url)
+    await interaction.followup.send(embed=embed, view=view if view.max_page > 0 else None)
 
 
 case_group = app_commands.Group(name="case", description="View or edit moderation cases")
@@ -1446,6 +1480,10 @@ async def case_view(interaction: discord.Interaction, case_id: int):
     embed.add_field(name="User", value=target_str, inline=True)
     embed.add_field(name="Moderator", value=mod_str, inline=True)
     embed.add_field(name="Reason", value=reason_value, inline=False)
+    notes = case.get("followup_notes", [])
+    if notes:
+        notes_text = "\n".join(f"• {n['text']} — *{n['author_name']}*" for n in notes[-10:])
+        embed.add_field(name=f"Follow-up notes ({len(notes)})", value=notes_text[:1000], inline=False)
     embed.set_footer(text=case["timestamp"].strftime("%Y-%m-%d %H:%M UTC"))
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -1474,6 +1512,26 @@ async def case_edit(interaction: discord.Interaction, case_id: int, reason: str)
         f"Edited case #{case_id}", f"Old reason: {old_reason} → New reason: {reason}",
     )
     await interaction.response.send_message(f"✅ Case **#{case_id}** updated with the new reason.", ephemeral=True)
+
+
+@case_group.command(name="note", description="Add a follow-up note to a case, without touching the original reason — admin only")
+@app_commands.describe(case_id="The case number", text="The note to add")
+@has_admin()
+async def case_note(interaction: discord.Interaction, case_id: int, text: str):
+    case = get_case(interaction.guild_id, case_id)
+    if not case:
+        await interaction.response.send_message(f"❌ No case **#{case_id}** found on this server.", ephemeral=True)
+        return
+    sanctions_col.update_one(
+        {"guild_id": str(interaction.guild_id), "case_id": case_id},
+        {"$push": {"followup_notes": {
+            "author_name": str(interaction.user),
+            "text": text,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc),
+        }}},
+    )
+    record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), f"Added a note to case #{case_id}", text)
+    await interaction.response.send_message(f"📝 Note added to case **#{case_id}**.", ephemeral=True)
 
 
 bot.tree.add_command(case_group)
@@ -1574,10 +1632,9 @@ async def banlist(interaction: discord.Interaction):
         embed = discord.Embed(description="✅ No members are banned.", color=0x00cc00)
         await interaction.followup.send(embed=embed)
         return
-    embed = discord.Embed(title="🔨 Banned Members", color=0xff0000)
-    for entry in bans[:25]:
-        embed.add_field(name=f"{entry.user}", value=f"Reason: {entry.reason or 'No reason'}", inline=False)
-    await interaction.followup.send(embed=embed)
+    lines = [f"**{entry.user}** — {entry.reason or 'No reason'}" for entry in bans]
+    view = PaginatedEmbedView("🔨 Banned Members", lines, color=0xff0000, author_id=interaction.user.id)
+    await interaction.followup.send(embed=view.build_embed(), view=view if view.max_page > 0 else None)
 
 # /broadcast
 @bot.tree.command(name="broadcast", description="Send a broadcast message")
@@ -1805,6 +1862,81 @@ async def config_accountage(interaction: discord.Interaction, days: int):
         await interaction.response.send_message(
             f"🛡️ Accounts younger than **{days} day(s)** will now be kicked automatically on join.", ephemeral=True
         )
+
+
+@config_group.command(name="automod", description="Adjust auto-moderation sensitivity — admin only. Leave a value empty to keep it unchanged.")
+@app_commands.describe(
+    spam_count="Messages within the spam window before it's flagged as spam (default 10)",
+    spam_window="Spam detection window in seconds (default 5)",
+    caps_ratio="Fraction of capital letters that counts as caps spam, 0-1 (default 0.7)",
+    raid_count="Joins within the raid window before it's flagged as a raid (default 5)",
+    raid_window="Raid detection window in seconds (default 10)",
+)
+@has_admin()
+async def config_automod(
+    interaction: discord.Interaction,
+    spam_count: int = None,
+    spam_window: int = None,
+    caps_ratio: float = None,
+    raid_count: int = None,
+    raid_window: int = None,
+):
+    changes = []
+    if spam_count is not None:
+        update_config(interaction.guild_id, "automod_spam_count", max(1, spam_count))
+        changes.append(f"spam count → {spam_count}")
+    if spam_window is not None:
+        update_config(interaction.guild_id, "automod_spam_window", max(1, spam_window))
+        changes.append(f"spam window → {spam_window}s")
+    if caps_ratio is not None:
+        caps_ratio = max(0.1, min(caps_ratio, 1.0))
+        update_config(interaction.guild_id, "automod_caps_ratio", caps_ratio)
+        changes.append(f"caps ratio → {caps_ratio}")
+    if raid_count is not None:
+        update_config(interaction.guild_id, "automod_raid_count", max(2, raid_count))
+        changes.append(f"raid count → {raid_count}")
+    if raid_window is not None:
+        update_config(interaction.guild_id, "automod_raid_window", max(2, raid_window))
+        changes.append(f"raid window → {raid_window}s")
+
+    if not changes:
+        cfg = get_config(interaction.guild_id)
+        await interaction.response.send_message(
+            f"Current thresholds: spam {cfg.get('automod_spam_count', 10)} msgs/{cfg.get('automod_spam_window', 5)}s, "
+            f"caps ratio {cfg.get('automod_caps_ratio', 0.7)}, "
+            f"raid {cfg.get('automod_raid_count', 5)} joins/{cfg.get('automod_raid_window', 10)}s.",
+            ephemeral=True,
+        )
+        return
+    await interaction.response.send_message(f"🛡️ Updated: {', '.join(changes)}.", ephemeral=True)
+
+
+@config_group.command(name="warnescalation", description="Auto-mute/kick members once they reach a certain number of warnings — admin only")
+@app_commands.describe(
+    enabled="Turn auto-escalation on or off",
+    mute_at="Warning count that triggers an auto-mute (default 3)",
+    mute_minutes="How long the auto-mute lasts, in minutes (default 10)",
+    kick_at="Warning count that triggers an auto-kick (default 5)",
+)
+@has_admin()
+async def config_warnescalation(
+    interaction: discord.Interaction,
+    enabled: bool,
+    mute_at: int = 3,
+    mute_minutes: int = 10,
+    kick_at: int = 5,
+):
+    update_config(interaction.guild_id, "warn_escalation_enabled", enabled)
+    update_config(interaction.guild_id, "warn_mute_threshold", max(1, mute_at))
+    update_config(interaction.guild_id, "warn_mute_minutes", max(1, mute_minutes))
+    update_config(interaction.guild_id, "warn_kick_threshold", max(mute_at + 1, kick_at))
+    if enabled:
+        await interaction.response.send_message(
+            f"⚠️ Escalation enabled: **{mute_at}** warnings → {mute_minutes} min mute, **{kick_at}** warnings → kick.",
+            ephemeral=True,
+        )
+    else:
+        await interaction.response.send_message("⚠️ Warn escalation disabled.", ephemeral=True)
 
 
 @config_group.command(name="appeals", description="Set the channel where sanction appeals are reviewed — admin only. Leave empty to disable.")
@@ -2206,6 +2338,35 @@ async def backup_list(interaction: discord.Interaction):
             ts = ts.replace(tzinfo=datetime.timezone.utc)
         lines.append(f"`{b['_id']}` — {ts.strftime('%Y-%m-%d %H:%M UTC')} ({len(b['roles'])} roles, {len(b['channels'])} channels)")
     embed = discord.Embed(title="💾 Server Backups", description="\n".join(lines), color=0x3399ff)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@backup_group.command(name="preview", description="See what's inside a backup before restoring it — server owner only")
+@app_commands.describe(backup_id="The backup ID from /backup list")
+@has_owner()
+async def backup_preview(interaction: discord.Interaction, backup_id: str):
+    try:
+        backup = server_backups_col.find_one({"_id": ObjectId(backup_id), "guild_id": str(interaction.guild_id)})
+    except Exception:
+        backup = None
+    if not backup:
+        await interaction.response.send_message("❌ Backup not found. Check the ID with `/backup list`.", ephemeral=True)
+        return
+
+    role_names = [r["name"] for r in backup["roles"]]
+    categories = [c["name"] for c in backup["channels"] if c["type"] == "category"]
+    text_channels = [c["name"] for c in backup["channels"] if c["type"] == "text"]
+    voice_channels = [c["name"] for c in backup["channels"] if c["type"] == "voice"]
+
+    ts = backup["created_at"]
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=datetime.timezone.utc)
+
+    embed = discord.Embed(title=f"💾 Backup Preview — {ts.strftime('%Y-%m-%d %H:%M UTC')}", color=0x3399ff)
+    embed.add_field(name=f"Roles ({len(role_names)})", value=", ".join(role_names)[:1000] or "None", inline=False)
+    embed.add_field(name=f"Categories ({len(categories)})", value=", ".join(categories)[:1000] or "None", inline=False)
+    embed.add_field(name=f"Text channels ({len(text_channels)})", value=", ".join(text_channels)[:1000] or "None", inline=False)
+    embed.add_field(name=f"Voice channels ({len(voice_channels)})", value=", ".join(voice_channels)[:1000] or "None", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -2819,6 +2980,9 @@ class AppealModal(discord.ui.Modal, title="Submit your appeal"):
         )
 
 
+_appeal_button_cooldowns = {}  # {user_id: last_click_timestamp} — anti-spam sur le bouton d'appel
+APPEAL_BUTTON_COOLDOWN_SECONDS = 5
+
 class AppealButton(discord.ui.DynamicItem[discord.ui.Button], template=r"nexus_appeal:(?P<token>[a-zA-Z0-9_\-]+)"):
     """Bouton persistant attaché au DM de sanction. Le token est encodé
     directement dans le custom_id (via DynamicItem) pour survivre aux
@@ -2839,6 +3003,13 @@ class AppealButton(discord.ui.DynamicItem[discord.ui.Button], template=r"nexus_a
         return cls(match["token"])
 
     async def callback(self, interaction: discord.Interaction):
+        now = time.time()
+        last = _appeal_button_cooldowns.get(interaction.user.id, 0)
+        if now - last < APPEAL_BUTTON_COOLDOWN_SECONDS:
+            await interaction.response.send_message("⏳ Slow down a little before trying again.", ephemeral=True)
+            return
+        _appeal_button_cooldowns[interaction.user.id] = now
+
         appeal = get_ban_appeal(self.token)
         if not appeal:
             await interaction.response.send_message("This appeal link is no longer valid.", ephemeral=True)
@@ -2854,6 +3025,55 @@ class AppealButton(discord.ui.DynamicItem[discord.ui.Button], template=r"nexus_a
             )
             return
         await interaction.response.send_modal(AppealModal(self.token))
+
+
+class PaginatedEmbedView(discord.ui.View):
+    """Vue générique de pagination par boutons — réutilisée par toutes les
+    commandes qui listent potentiellement beaucoup d'entrées (mutelist,
+    warnlist, banlist, history...), pour ne jamais dépasser les limites
+    d'un embed Discord."""
+    def __init__(self, title, lines, color=0x3399ff, per_page=10, author_id=None):
+        super().__init__(timeout=120)
+        self.title = title
+        self.lines = lines
+        self.color = color
+        self.per_page = per_page
+        self.page = 0
+        self.author_id = author_id
+        self.max_page = max(0, (len(lines) - 1) // per_page)
+        self._update_buttons()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if self.author_id and interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "Only the person who ran this command can navigate pages.", ephemeral=True
+            )
+            return False
+        return True
+
+    def _update_buttons(self):
+        self.previous_page.disabled = self.page <= 0
+        self.next_page.disabled = self.page >= self.max_page
+
+    def build_embed(self):
+        start = self.page * self.per_page
+        chunk = self.lines[start:start + self.per_page]
+        embed = discord.Embed(title=self.title, description="\n".join(chunk) or "—", color=self.color)
+        if self.max_page > 0:
+            embed.set_footer(text=f"Page {self.page + 1}/{self.max_page + 1}")
+        return embed
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+    async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page -= 1
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page += 1
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
 
 class SatisfactionSurveyView(discord.ui.View):
@@ -3148,7 +3368,7 @@ if YOUTUBE_COOKIES_CONTENT:
 DOWNLOAD_DIR = "/tmp/music_cache"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-YTDL_OPTIONS = {
+YTDL_BASE_OPTIONS = {
     # bestaudio en priorité, puis n'importe quel format jouable en dernier recours
     # (FFmpeg extraira la piste audio même d'un format vidéo+audio combiné).
     "format": "bestaudio/best/bv*+ba/b",
@@ -3168,19 +3388,31 @@ YTDL_OPTIONS = {
         "preferredcodec": "mp3",
         "preferredquality": "192",
     }],
-    # YouTube exige de plus en plus un "PO Token" pour les clients android/ios/web, qu'on n'a
-    # pas configuré -- ça cause "Requested format is not available". La sélection automatique
-    # de yt-dlp est en fait la plus fiable actuellement : avec des cookies valides, elle choisit
-    # le client "tv_downgraded" qui ne nécessite pas de PO Token. On ajoute juste web_embedded
-    # en complément (recommandation officielle yt-dlp, issue #15847, fév. 2026).
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["default", "web_embedded"],
-        }
-    },
+}
+
+# YouTube change régulièrement quel "client" d'extraction fonctionne, et ça casse
+# souvent en quelques jours (chat du mainteneur yt-dlp). Situation constatée en
+# sept. 2026 : le client "tv_downgraded" -- choisi automatiquement dès qu'un
+# cookiefile est fourni -- est actuellement cassé côté YouTube et renvoie
+# "The page needs to be reloaded." (github.com/yt-dlp/yt-dlp/issues/17389).
+# Donc : on essaie D'ABORD sans cookies (web_embedded/tv, jamais concernés
+# par ce bug précis), et on ne se rabat sur les cookies que si ça échoue --
+# utile seulement pour du contenu réservé aux comptes connectés.
+YTDL_OPTIONS_NO_COOKIES = {
+    **YTDL_BASE_OPTIONS,
+    "extractor_args": {"youtube": {"player_client": ["web_embedded", "tv"]}},
+}
+
+YTDL_OPTIONS_WITH_COOKIES = {
+    **YTDL_BASE_OPTIONS,
+    "extractor_args": {"youtube": {"player_client": ["default", "web_embedded"]}},
 }
 if YOUTUBE_COOKIES_CONTENT:
-    YTDL_OPTIONS["cookiefile"] = YOUTUBE_COOKIES_PATH
+    YTDL_OPTIONS_WITH_COOKIES["cookiefile"] = YOUTUBE_COOKIES_PATH
+
+# Conservé pour la recherche (extract_flat, ne télécharge rien -- beaucoup
+# moins exposé à ce bug précis puisqu'il ne résout pas les formats jouables).
+YTDL_OPTIONS = YTDL_OPTIONS_NO_COOKIES
 
 # Fichier local mp3 déjà téléchargé : pas besoin de -reconnect (plus de réseau pendant la lecture).
 FFMPEG_OPTIONS_TEMPLATE = {
@@ -3190,7 +3422,8 @@ FFMPEG_OPTIONS_TEMPLATE = {
 
 DEFAULT_VOLUME = 0.5  # 50%, ajustable par /volume (0.0 à 2.0)
 
-ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
+ytdl_no_cookies = yt_dlp.YoutubeDL(YTDL_OPTIONS_NO_COOKIES)
+ytdl_with_cookies = yt_dlp.YoutubeDL(YTDL_OPTIONS_WITH_COOKIES) if YOUTUBE_COOKIES_CONTENT else None
 
 SPOTIFY_TRACK_RE = re.compile(r"open\.spotify\.com/track/([A-Za-z0-9]+)")
 SPOTIFY_PLAYLIST_RE = re.compile(r"open\.spotify\.com/(playlist|album)/([A-Za-z0-9]+)")
@@ -3254,8 +3487,16 @@ async def resolve_query(query, requester):
         query = f"ytsearch:{query}"
 
     def extract():
-        # download=True : on télécharge réellement le fichier, le post-processeur le convertit en mp3
-        info = ytdl.extract_info(query, download=True)
+        # download=True : on télécharge réellement le fichier, le post-processeur le convertit en mp3.
+        # On essaie d'abord SANS cookies (évite le bug tv_downgraded actuel), et on ne se
+        # rabat sur les cookies que si ça échoue vraiment (contenu réservé aux comptes connectés).
+        try:
+            info = ytdl_no_cookies.extract_info(query, download=True)
+        except yt_dlp.utils.DownloadError as e:
+            if ytdl_with_cookies is None:
+                raise
+            print(f"[MUSIC] No-cookies extraction failed ({e}), retrying with cookies...", flush=True)
+            info = ytdl_with_cookies.extract_info(query, download=True)
         if "entries" in info:
             info = info["entries"][0]
         return info
@@ -3779,34 +4020,42 @@ def is_automod_exempt(member, cfg):
     return False
 
 
-def check_spam(guild_id, user_id):
+def check_spam(guild_id, user_id, cfg=None):
+    cfg = cfg or get_config(guild_id)
+    spam_count = cfg.get("automod_spam_count", SPAM_MESSAGE_COUNT)
+    spam_window = cfg.get("automod_spam_window", SPAM_WINDOW_SECONDS)
     key = (guild_id, user_id)
     now = time.time()
     timestamps = _recent_messages.get(key, [])
-    timestamps = [t for t in timestamps if now - t < SPAM_WINDOW_SECONDS]
+    timestamps = [t for t in timestamps if now - t < spam_window]
     timestamps.append(now)
     _recent_messages[key] = timestamps
-    return len(timestamps) > SPAM_MESSAGE_COUNT
+    return len(timestamps) > spam_count
 
 
-def check_raid(guild_id):
-    """Retourne True si RAID_JOIN_COUNT membres ont rejoint en moins de RAID_WINDOW_SECONDS."""
+def check_raid(guild_id, cfg=None):
+    """Retourne True si assez de membres ont rejoint en peu de temps (seuils
+    configurables par serveur, /config automod raidcount/raidwindow)."""
+    cfg = cfg or get_config(guild_id)
+    raid_count = cfg.get("automod_raid_count", RAID_JOIN_COUNT)
+    raid_window = cfg.get("automod_raid_window", RAID_WINDOW_SECONDS)
     now = time.time()
     timestamps = _recent_joins.get(guild_id, [])
-    timestamps = [t for t in timestamps if now - t < RAID_WINDOW_SECONDS]
+    timestamps = [t for t in timestamps if now - t < raid_window]
     timestamps.append(now)
     _recent_joins[guild_id] = timestamps
-    return len(timestamps) >= RAID_JOIN_COUNT
+    return len(timestamps) >= raid_count
 
 
 
 
-def check_caps(content):
+def check_caps(content, cfg=None):
+    ratio_threshold = cfg.get("automod_caps_ratio", CAPS_RATIO_THRESHOLD) if cfg else CAPS_RATIO_THRESHOLD
     letters = [c for c in content if c.isalpha()]
     if len(content) < CAPS_MIN_LENGTH or len(letters) < CAPS_MIN_LENGTH:
         return False
     upper_count = sum(1 for c in letters if c.isupper())
-    return (upper_count / len(letters)) > CAPS_RATIO_THRESHOLD
+    return (upper_count / len(letters)) > ratio_threshold
 
 
 def check_invite_link(content):
@@ -3885,10 +4134,10 @@ async def on_message(message):
         if check_invite_link(message.content):
             await apply_automod_action(message, "automod_link", "posting an invite link")
             return
-        if check_spam(message.guild.id, message.author.id):
+        if check_spam(message.guild.id, message.author.id, cfg):
             await apply_automod_action(message, "automod_spam", "sending messages too quickly")
             return
-        if check_caps(message.content):
+        if check_caps(message.content, cfg):
             await apply_automod_action(message, "automod_caps", "excessive use of capital letters")
             return
         if check_banned_words(message.content, cfg.get("banned_words", [])):
@@ -4002,8 +4251,8 @@ async def on_member_join(member):
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
 
-    # Anti-raid : si RAID_JOIN_COUNT membres rejoignent en moins de RAID_WINDOW_SECONDS, on lock le serveur.
-    if check_raid(member.guild.id) and member.guild.id not in bot.locked_guilds:
+    # Anti-raid : seuils configurables par serveur (/config automod raidcount/raidwindow).
+    if check_raid(member.guild.id, cfg) and member.guild.id not in bot.locked_guilds:
         bot.locked_guilds.add(member.guild.id)
         alert = discord.Embed(
             title="🚨 Raid Detected",
@@ -6087,6 +6336,17 @@ def keep_alive():
 
 keep_alive()
 
+# Arrêt propre : Render envoie SIGTERM avant de tuer le process lors d'un
+# redéploiement. Par défaut, SIGTERM termine Python immédiatement sans
+# nettoyage -- on le transforme en KeyboardInterrupt (comme Ctrl+C), que
+# discord.py sait déjà gérer proprement (fermeture de la connexion websocket
+# avant de quitter, plutôt qu'une coupure brutale en plein milieu).
+def _handle_sigterm(signum, frame):
+    print("[SHUTDOWN] Received SIGTERM, shutting down gracefully...", flush=True)
+    raise KeyboardInterrupt()
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
+
 # Si Discord/Cloudflare renvoie un 429 au login (rate limit), on ne laisse pas
 # le process planter : Render le relancerait instantanément, ce qui martèle
 # encore plus l'endpoint de login et prolonge le blocage. On attend avec un
@@ -6104,3 +6364,12 @@ while True:
             time.sleep(wait)
         else:
             raise
+    except KeyboardInterrupt:
+        break
+
+if mongo:
+    try:
+        mongo.close()
+        print("[SHUTDOWN] MongoDB connection closed.", flush=True)
+    except Exception:
+        pass
