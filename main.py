@@ -39,9 +39,11 @@ sticky_messages_col = None
 ban_appeals_col = None
 server_backups_col = None
 invite_uses_col = None
+role_menus_col = None
+scheduled_col = None
 
 def init_mongo():
-    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col, invite_uses_col
+    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col, invite_uses_col, role_menus_col, scheduled_col
     mongo = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
     db = mongo["discordbot"]
     warns_col = db["warns"]
@@ -58,6 +60,8 @@ def init_mongo():
     ban_appeals_col = db["ban_appeals"]
     server_backups_col = db["server_backups"]
     invite_uses_col = db["invite_uses"]
+    role_menus_col = db["role_menus"]
+    scheduled_col = db["scheduled_announcements"]
 
 def record_audit(guild_id, actor_id, actor_name, action, details=""):
     """Trace de chaque changement de config (dashboard ou commande) pour
@@ -129,6 +133,8 @@ def get_config(guild_id):
             "command_templates": {},
             "language": None,
             "log_dashboard_actions": False,
+            "log_webhook_url": None,
+            "log_webhook_channel_id": None,
             "tickets_enabled": False,
             "ticket_category_id": None,
             "ticket_support_role_id": None,
@@ -153,6 +159,9 @@ def get_config(guild_id):
             "warn_mute_threshold": 3,
             "warn_mute_minutes": 10,
             "warn_kick_threshold": 5,
+            "jtc_channel_id": None,
+            "jtc_category_id": None,
+            "pending_role_menu_items": [],
         }
         config_col.insert_one(doc)
     return doc
@@ -562,6 +571,7 @@ _command_cooldowns = {}  # {user_id: last_invocation_timestamp}
 COMMAND_COOLDOWN_SECONDS = 2
 
 _invite_cache = {}  # {guild_id: {invite_code: uses}} — snapshot pour détecter quelle invite a servi à un join
+_temp_voice_channels = {}  # {channel_id: guild_id} — salons "Join to Create" à supprimer une fois vides
 
 async def refresh_invite_cache(guild):
     try:
@@ -822,11 +832,13 @@ async def on_ready():
         bot.add_view(TicketCloseView())
         bot.add_view(SatisfactionSurveyView())
         bot.add_dynamic_items(AppealButton)
+        bot.add_view(RoleMenuView())
         bot._nexus_persistent_views_added = True
     bot.loop.create_task(tempban_check_loop())
     bot.loop.create_task(member_count_loop())
     bot.loop.create_task(daily_killswitch_email_loop())
     bot.loop.create_task(weekly_digest_loop())
+    bot.loop.create_task(scheduled_announcements_loop())
     for guild in bot.guilds:
         await refresh_invite_cache(guild)
 
@@ -1653,6 +1665,24 @@ async def broadcast(interaction: discord.Interaction, message: str, mention: str
     await interaction.response.send_message(embed=confirm, ephemeral=True)
     await interaction.channel.send(content=ping if ping else None, embed=embed)
 
+
+@bot.tree.command(name="schedule", description="Schedule a message to be posted later")
+@app_commands.describe(channel="Channel to post in", message="What to send", when="When to send it: 30m, 2h, 1d, 1w")
+async def schedule_command(interaction: discord.Interaction, channel: discord.TextChannel, message: str, when: str):
+    if not await check_access(interaction, "schedule", "manage_messages"): return
+    seconds = parse_duration(when)
+    if seconds <= 0:
+        embed = discord.Embed(description="❌ Invalid duration. Use `30m`, `2h`, `1d`, `1w`.", color=0xff0000)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    send_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=seconds)
+    schedule_announcement(interaction.guild_id, channel.id, message, send_at, interaction.user.id)
+    embed = discord.Embed(
+        description=f"📅 Scheduled for **{send_at.strftime('%Y-%m-%d %H:%M UTC')}** in {channel.mention}.",
+        color=0x00cc00,
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 # ============================================================
 # =======================  CONFIG  ===========================
 # ============================================================
@@ -1937,6 +1967,83 @@ async def config_warnescalation(
         )
     else:
         await interaction.response.send_message("⚠️ Warn escalation disabled.", ephemeral=True)
+
+
+@config_group.command(name="jointocreate", description="Set up a 'Join to Create' voice channel — admin only. Leave empty to disable.")
+@app_commands.describe(channel="Voice channel that spawns a temporary channel for whoever joins it")
+@has_admin()
+async def config_jointocreate(interaction: discord.Interaction, channel: discord.VoiceChannel = None):
+    if channel is None:
+        update_config(interaction.guild_id, "jtc_channel_id", None)
+        await interaction.response.send_message("🔊 Join-to-Create disabled.", ephemeral=True)
+        return
+    update_config(interaction.guild_id, "jtc_channel_id", channel.id)
+    await interaction.response.send_message(
+        f"🔊 Joining {channel.mention} will now create a temporary voice channel (deleted automatically once empty).",
+        ephemeral=True,
+    )
+
+
+# Menu de rôles en dropdown : /config rolemenu additem|clearitems|post — admin only
+rolemenu_group = app_commands.Group(
+    name="rolemenu",
+    description="Build and post a dropdown role-selection menu — admin only",
+    parent=config_group,
+)
+
+
+@rolemenu_group.command(name="additem", description="Add a role to the pending role menu (build it, then /config rolemenu post) — admin only")
+@app_commands.describe(role="Role to add to the menu", label="Text shown in the dropdown (defaults to the role name)")
+@has_admin()
+async def config_rolemenu_additem(interaction: discord.Interaction, role: discord.Role, label: str = None):
+    cfg = get_config(interaction.guild_id)
+    items = cfg.get("pending_role_menu_items", [])
+    if len(items) >= 25:
+        await interaction.response.send_message("❌ A dropdown menu can only have 25 options max.", ephemeral=True)
+        return
+    if any(item["role_id"] == role.id for item in items):
+        await interaction.response.send_message(f"**{role.name}** is already in the pending menu.", ephemeral=True)
+        return
+    items.append({"role_id": role.id, "label": (label or role.name)[:100]})
+    update_config(interaction.guild_id, "pending_role_menu_items", items)
+    await interaction.response.send_message(f"➕ Added **{role.name}** ({len(items)}/25). Run `/config rolemenu post` when ready.", ephemeral=True)
+
+
+@rolemenu_group.command(name="clearitems", description="Clear the pending role menu items — admin only")
+@has_admin()
+async def config_rolemenu_clearitems(interaction: discord.Interaction):
+    update_config(interaction.guild_id, "pending_role_menu_items", [])
+    await interaction.response.send_message("🗑️ Pending role menu cleared.", ephemeral=True)
+
+
+@rolemenu_group.command(name="post", description="Post the pending role menu as a dropdown — admin only")
+@app_commands.describe(channel="Channel to post the menu in", title="Title shown above the menu")
+@has_admin()
+async def config_rolemenu_post(interaction: discord.Interaction, channel: discord.TextChannel, title: str = "Choose your roles"):
+    cfg = get_config(interaction.guild_id)
+    items = cfg.get("pending_role_menu_items", [])
+    if not items:
+        await interaction.response.send_message("❌ No pending items — add some first with `/config rolemenu additem`.", ephemeral=True)
+        return
+
+    options = [discord.SelectOption(label=item["label"], value=str(item["role_id"])) for item in items]
+    embed = discord.Embed(title=f"🎭 {title}", description="Pick the roles you want from the dropdown below.", color=0x3399ff)
+    view = discord.ui.View(timeout=None)
+    view.add_item(RoleMenuSelect(options))
+    try:
+        message = await channel.send(embed=embed, view=view)
+    except discord.HTTPException as e:
+        await interaction.response.send_message(f"❌ Couldn't post the menu: {e}", ephemeral=True)
+        return
+
+    role_menus_col.insert_one({
+        "guild_id": str(interaction.guild_id),
+        "message_id": str(message.id),
+        "channel_id": str(channel.id),
+        "items": items,
+    })
+    update_config(interaction.guild_id, "pending_role_menu_items", [])
+    await interaction.response.send_message(f"✅ Role menu posted in {channel.mention}.", ephemeral=True)
 
 
 @config_group.command(name="appeals", description="Set the channel where sanction appeals are reviewed — admin only. Leave empty to disable.")
@@ -2573,12 +2680,9 @@ async def tempban_check_loop():
                             user = await bot.fetch_user(int(doc["user_id"]))
                             await guild.unban(user, reason="Tempban expired")
                             remove_tempban(doc["guild_id"], doc["user_id"])
-                            cfg = get_config(doc["guild_id"])
-                            log_ch = discord.utils.get(guild.text_channels, name=cfg.get("logs_channel", "logs"))
-                            if log_ch:
-                                embed = discord.Embed(title="✅ Tempban Expired", color=0x00cc00)
-                                embed.add_field(name="User", value=f"**{user}**", inline=True)
-                                await log_ch.send(embed=embed)
+                            embed = discord.Embed(title="✅ Tempban Expired", color=0x00cc00)
+                            embed.add_field(name="User", value=f"**{user}**", inline=True)
+                            await _send_log_embed(guild, embed)
                         except Exception as e:
                             print(f"Tempban unban error: {e}", flush=True)
                             remove_tempban(doc["guild_id"], doc["user_id"])
@@ -2659,6 +2763,39 @@ async def weekly_digest_loop():
             except Exception as e:
                 print(f"[DIGEST] Failed for guild {guild.id}: {e}", flush=True)
         await asyncio.sleep(6 * 60 * 60)
+
+
+def schedule_announcement(guild_id, channel_id, content, send_at, author_id):
+    scheduled_col.insert_one({
+        "guild_id": str(guild_id),
+        "channel_id": str(channel_id),
+        "content": content,
+        "send_at": send_at,
+        "author_id": str(author_id),
+        "sent": False,
+    })
+
+
+async def scheduled_announcements_loop():
+    """Check toutes les 60s si une annonce programmée est due. La comparaison
+    de date se fait DANS la requête Mongo (pas en Python après lecture),
+    donc pas de piège naive/aware ici."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            due = list(scheduled_col.find({"sent": False, "send_at": {"$lte": now}}))
+            for doc in due:
+                channel = bot.get_channel(int(doc["channel_id"]))
+                if channel:
+                    try:
+                        await channel.send(doc["content"])
+                    except discord.HTTPException as e:
+                        print(f"[SCHEDULE] Failed to send scheduled announcement: {e}", flush=True)
+                scheduled_col.update_one({"_id": doc["_id"]}, {"$set": {"sent": True}})
+        except Exception as e:
+            print(f"[SCHEDULE] loop error: {e}", flush=True)
+        await asyncio.sleep(60)
 
 
 @bot.tree.command(name="userinfo", description="Show information about a member")
@@ -3074,6 +3211,52 @@ class PaginatedEmbedView(discord.ui.View):
         self.page += 1
         self._update_buttons()
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+
+def get_role_menu(message_id):
+    return role_menus_col.find_one({"message_id": str(message_id)})
+
+
+class RoleMenuSelect(discord.ui.Select):
+    """Menu déroulant persistant : les options réellement affichées sont
+    déjà figées dans le message Discord une fois posté, donc un placeholder
+    suffit ici pour l'enregistrement persistant au démarrage — la vraie
+    liste de rôles est relue depuis Mongo (par message_id) à chaque clic,
+    ce qui marche même après un redémarrage du bot."""
+    def __init__(self, options=None):
+        super().__init__(
+            placeholder="Select your roles...",
+            min_values=0,
+            max_values=len(options) if options else 1,
+            options=options or [discord.SelectOption(label="placeholder", value="0")],
+            custom_id="nexus_role_menu_select",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        menu = get_role_menu(interaction.message.id)
+        if not menu:
+            await interaction.response.send_message("This role menu is no longer configured.", ephemeral=True)
+            return
+        all_ids = {item["role_id"] for item in menu["items"]}
+        selected_ids = {int(v) for v in self.values}
+        member = interaction.user
+        to_add = [interaction.guild.get_role(rid) for rid in selected_ids if interaction.guild.get_role(rid)]
+        to_remove = [interaction.guild.get_role(rid) for rid in (all_ids - selected_ids) if interaction.guild.get_role(rid)]
+        try:
+            if to_add:
+                await member.add_roles(*to_add, reason="Role menu")
+            if to_remove:
+                await member.remove_roles(*to_remove, reason="Role menu")
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"Couldn't update your roles: {e}", ephemeral=True)
+            return
+        await interaction.response.send_message("✅ Your roles have been updated.", ephemeral=True)
+
+
+class RoleMenuView(discord.ui.View):
+    def __init__(self, options=None):
+        super().__init__(timeout=None)
+        self.add_item(RoleMenuSelect(options))
 
 
 class SatisfactionSurveyView(discord.ui.View):
@@ -3996,17 +4179,15 @@ async def on_audit_log_entry_create(entry: discord.AuditLogEntry):
     except discord.HTTPException:
         pass
 
-    log_channel = discord.utils.get(guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if log_channel:
-        embed = discord.Embed(title="🚨 Anti-Nuke Triggered", color=0xff0000)
-        embed.add_field(name="User", value=f"**{actor}**", inline=True)
-        embed.add_field(name="Actions detected", value=str(len(timestamps)), inline=True)
-        embed.add_field(
-            name="Result",
-            value="Roles stripped + bot locked" if quarantined else "Bot locked (couldn't strip roles)",
-            inline=False,
-        )
-        await log_channel.send(embed=embed)
+    embed = discord.Embed(title="🚨 Anti-Nuke Triggered", color=0xff0000)
+    embed.add_field(name="User", value=f"**{actor}**", inline=True)
+    embed.add_field(name="Actions detected", value=str(len(timestamps)), inline=True)
+    embed.add_field(
+        name="Result",
+        value="Roles stripped + bot locked" if quarantined else "Bot locked (couldn't strip roles)",
+        inline=False,
+    )
+    await _send_log_embed(guild, embed)
 
 
 def is_automod_exempt(member, cfg):
@@ -4111,16 +4292,14 @@ async def apply_automod_action(message, violation_type, reason):
         print(f"AutoMod: failed to send/delete warning message: {e}", flush=True)
 
     cfg = get_config(message.guild.id)
-    log_channel = discord.utils.get(message.guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if log_channel:
-        icon = SANCTION_ICONS.get(violation_type, "🤖")
-        log_embed = discord.Embed(title=f"{icon} AutoMod Action", color=0xffcc00)
-        log_embed.add_field(name="User", value=f"**{message.author}**", inline=True)
-        log_embed.add_field(name="Channel", value=message.channel.mention, inline=True)
-        log_embed.add_field(name="Reason", value=reason, inline=False)
-        log_embed.add_field(name="Total Warnings", value=f"{count}", inline=True)
-        log_embed.set_thumbnail(url=message.author.display_avatar.url)
-        await log_channel.send(embed=log_embed)
+    icon = SANCTION_ICONS.get(violation_type, "🤖")
+    log_embed = discord.Embed(title=f"{icon} AutoMod Action", color=0xffcc00)
+    log_embed.add_field(name="User", value=f"**{message.author}**", inline=True)
+    log_embed.add_field(name="Channel", value=message.channel.mention, inline=True)
+    log_embed.add_field(name="Reason", value=reason, inline=False)
+    log_embed.add_field(name="Total Warnings", value=f"{count}", inline=True)
+    log_embed.set_thumbnail(url=message.author.display_avatar.url)
+    await _send_log_embed(message.guild, log_embed)
 
 
 @bot.event
@@ -4198,14 +4377,12 @@ async def on_member_join(member):
             try:
                 await member.kick(reason=f"Account age check: account is younger than {min_age_days} day(s)")
                 log_sanction(member.guild.id, member.id, "kick", f"Account too new (< {min_age_days}d)", "automod")
-                log_channel = discord.utils.get(member.guild.text_channels, name=cfg.get("logs_channel", "logs"))
-                if log_channel:
-                    embed = discord.Embed(
-                        title="🛡️ Account Age Check",
-                        description=f"**{member}** was kicked automatically — account created {account_age.days} day(s) ago (minimum: {min_age_days}).",
-                        color=0xff6600,
-                    )
-                    await log_channel.send(embed=embed)
+                embed = discord.Embed(
+                    title="🛡️ Account Age Check",
+                    description=f"**{member}** was kicked automatically — account created {account_age.days} day(s) ago (minimum: {min_age_days}).",
+                    color=0xff6600,
+                )
+                await _send_log_embed(member.guild, embed)
             except discord.HTTPException as e:
                 print(f"[ACCOUNTAGE] Failed to kick {member.id}: {e}", flush=True)
             return  # pas la peine de continuer le reste de on_member_join pour un membre qu'on vient de kick
@@ -4242,14 +4419,12 @@ async def on_member_join(member):
         role = member.guild.get_role(autorole_id)
         if role:
             await member.add_roles(role)
-    channel = discord.utils.get(member.guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if channel:
-        embed = discord.Embed(title="✅ Member Joined", color=0x00cc00)
-        embed.add_field(name="User", value=f"**{member}**", inline=True)
-        if inviter_id:
-            embed.add_field(name="Invited by", value=f"<@{inviter_id}> (`{invite_code_used}`)", inline=True)
-        embed.set_thumbnail(url=member.display_avatar.url)
-        await channel.send(embed=embed)
+    embed = discord.Embed(title="✅ Member Joined", color=0x00cc00)
+    embed.add_field(name="User", value=f"**{member}**", inline=True)
+    if inviter_id:
+        embed.add_field(name="Invited by", value=f"<@{inviter_id}> (`{invite_code_used}`)", inline=True)
+    embed.set_thumbnail(url=member.display_avatar.url)
+    await _send_log_embed(member.guild, embed)
 
     # Anti-raid : seuils configurables par serveur (/config automod raidcount/raidwindow).
     if check_raid(member.guild.id, cfg) and member.guild.id not in bot.locked_guilds:
@@ -4263,8 +4438,7 @@ async def on_member_join(member):
             ),
             color=0xff0000,
         )
-        if channel:
-            await channel.send(embed=alert)
+        await _send_log_embed(member.guild, alert)
         try:
             owner = member.guild.owner or await member.guild.fetch_owner()
             await owner.send(embed=alert)
@@ -4273,13 +4447,10 @@ async def on_member_join(member):
 
 @bot.event
 async def on_member_remove(member):
-    cfg = get_config(member.guild.id)
-    channel = discord.utils.get(member.guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if channel:
-        embed = discord.Embed(title="❌ Member Left", color=0xff0000)
-        embed.add_field(name="User", value=f"**{member}**", inline=True)
-        embed.set_thumbnail(url=member.display_avatar.url)
-        await channel.send(embed=embed)
+    embed = discord.Embed(title="❌ Member Left", color=0xff0000)
+    embed.add_field(name="User", value=f"**{member}**", inline=True)
+    embed.set_thumbnail(url=member.display_avatar.url)
+    await _send_log_embed(member.guild, embed)
 
 @bot.event
 async def on_member_update(before, after):
@@ -4306,16 +4477,13 @@ async def on_member_update(before, after):
 
     if not cfg.get("detailed_logs_enabled"):
         return
-    log_channel = discord.utils.get(after.guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if log_channel is None:
-        return
 
     if before.nick != after.nick:
         embed = discord.Embed(title="✏️ Nickname Changed", color=0x3399ff)
         embed.add_field(name="Member", value=f"**{after}**", inline=True)
         embed.add_field(name="Before", value=before.nick or "*(none)*", inline=True)
         embed.add_field(name="After", value=after.nick or "*(none)*", inline=True)
-        await log_channel.send(embed=embed)
+        await _send_log_embed(after.guild, embed)
 
     before_roles = set(before.roles)
     after_roles = set(after.roles)
@@ -4329,57 +4497,75 @@ async def on_member_update(before, after):
                 embed.add_field(name="Added", value=", ".join(r.mention for r in added), inline=True)
             if removed:
                 embed.add_field(name="Removed", value=", ".join(r.mention for r in removed), inline=True)
-            await log_channel.send(embed=embed)
+            await _send_log_embed(after.guild, embed)
 
 
 @bot.event
 async def on_voice_state_update(member, before, after):
     cfg = get_config(member.guild.id)
+
+    # Salons vocaux temporaires ("Join to Create") : indépendant du toggle
+    # detailed_logs, doit toujours fonctionner si configuré.
+    jtc_channel_id = cfg.get("jtc_channel_id")
+    if jtc_channel_id and after.channel and after.channel.id == int(jtc_channel_id):
+        category = after.channel.category
+        try:
+            new_channel = await member.guild.create_voice_channel(
+                name=f"{member.display_name}'s channel"[:100],
+                category=category,
+                reason=f"Join-to-Create channel for {member}",
+            )
+            await new_channel.set_permissions(member, manage_channels=True, move_members=True)
+            await member.move_to(new_channel, reason="Join-to-Create")
+            _temp_voice_channels[new_channel.id] = member.guild.id
+        except discord.HTTPException as e:
+            print(f"[JTC] Failed to create temp channel for {member.id}: {e}", flush=True)
+
+    # Suppression auto d'un salon temporaire une fois vide.
+    if before.channel and before.channel.id in _temp_voice_channels:
+        if len(before.channel.members) == 0:
+            try:
+                await before.channel.delete(reason="Join-to-Create: channel empty")
+            except discord.HTTPException:
+                pass
+            _temp_voice_channels.pop(before.channel.id, None)
+
     if not cfg.get("detailed_logs_enabled"):
-        return
-    log_channel = discord.utils.get(member.guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if log_channel is None:
         return
 
     if before.channel is None and after.channel is not None:
         embed = discord.Embed(description=f"🔊 **{member}** joined voice channel {after.channel.mention}", color=0x00cc00)
-        await log_channel.send(embed=embed)
+        await _send_log_embed(member.guild, embed)
     elif before.channel is not None and after.channel is None:
         embed = discord.Embed(description=f"🔇 **{member}** left voice channel {before.channel.mention}", color=0xff6600)
-        await log_channel.send(embed=embed)
+        await _send_log_embed(member.guild, embed)
     elif before.channel is not None and after.channel is not None and before.channel.id != after.channel.id:
         embed = discord.Embed(
             description=f"🔀 **{member}** moved from {before.channel.mention} to {after.channel.mention}",
             color=0x3399ff,
         )
-        await log_channel.send(embed=embed)
+        await _send_log_embed(member.guild, embed)
 
 @bot.event
 async def on_message_delete(message):
     if message.guild is None or message.author.bot:
         return
-    cfg = get_config(message.guild.id)
-    channel = discord.utils.get(message.guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if channel:
-        embed = discord.Embed(title="🗑️ Message Deleted", color=0xff6600)
-        embed.add_field(name="Author", value=f"**{message.author}**", inline=True)
-        embed.add_field(name="Channel", value=message.channel.mention, inline=True)
-        embed.add_field(name="Content", value=message.content or "*(empty)*", inline=False)
-        await channel.send(embed=embed)
+    embed = discord.Embed(title="🗑️ Message Deleted", color=0xff6600)
+    embed.add_field(name="Author", value=f"**{message.author}**", inline=True)
+    embed.add_field(name="Channel", value=message.channel.mention, inline=True)
+    embed.add_field(name="Content", value=message.content or "*(empty)*", inline=False)
+    await _send_log_embed(message.guild, embed)
 
 @bot.event
 async def on_message_edit(before, after):
     if before.guild is None or before.author.bot:
         return
-    cfg = get_config(before.guild.id)
-    channel = discord.utils.get(before.guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if channel:
-        embed = discord.Embed(title="✏️ Message Edited", color=0x3399ff)
-        embed.add_field(name="Author", value=f"**{before.author}**", inline=True)
-        embed.add_field(name="Channel", value=before.channel.mention, inline=True)
-        embed.add_field(name="Before", value=before.content or "*(empty)*", inline=False)
-        embed.add_field(name="After", value=after.content or "*(empty)*", inline=False)
-        await channel.send(embed=embed)
+    embed = discord.Embed(title="✏️ Message Edited", color=0x3399ff)
+    embed.add_field(name="Author", value=f"**{before.author}**", inline=True)
+    embed.add_field(name="Channel", value=before.channel.mention, inline=True)
+    embed.add_field(name="Before", value=before.content or "*(empty)*", inline=False)
+    embed.add_field(name="After", value=after.content or "*(empty)*", inline=False)
+    await _send_log_embed(before.guild, embed)
 
 
 @bot.event
@@ -4472,12 +4658,49 @@ def run_coroutine(coro, timeout=10):
     future = asyncio.run_coroutine_threadsafe(coro, bot.loop)
     return future.result(timeout=timeout)
 
+async def get_or_create_log_webhook(guild, channel):
+    """Récupère le webhook de logs en cache pour ce salon, ou en crée un.
+    Un webhook n'a pas besoin que le bot ait la permission d'envoyer des
+    messages classiques dans ce salon — juste de l'avoir créé une fois."""
+    cfg = get_config(guild.id)
+    webhook_url = cfg.get("log_webhook_url")
+    webhook_channel_id = cfg.get("log_webhook_channel_id")
+    if webhook_url and webhook_channel_id == str(channel.id):
+        try:
+            return discord.Webhook.from_url(webhook_url, client=bot)
+        except (discord.errors.InvalidData, ValueError):
+            pass  # webhook invalide (supprimé manuellement ?), on en recrée un plus bas
+
+    try:
+        webhook = await channel.create_webhook(name="Nexus Logs", reason="Nexus log webhook")
+        update_config(guild.id, "log_webhook_url", webhook.url)
+        update_config(guild.id, "log_webhook_channel_id", str(channel.id))
+        return webhook
+    except discord.HTTPException as e:
+        print(f"[WEBHOOK] Failed to create log webhook in guild {guild.id}: {e}", flush=True)
+        return None
+
+
 async def _send_log_embed(guild, embed):
-    """Envoie un embed dans le channel de logs configuré pour ce serveur."""
+    """Envoie un embed dans le channel de logs configuré pour ce serveur,
+    via un webhook (créé/mis en cache automatiquement) plutôt qu'un message
+    classique du bot — avec repli sur l'envoi classique si le webhook
+    échoue ou ne peut pas être créé (ex: permission Manage Webhooks manquante)."""
     cfg = get_config(guild.id)
     channel = discord.utils.get(guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if channel:
+    if channel is None:
+        return
+    webhook = await get_or_create_log_webhook(guild, channel)
+    if webhook is not None:
+        try:
+            await webhook.send(embed=embed, username="Nexus Logs")
+            return
+        except discord.HTTPException as e:
+            print(f"[WEBHOOK] Failed to send via webhook, falling back to normal send: {e}", flush=True)
+    try:
         await channel.send(embed=embed)
+    except discord.HTTPException:
+        pass
 
 def log_dashboard_action(guild, actor_name, action, details=""):
     """Poste un embed dans le salon de logs Discord quand une action est
