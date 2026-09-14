@@ -8,3 +8,4 @@ imageio-ffmpeg
 requests
 pyyaml
 pyotp
+pytest
