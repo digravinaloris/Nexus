@@ -18,6 +18,8 @@ import re
 import secrets
 import subprocess
 import signal
+import utils
+from utils import parse_duration, check_caps, check_banned_words, check_banned_domains
 import csv
 import io
 import sys
@@ -2657,15 +2659,6 @@ async def botunlock(interaction: discord.Interaction):
 # ===========  USERINFO / SERVERINFO / TEMPBAN / REACTION ROLES
 # ============================================================
 
-def parse_duration(duration_str: str) -> int:
-    """Convertit une durée humaine ('1h', '2d', '30m', '1w') en secondes. Retourne -1 si invalide."""
-    units = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
-    match = re.fullmatch(r"(\d+)([smhdw])", duration_str.strip().lower())
-    if not match:
-        return -1
-    return int(match.group(1)) * units[match.group(2)]
-
-
 async def tempban_check_loop():
     """Tâche de fond qui lève les tempbans arrivés à expiration, toutes les 60 secondes."""
     await bot.wait_until_ready()
@@ -4100,8 +4093,6 @@ _recent_joins = {}  # {guild_id: [timestamps]}
 
 SPAM_MESSAGE_COUNT = 10
 SPAM_WINDOW_SECONDS = 5
-CAPS_MIN_LENGTH = 10
-CAPS_RATIO_THRESHOLD = 0.7
 INVITE_LINK_RE = re.compile(r"(discord\.gg/|discord(?:app)?\.com/invite/)", re.IGNORECASE)
 RAID_JOIN_COUNT = 5
 RAID_WINDOW_SECONDS = 10
@@ -4230,43 +4221,8 @@ def check_raid(guild_id, cfg=None):
 
 
 
-def check_caps(content, cfg=None):
-    ratio_threshold = cfg.get("automod_caps_ratio", CAPS_RATIO_THRESHOLD) if cfg else CAPS_RATIO_THRESHOLD
-    letters = [c for c in content if c.isalpha()]
-    if len(content) < CAPS_MIN_LENGTH or len(letters) < CAPS_MIN_LENGTH:
-        return False
-    upper_count = sum(1 for c in letters if c.isupper())
-    return (upper_count / len(letters)) > ratio_threshold
-
-
 def check_invite_link(content):
     return bool(INVITE_LINK_RE.search(content))
-
-def check_banned_words(content, banned_words):
-    """Détection simple par mot entier (insensible à la casse) — évite de
-    flag un mot innocent qui contiendrait juste une sous-chaîne interdite."""
-    if not banned_words:
-        return False
-    lowered = content.lower()
-    for word in banned_words:
-        if re.search(r"\b" + re.escape(word.lower()) + r"\b", lowered):
-            return True
-    return False
-
-URL_RE = re.compile(r"https?://([a-zA-Z0-9_\-\.]+)", re.IGNORECASE)
-
-def check_banned_domains(content, banned_domains):
-    """Extrait les domaines des liens présents dans le message et les compare
-    à la liste noire (avec sous-domaines : 'evil.com' bloque aussi 'sub.evil.com')."""
-    if not banned_domains:
-        return False
-    found_domains = {m.group(1).lower() for m in URL_RE.finditer(content)}
-    for domain in found_domains:
-        for banned in banned_domains:
-            banned = banned.lower()
-            if domain == banned or domain.endswith("." + banned):
-                return True
-    return False
 
 
 async def apply_automod_action(message, violation_type, reason):
@@ -6369,16 +6325,7 @@ STATUS_PAGE_TEMPLATE = BASE_STYLE + """
 </div>
 """
 
-def _format_uptime(total_seconds):
-    total_seconds = int(total_seconds)
-    days, rem = divmod(total_seconds, 86400)
-    hours, rem = divmod(rem, 3600)
-    minutes, _ = divmod(rem, 60)
-    parts = []
-    if days: parts.append(f"{days}d")
-    if hours: parts.append(f"{hours}h")
-    if not days: parts.append(f"{minutes}m")
-    return " ".join(parts) or "0m"
+_format_uptime = utils.format_uptime
 
 
 @api.route("/status")
