@@ -67,9 +67,23 @@ All notable changes to Nexus are documented here.
 - Dashboard: an onboarding checklist showing what isn't configured yet
 - Dashboard: the audit log panel is now a real multi-admin activity feed — it merges dashboard changes with sanctions issued through commands (bans, kicks, etc.), not just web actions
 - Dashboard: an "open tickets" panel listing currently open ticket channels with direct links
+- `/setup` — a guided setup wizard with dropdown menus, so you don't have to know every `/config` command individually
+- **Temporary voice channels** — `/config jointocreate` makes joining a chosen channel spawn a private one, deleted automatically once empty
+- **Dropdown role menus** — `/config rolemenu additem` / `post` build a modern select-menu role picker (alternative to reaction roles)
+- `/schedule` — post a message to a channel at a later time
+- **Warn escalation** — `/config warnescalation` auto-mutes then auto-kicks at configurable warning counts
+- `/case note` — attach follow-up notes to a case without overwriting the original reason
+- `/backup preview` — see a backup's roles and channels before restoring it
+- `/config automod` — tune spam, caps, and raid detection thresholds per server (previously hardcoded)
+- Dashboard: a moderation activity chart (sanctions per day over the last 30 days), drawn as inline SVG with no external JS
+- A test suite (`pytest tests/`) covering the pure utility functions, plus a GitHub Actions workflow that runs it on every push and PR
 
 ### Changed
 - Warnings are now scoped per server (previously shared across all servers a user was in)
+- Pure helper functions moved into `utils.py` so they can be tested without starting the bot or connecting to MongoDB
+- Moderation logs are now sent through a Discord webhook (created and cached automatically), falling back to a normal message if the bot lacks Manage Webhooks
+- `/history`, `/banlist`, `/mutelist`, and `/warnlist` are now paginated with buttons instead of risking hitting Discord's embed limits — `/banlist` previously truncated silently at 25 entries
+- Music extraction now tries without cookies first, falling back to cookies only if needed — works around the currently broken `tv_downgraded` YouTube client (yt-dlp issue #17389)
 - Bot lock (`bot.locked`) is now per-server instead of a single global flag
 - The bot's lock/logs/API behavior no longer relies on a single hardcoded owner account — fully multi-server
 - `/apply` DMs now go to the server owner instead of the bot developer
@@ -83,6 +97,9 @@ All notable changes to Nexus are documented here.
 - Hardcoded default configuration for a single server
 
 ### Fixed
+- Bot now shuts down gracefully on SIGTERM (sent by Render on redeploy) instead of being killed mid-operation, and closes its MongoDB connection cleanly
+- Commands now have a short cooldown, preventing accidental double-clicks or spam
+- The appeal button in sanction DMs is rate-limited against repeated clicks
 - `on_member_join` no longer grants the configured auto-role while the server is in an active anti-raid lockdown
 - Dashboard now warns when an auto-role or applied permission role has sensitive permissions (Administrator, Manage Server, Ban/Kick, Manage Roles)
 - Dashboard permission removal no longer silently fails for commands added with different casing or outside the curated command list

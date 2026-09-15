@@ -82,3 +82,6 @@ appeals_original_reason: Original reason
 appeals_appeal_text: Their appeal
 btn_accept: Accept
 btn_deny: Deny
+panel_stats_title: Moderation activity
+panel_stats_desc: Sanctions issued per day over the last 30 days.
+stats_empty: No moderation activity in the last 30 days.

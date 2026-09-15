@@ -82,3 +82,6 @@ appeals_original_reason: Raison d'origine
 appeals_appeal_text: Leur appel
 btn_accept: Accepter
 btn_deny: Refuser
+panel_stats_title: Activité de modération
+panel_stats_desc: Sanctions prises par jour sur les 30 derniers jours.
+stats_empty: Aucune activité de modération sur les 30 derniers jours.

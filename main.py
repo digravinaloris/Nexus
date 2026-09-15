@@ -81,6 +81,56 @@ def record_audit(guild_id, actor_id, actor_name, action, details=""):
     except Exception as e:
         print(f"[AUDIT] Failed to record audit entry: {e}", flush=True)
 
+def get_sanction_stats(guild_id, days=30):
+    """Agrège le nombre de sanctions par jour sur les N derniers jours, pour
+    le graphe du dashboard. Retourne une liste de (label_jour, nombre),
+    avec les jours sans sanction inclus à zéro (sinon le graphe serait
+    trompeur : il sauterait les périodes calmes)."""
+    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
+    counts = {}
+    try:
+        for doc in sanctions_col.find({"guild_id": str(guild_id), "timestamp": {"$gte": since}}):
+            ts = doc["timestamp"]
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=datetime.timezone.utc)
+            key = ts.strftime("%Y-%m-%d")
+            counts[key] = counts.get(key, 0) + 1
+    except Exception as e:
+        print(f"[STATS] Failed to aggregate sanctions: {e}", flush=True)
+        return []
+
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    series = []
+    for i in range(days - 1, -1, -1):
+        day = today - datetime.timedelta(days=i)
+        key = day.strftime("%Y-%m-%d")
+        series.append((day.strftime("%d/%m"), counts.get(key, 0)))
+    return series
+
+
+def build_sparkline_svg(series, width=640, height=120):
+    """Génère un petit graphe en barres en SVG pur — évite de charger une
+    librairie JS externe juste pour ça (et marche même hors ligne)."""
+    if not series:
+        return ""
+    max_val = max(v for _, v in series) or 1
+    bar_gap = 2
+    bar_width = max(2, (width - bar_gap * len(series)) / len(series))
+    bars = []
+    for i, (label, value) in enumerate(series):
+        bar_h = (value / max_val) * (height - 20)
+        x = i * (bar_width + bar_gap)
+        y = height - bar_h
+        bars.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_h:.1f}" '
+            f'rx="2" fill="var(--raspberry)" opacity="0.85"><title>{label}: {value}</title></rect>'
+        )
+    return (
+        f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" '
+        f'preserveAspectRatio="none" role="img">{"".join(bars)}</svg>'
+    )
+
+
 def get_audit_log(guild_id, limit=20):
     """Fil d'activité multi-source : fusionne les changements faits depuis
     le dashboard (audit_col) et les sanctions prises via les commandes
@@ -1668,6 +1718,33 @@ async def broadcast(interaction: discord.Interaction, message: str, mention: str
     await interaction.channel.send(content=ping if ping else None, embed=embed)
 
 
+@bot.tree.command(name="setup", description="Guided setup wizard for this server — admin only")
+@has_admin()
+async def setup_wizard(interaction: discord.Interaction):
+    cfg = get_config(interaction.guild_id)
+    current_logs = cfg.get("logs_channel", "logs")
+    autorole = interaction.guild.get_role(cfg.get("autorole") or 0)
+    appeal_channel = interaction.guild.get_channel(cfg.get("appeal_channel_id") or 0)
+
+    embed = discord.Embed(
+        title="⚙️ Nexus Setup",
+        description=(
+            "Pick your settings from the menus below — each one applies immediately, "
+            "so you can stop at any point.\n\n"
+            "Everything here is also available individually via `/config`."
+        ),
+        color=0x3399ff,
+    )
+    embed.add_field(name="Logs channel", value=f"#{current_logs}", inline=True)
+    embed.add_field(name="Auto-role", value=autorole.name if autorole else "*(none)*", inline=True)
+    embed.add_field(name="Appeals channel", value=appeal_channel.mention if appeal_channel else "*(disabled)*", inline=True)
+    embed.add_field(name="Anti-nuke", value="🟢 On" if cfg.get("antinuke_enabled") else "⚪ Off", inline=True)
+    embed.set_footer(text="This wizard stays open for 5 minutes.")
+
+    view = SetupWizardView(interaction.guild_id, interaction.user.id)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
 @bot.tree.command(name="schedule", description="Schedule a message to be posted later")
 @app_commands.describe(channel="Channel to post in", message="What to send", when="When to send it: 30m, 2h, 1d, 1w")
 async def schedule_command(interaction: discord.Interaction, channel: discord.TextChannel, message: str, when: str):
@@ -3250,6 +3327,97 @@ class RoleMenuView(discord.ui.View):
     def __init__(self, options=None):
         super().__init__(timeout=None)
         self.add_item(RoleMenuSelect(options))
+
+
+class SetupWizardView(discord.ui.View):
+    """Assistant de configuration guidé : évite d'avoir à connaître chaque
+    commande /config une par une. Chaque sélecteur applique son réglage
+    immédiatement, pour que l'assistant reste utile même si on le quitte
+    en cours de route."""
+    def __init__(self, guild_id, author_id):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        self.author_id = author_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "Only the person who started the setup can use it.", ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="1. Pick your logs channel",
+        min_values=1,
+        max_values=1,
+    )
+    async def pick_logs(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        channel = select.values[0]
+        update_config(self.guild_id, "logs_channel", channel.name)
+        await interaction.response.send_message(f"✅ Logs channel set to **#{channel.name}**.", ephemeral=True)
+
+    @discord.ui.select(
+        cls=discord.ui.RoleSelect,
+        placeholder="2. Pick an auto-role for new members (optional)",
+        min_values=0,
+        max_values=1,
+    )
+    async def pick_autorole(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        if not select.values:
+            update_config(self.guild_id, "autorole", None)
+            await interaction.response.send_message("✅ Auto-role cleared.", ephemeral=True)
+            return
+        role = select.values[0]
+        risky = ("administrator", "manage_guild", "ban_members", "kick_members", "manage_roles")
+        update_config(self.guild_id, "autorole", role.id)
+        warning = ""
+        if any(getattr(role.permissions, p) for p in risky):
+            warning = "\n⚠️ Careful: this role has sensitive permissions and will be given to **every** new member."
+        await interaction.response.send_message(f"✅ Auto-role set to **{role.name}**.{warning}", ephemeral=True)
+
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="3. Pick a channel for sanction appeals (optional)",
+        min_values=0,
+        max_values=1,
+    )
+    async def pick_appeals(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        if not select.values:
+            update_config(self.guild_id, "appeal_channel_id", None)
+            await interaction.response.send_message("✅ Appeals disabled.", ephemeral=True)
+            return
+        channel = select.values[0]
+        update_config(self.guild_id, "appeal_channel_id", channel.id)
+        await interaction.response.send_message(
+            f"✅ Sanction appeals will be reviewed in **#{channel.name}**. Sanction DMs now include an appeal button.",
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Enable anti-nuke", style=discord.ButtonStyle.success, emoji="🛡️", row=3)
+    async def enable_antinuke(self, interaction: discord.Interaction, button: discord.ui.Button):
+        update_config(self.guild_id, "antinuke_enabled", True)
+        button.disabled = True
+        button.label = "Anti-nuke enabled"
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send(
+            "✅ Anti-nuke enabled. Make sure the bot has the **View Audit Log** permission for it to work.",
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Finish", style=discord.ButtonStyle.primary, emoji="✅", row=3)
+    async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content="✅ **Setup complete.** Run `/config view` any time to check your settings, or `/setup` again to change them.",
+            embed=None,
+            view=self,
+        )
+        self.stop()
 
 
 class SatisfactionSurveyView(discord.ui.View):
@@ -5418,6 +5586,8 @@ BASE_STYLE = """
   .audit-action { font-size: 13px; color: var(--text); }
   .onboarding-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
   .onboarding-list li { font-size: 13px; color: var(--muted); background: var(--surface-2); border-radius: 8px; padding: 8px 12px; }
+  .chart-wrap { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .chart-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 6px; }
   .open-tickets-list { display: flex; flex-direction: column; gap: 8px; }
   .open-ticket-row { display: flex; justify-content: space-between; align-items: center; background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
   .open-ticket-row a { color: var(--raspberry); }
@@ -5750,6 +5920,17 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
     </form>
   </div>
 
+  <div class="panel" style="animation-delay:.205s">
+    <div class="panel-head"><h2>{{ t('panel_stats_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('panel_stats_desc') }}</div>
+    {% if sanction_chart %}
+    <div class="chart-wrap">{{ sanction_chart|safe }}</div>
+    <div class="chart-labels"><span>{{ chart_start }}</span><span>{{ chart_end }}</span></div>
+    {% else %}
+    <div class="no-perms">{{ t('stats_empty') }}</div>
+    {% endif %}
+  </div>
+
   <div class="panel" style="animation-delay:.21s">
     <div class="panel-head"><h2>{{ t('panel_tickets_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
     <div class="desc">{{ t('panel_tickets_desc') }}</div>
@@ -5922,6 +6103,11 @@ def dash_guild_page(guild_id):
         if isinstance(category, discord.CategoryChannel):
             open_tickets = list(category.text_channels)
 
+    # Graphe d'activité : sanctions par jour sur les 30 derniers jours.
+    stats_series = get_sanction_stats(guild_id, days=30)
+    has_any_activity = any(v for _, v in stats_series)
+    sanction_chart = build_sparkline_svg(stats_series) if has_any_activity else ""
+
     return render_template_string(
         GUILD_PAGE_TEMPLATE,
         guild=guild,
@@ -5935,6 +6121,9 @@ def dash_guild_page(guild_id):
         audit_entries=get_audit_log(guild_id) if is_owner else [],
         onboarding_missing=onboarding_missing,
         open_tickets=open_tickets,
+        sanction_chart=sanction_chart,
+        chart_start=stats_series[0][0] if stats_series else "",
+        chart_end=stats_series[-1][0] if stats_series else "",
         is_owner=is_owner,
         is_locked=guild.id in bot.locked_guilds,
         user=session.get("dash_user"),
