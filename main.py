@@ -1714,7 +1714,12 @@ async def banlist(interaction: discord.Interaction):
         return
     lines = [f"**{entry.user}** — {entry.reason or 'No reason'}" for entry in bans]
     view = PaginatedEmbedView("🔨 Banned Members", lines, color=0xff0000, author_id=interaction.user.id)
-    await interaction.followup.send(embed=view.build_embed(), view=view if view.max_page > 0 else None)
+    embed = view.build_embed()
+
+    if view.max_page > 0:
+        await interaction.followup.send(embed=embed, view=view)
+    else:
+        await interaction.followup.send(embed=embed)
 
 # /broadcast
 @bot.tree.command(name="broadcast", description="Send a broadcast message")
