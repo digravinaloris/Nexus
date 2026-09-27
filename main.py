@@ -19,7 +19,7 @@ import secrets
 import subprocess
 import signal
 import utils
-from utils import parse_duration, check_caps, check_banned_words, check_banned_domains
+from utils import parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link
 import csv
 import io
 import sys
@@ -64,6 +64,11 @@ def init_mongo():
     invite_uses_col = db["invite_uses"]
     role_menus_col = db["role_menus"]
     scheduled_col = db["scheduled_announcements"]
+    # Exposé sur l'objet bot (pas avant : init_mongo() tourne dans on_ready(),
+    # après setup_hook()/le chargement des cogs) -- un cog qui a besoin de Mongo
+    # (ex: cogs/faq.py) lit bot.db au moment de la commande/l'event, jamais à
+    # l'import du module, donc cette valeur est déjà prête à ce moment-là.
+    bot.db = db
 
 def record_audit(guild_id, actor_id, actor_name, action, details=""):
     """Trace de chaque changement de config (dashboard ou commande) pour
@@ -202,6 +207,7 @@ def get_config(guild_id):
             "member_count_channel_id": None,
             "min_account_age_days": 0,
             "banned_domains": [],
+            "anti_link_global_enabled": False,
             "automod_spam_count": 10,
             "automod_spam_window": 5,
             "automod_caps_ratio": 0.7,
@@ -854,7 +860,8 @@ async def setup_hook():
     # Les cogs n'importent jamais main.py (ça créerait un import circulaire) :
     # ils accèdent aux quelques helpers partagés via l'objet bot lui-même.
     bot.check_access = check_access
-    for extension in ("cogs.music",):
+    bot.get_config = get_config
+    for extension in ("cogs.music", "cogs.faq"):
         try:
             await bot.load_extension(extension)
             print(f"[COGS] Loaded {extension}", flush=True)
@@ -1481,6 +1488,7 @@ SANCTION_ICONS = {
     "note": "📝",
     "automod_spam": "🤖",
     "automod_link": "🔗",
+    "automod_link_global": "🌐",
     "automod_caps": "🔠",
 }
 
@@ -2696,6 +2704,7 @@ FEATURE_TOGGLES = {
     "antinuke": {"config_key": "antinuke_enabled", "label": "Anti-nuke protection"},
     "weekly_digest": {"config_key": "weekly_digest_enabled", "label": "Weekly DM digest"},
     "dashboard_logging": {"config_key": "log_dashboard_actions", "label": "Log dashboard actions to the logs channel"},
+    "anti_link_global": {"config_key": "anti_link_global_enabled", "label": "Block ALL links, not just Discord invites"},
 }
 FEATURE_CHOICES = [app_commands.Choice(name=v["label"], value=k) for k, v in FEATURE_TOGGLES.items()]
 
@@ -3892,6 +3901,9 @@ async def on_message(message):
     if not is_automod_exempt(message.author, cfg):
         if check_invite_link(message.content):
             await apply_automod_action(message, "automod_link", "posting an invite link")
+            return
+        if cfg.get("anti_link_global_enabled") and check_any_link(message.content):
+            await apply_automod_action(message, "automod_link_global", "posting a link")
             return
         if check_spam(message.guild.id, message.author.id, cfg):
             await apply_automod_action(message, "automod_spam", "sending messages too quickly")

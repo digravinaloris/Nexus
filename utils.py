@@ -57,6 +57,49 @@ def check_banned_domains(content, banned_domains):
     return False
 
 
+def check_any_link(content):
+    """Détecte n'importe quel lien http(s) dans le message (contrairement à
+    check_banned_domains, qui ne matche que les domaines d'une liste noire).
+    Utilisé par le feature toggle anti_link_global (/feature enable anti_link_global)."""
+    return bool(URL_RE.search(content))
+
+
+# Amorces de question courantes, FR + EN (le bot et ses serveurs sont bilingues).
+_QUESTION_STARTERS = (
+    "comment", "pourquoi", "est-ce que", "est ce que", "c'est quoi", "c'est quand",
+    "c'est où", "quoi", "qui est", "où est", "où se", "quand est", "combien",
+    "peut-on", "peut on", "pouvez-vous", "pouvez vous", "quel", "quelle",
+    "how", "why", "what", "when", "where", "who", "which", "can you", "could you",
+    "is there", "are there", "do you", "does",
+)
+
+
+def looks_like_question(content):
+    """Détection simple (pas de NLP) : un message compte comme une question
+    s'il contient un '?' ou commence par une amorce de question FR/EN connue."""
+    if "?" in content:
+        return True
+    lowered = content.strip().lower()
+    return lowered.startswith(_QUESTION_STARTERS)
+
+
+def match_faq_entries(content, entries):
+    """Retourne la liste des entrées FAQ (dicts avec une clé 'keywords') dont
+    au moins un mot-clé apparaît en mot entier dans le message. Ordre d'entrée
+    conservé -- utilisé par le cog FAQ pour savoir combien de réponses matchent."""
+    if not entries:
+        return []
+    lowered = content.lower()
+    matches = []
+    for entry in entries:
+        for keyword in entry.get("keywords", []):
+            keyword = keyword.strip().lower()
+            if keyword and re.search(r"\b" + re.escape(keyword) + r"\b", lowered):
+                matches.append(entry)
+                break
+    return matches
+
+
 def format_uptime(total_seconds):
     """Formate un nombre de secondes en chaîne lisible ('2d 5h', '14m')."""
     total_seconds = int(total_seconds)
