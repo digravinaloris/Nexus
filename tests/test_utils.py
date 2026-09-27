@@ -12,6 +12,9 @@ from utils import (
     check_caps,
     check_banned_words,
     check_banned_domains,
+    check_any_link,
+    looks_like_question,
+    match_faq_entries,
     format_uptime,
 )
 
@@ -104,6 +107,75 @@ class TestCheckBannedDomains:
 
     def test_empty_banned_list(self):
         assert check_banned_domains("http://anything.com", []) is False
+
+
+class TestCheckAnyLink:
+    def test_http_link_detected(self):
+        assert check_any_link("check this http://example.com") is True
+
+    def test_https_link_detected(self):
+        assert check_any_link("check this https://example.com/page") is True
+
+    def test_no_link(self):
+        assert check_any_link("just a normal message") is False
+
+    def test_bare_domain_without_scheme_not_detected(self):
+        # Volontairement : sans http(s)://, ce n'est pas traité comme un lien
+        # (limitation connue, cohérente avec URL_RE utilisé ailleurs dans le projet)
+        assert check_any_link("visit example.com") is False
+
+
+class TestLooksLikeQuestion:
+    def test_question_mark(self):
+        assert looks_like_question("tu fais quoi ?") is True
+
+    def test_french_starter_comment(self):
+        assert looks_like_question("comment on fait pour rejoindre le serveur") is True
+
+    def test_french_starter_est_ce_que(self):
+        assert looks_like_question("est-ce que le bot marche encore") is True
+
+    def test_english_starter_how(self):
+        assert looks_like_question("how do I reset my warns") is True
+
+    def test_english_starter_can_you(self):
+        assert looks_like_question("can you help me with roles") is True
+
+    def test_statement_not_a_question(self):
+        assert looks_like_question("le serveur est en maintenance") is False
+
+    def test_empty_message(self):
+        assert looks_like_question("") is False
+
+
+class TestMatchFaqEntries:
+    def test_single_match(self):
+        entries = [{"id": "1", "keywords": ["règles"], "response": "voir #règles"}]
+        assert match_faq_entries("c'est quoi les règles ?", entries) == entries
+
+    def test_multiple_keywords_one_entry(self):
+        entries = [{"id": "1", "keywords": ["règles", "reglement"], "response": "voir #règles"}]
+        assert match_faq_entries("le reglement du serveur ?", entries) == entries
+
+    def test_multiple_entries_match(self):
+        entries = [
+            {"id": "1", "keywords": ["règles"], "response": "a"},
+            {"id": "2", "keywords": ["boost"], "response": "b"},
+        ]
+        result = match_faq_entries("les règles et le boost ça marche comment ?", entries)
+        assert result == entries
+
+    def test_no_match(self):
+        entries = [{"id": "1", "keywords": ["règles"], "response": "a"}]
+        assert match_faq_entries("il fait beau aujourd'hui", entries) == []
+
+    def test_word_boundary_no_partial_match(self):
+        # "reg" ne doit pas matcher "regarder" -- mot entier uniquement
+        entries = [{"id": "1", "keywords": ["reg"], "response": "a"}]
+        assert match_faq_entries("je vais regarder un film", entries) == []
+
+    def test_empty_entries(self):
+        assert match_faq_entries("comment ça marche ?", []) == []
 
 
 class TestFormatUptime:
