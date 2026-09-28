@@ -4387,8 +4387,18 @@ def list_guilds():
         guild = bot.get_guild(int(g.auth_guild_id))
         if not guild:
             return jsonify([])
-        return jsonify([{"id": str(guild.id), "name": guild.name, "member_count": guild.member_count}])
-    guilds = [{"id": str(gd.id), "name": gd.name, "member_count": gd.member_count} for gd in bot.guilds]
+        return jsonify([{
+            "id": str(guild.id),
+            "name": guild.name,
+            "member_count": guild.member_count,
+            "icon_url": str(guild.icon.url) if guild.icon else None,
+        }])
+    guilds = [{
+        "id": str(gd.id),
+        "name": gd.name,
+        "member_count": gd.member_count,
+        "icon_url": str(gd.icon.url) if gd.icon else None,
+    } for gd in bot.guilds]
     return jsonify(guilds)
 
 @api.route('/api/guilds/<guild_id>/stats', methods=['GET'])
@@ -4412,6 +4422,20 @@ def guild_stats(guild_id):
 
     warned_count = warns_col.count_documents({"guild_id": str(guild_id), "count": {"$gt": 0}})
 
+    cfg = get_config(guild_id)
+    open_tickets_count = 0
+    ticket_category_id = cfg.get("ticket_category_id")
+    if ticket_category_id:
+        category = guild.get_channel(int(ticket_category_id))
+        if isinstance(category, discord.CategoryChannel):
+            open_tickets_count = len(category.text_channels)
+
+    today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    warns_today = sanctions_col.count_documents({
+        "guild_id": str(guild_id), "type": "warn", "timestamp": {"$gte": today_start},
+    })
+    activity_7d = [count for _, count in get_sanction_stats(guild_id, days=7)]
+
     return jsonify({
         "guild_id": str(guild.id),
         "name": guild.name,
@@ -4419,6 +4443,9 @@ def guild_stats(guild_id):
         "ban_count": ban_count,
         "muted_count": muted_count,
         "warned_count": warned_count,
+        "warns_today": warns_today,
+        "open_tickets_count": open_tickets_count,
+        "activity_7d": activity_7d,
         "locked": int(guild_id) in bot.locked_guilds
     })
 
@@ -4440,7 +4467,7 @@ def update_guild_config(guild_id):
         return jsonify({"error": "Guild not found"}), 404
 
     data = request.get_json(silent=True) or {}
-    allowed_keys = {"logs_channel", "autorole", "allowed_roles", "command_roles"}
+    allowed_keys = {"logs_channel", "autorole", "allowed_roles", "command_roles", "language"}
     updated = {}
     for key, value in data.items():
         if key in allowed_keys:
@@ -4731,6 +4758,103 @@ def unwarn_member_route(guild_id, user_id):
                     pass
 
     return jsonify({"success": True, "warnings": count})
+
+
+@api.route('/api/guilds/<guild_id>/audit', methods=['GET'])
+@require_api_key
+def guild_audit_route(guild_id):
+    """Fil d'activité multi-admin pour l'app mobile -- même source que le
+    dashboard web (get_audit_log), fusionne actions dashboard + sanctions."""
+    limit = min(request.args.get("limit", default=20, type=int) or 20, 100)
+    entries = get_audit_log(guild_id, limit=limit)
+    return jsonify([{
+        "actor_name": e.get("actor_name", "Unknown"),
+        "action": e.get("action", ""),
+        "details": e.get("details", ""),
+        "timestamp": e["timestamp"].isoformat(),
+    } for e in entries])
+
+
+@api.route('/api/guilds/<guild_id>/cases', methods=['GET'])
+@require_api_key
+def guild_cases_route(guild_id):
+    """Historique des sanctions (case browser) pour l'app mobile -- même
+    requête Mongo que la page /dashboard/<guild_id>/cases côté web."""
+    filter_type = request.args.get("type", "")
+    limit = min(request.args.get("limit", default=50, type=int) or 50, 200)
+    query = {"guild_id": str(guild_id)}
+    if filter_type:
+        query["type"] = filter_type
+    cases = list(sanctions_col.find(query).sort("timestamp", -1).limit(limit))
+    return jsonify([{
+        "case_id": c.get("case_id"),
+        "user_id": c.get("user_id"),
+        "type": c.get("type"),
+        "reason": c.get("reason", ""),
+        "moderator_id": c.get("moderator_id"),
+        "timestamp": c["timestamp"].isoformat(),
+    } for c in cases])
+
+
+@api.route('/api/guilds/<guild_id>/appeals', methods=['GET'])
+@require_api_key
+def guild_appeals_route(guild_id):
+    """Appels de sanction en attente de revue, pour l'app mobile -- mêmes
+    entrées que la page /dashboard/<guild_id>/appeals côté web."""
+    appeals = list(ban_appeals_col.find({"guild_id": str(guild_id), "status": "submitted"}).sort("submitted_at", -1))
+    return jsonify([{
+        "token": a["token"],
+        "case_id": a.get("case_id"),
+        "sanction_type": a.get("sanction_type", "ban"),
+        "user_id": a.get("user_id"),
+        "user_name": a.get("user_name"),
+        "original_reason": a.get("ban_reason", ""),
+        "appeal_text": a.get("appeal_text", ""),
+    } for a in appeals])
+
+
+@api.route('/api/guilds/<guild_id>/appeals/<token>/accept', methods=['POST'])
+@require_api_key
+def guild_appeal_accept_route(guild_id, token):
+    if not bot.is_ready():
+        return jsonify({"error": "Bot not ready"}), 503
+    guild = bot.get_guild(int(guild_id))
+    if not guild:
+        return jsonify({"error": "Guild not found"}), 404
+    appeal = get_ban_appeal(token)
+    if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
+        return jsonify({"error": "Appeal not found or already resolved"}), 404
+
+    sanction_type = appeal.get("sanction_type", "ban")
+    result = run_coroutine(reverse_sanction(guild, sanction_type, appeal["user_id"]))
+    ban_appeals_col.update_one({"token": token}, {"$set": {"status": "accepted", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
+    record_audit(guild_id, "mobile_app", "📱 Mobile App", "Accepted appeal (via mobile app)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
+    try:
+        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], True, result))
+    except Exception as e:
+        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
+    return jsonify({"success": True, "result": result})
+
+
+@api.route('/api/guilds/<guild_id>/appeals/<token>/deny', methods=['POST'])
+@require_api_key
+def guild_appeal_deny_route(guild_id, token):
+    if not bot.is_ready():
+        return jsonify({"error": "Bot not ready"}), 503
+    guild = bot.get_guild(int(guild_id))
+    if not guild:
+        return jsonify({"error": "Guild not found"}), 404
+    appeal = get_ban_appeal(token)
+    if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
+        return jsonify({"error": "Appeal not found or already resolved"}), 404
+
+    ban_appeals_col.update_one({"token": token}, {"$set": {"status": "denied", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
+    record_audit(guild_id, "mobile_app", "📱 Mobile App", "Denied appeal (via mobile app)", f"Case #{appeal['case_id']}")
+    try:
+        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], False, None))
+    except Exception as e:
+        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
+    return jsonify({"success": True})
 
 
 # ============================================================
