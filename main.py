@@ -4857,6 +4857,80 @@ def guild_appeal_deny_route(guild_id, token):
     return jsonify({"success": True})
 
 
+@api.route('/api/guilds/<guild_id>/features', methods=['GET'])
+@require_api_key
+def guild_features_route(guild_id):
+    cfg = get_config(guild_id)
+    return jsonify([{
+        "key": key,
+        "label": meta["label"],
+        "enabled": bool(cfg.get(meta["config_key"])),
+    } for key, meta in FEATURE_TOGGLES.items()])
+
+
+@api.route('/api/guilds/<guild_id>/features/<feature_key>', methods=['POST'])
+@require_api_key
+def guild_feature_toggle_route(guild_id, feature_key):
+    if feature_key not in FEATURE_TOGGLES:
+        return jsonify({"error": "Unknown feature"}), 404
+    data = request.get_json(silent=True) or {}
+    enabled = bool(data.get("enabled", True))
+    update_config(guild_id, FEATURE_TOGGLES[feature_key]["config_key"], enabled)
+    return jsonify({"success": True, "key": feature_key, "enabled": enabled})
+
+
+@api.route('/api/guilds/<guild_id>/faq', methods=['GET'])
+@require_api_key
+def guild_faq_list_route(guild_id):
+    """Même collection Mongo que cogs/faq.py -- l'app lit/écrit directement
+    dedans, pas besoin de passer par le bot (pas d'accès discord.py requis ici)."""
+    doc = db["faq"].find_one({"guild_id": str(guild_id)})
+    if not doc:
+        return jsonify({"enabled": False, "entries": []})
+    return jsonify({"enabled": bool(doc.get("enabled")), "entries": doc.get("entries", [])})
+
+
+@api.route('/api/guilds/<guild_id>/faq', methods=['POST'])
+@require_api_key
+def guild_faq_add_route(guild_id):
+    data = request.get_json(silent=True) or {}
+    keywords = [k.strip() for k in data.get("keywords", []) if k.strip()]
+    response_text = data.get("response", "").strip()
+    if not keywords or not response_text:
+        return jsonify({"error": "keywords and response are required"}), 400
+
+    doc = db["faq"].find_one({"guild_id": str(guild_id)}) or {"guild_id": str(guild_id), "enabled": False, "entries": []}
+    existing_ids = {e["id"] for e in doc["entries"]}
+    entry_id = secrets.token_hex(2)
+    while entry_id in existing_ids:
+        entry_id = secrets.token_hex(2)
+    doc["entries"].append({"id": entry_id, "keywords": keywords, "response": response_text})
+    db["faq"].update_one({"guild_id": str(guild_id)}, {"$set": {"entries": doc["entries"]}}, upsert=True)
+    return jsonify({"success": True, "id": entry_id})
+
+
+@api.route('/api/guilds/<guild_id>/faq/<entry_id>', methods=['DELETE'])
+@require_api_key
+def guild_faq_remove_route(guild_id, entry_id):
+    doc = db["faq"].find_one({"guild_id": str(guild_id)})
+    if not doc:
+        return jsonify({"error": "No FAQ entries for this server"}), 404
+    remaining = [e for e in doc["entries"] if e["id"] != entry_id]
+    if len(remaining) == len(doc["entries"]):
+        return jsonify({"error": "Entry not found"}), 404
+    db["faq"].update_one({"guild_id": str(guild_id)}, {"$set": {"entries": remaining}})
+    return jsonify({"success": True})
+
+
+@api.route('/api/guilds/<guild_id>/faq/toggle', methods=['POST'])
+@require_api_key
+def guild_faq_toggle_route(guild_id):
+    data = request.get_json(silent=True) or {}
+    enabled = bool(data.get("enabled", True))
+    db["faq"].update_one({"guild_id": str(guild_id)}, {"$set": {"enabled": enabled}}, upsert=True)
+    return jsonify({"success": True, "enabled": enabled})
+
+
 # ============================================================
 # ============ DASHBOARD WEB (OAuth2 Discord) ================
 # ============================================================
