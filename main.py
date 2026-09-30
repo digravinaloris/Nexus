@@ -830,7 +830,7 @@ async def check_access(interaction: discord.Interaction, command_name: str, nati
         return False
     if interaction.guild_id in bot.locked_guilds and not interaction.user.guild_permissions.administrator:
         embed = discord.Embed(description="🔒 The bot is currently locked on this server.", color=0xff0000)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         return False
     if interaction.user.guild_permissions.administrator:
         return True
@@ -841,14 +841,14 @@ async def check_access(interaction: discord.Interaction, command_name: str, nati
         if user_roles & allowed_roles:
             return True
         embed = discord.Embed(description="❌ You don't have permission to use this command.", color=0xff0000)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         return False
     if native_permission is None:
         return True
     if getattr(interaction.user.guild_permissions, native_permission, False):
         return True
     embed = discord.Embed(description="❌ You don't have permission to use this command.", color=0xff0000)
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
     return False
 
 @bot.event
