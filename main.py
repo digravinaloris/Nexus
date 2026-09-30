@@ -975,6 +975,7 @@ async def on_guild_remove(guild: discord.Guild):
 
 # /ban
 @bot.tree.command(name="ban", description="Ban a member")
+@app_commands.default_permissions(ban_members=True)
 async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     if not await check_access(interaction, "ban", "ban_members"): return
     if member.top_role >= interaction.guild.me.top_role:
@@ -1010,6 +1011,7 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
 
 # /kick
 @bot.tree.command(name="kick", description="Kick a member")
+@app_commands.default_permissions(kick_members=True)
 async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     if not await check_access(interaction, "kick", "kick_members"): return
     if member.top_role >= interaction.guild.me.top_role:
@@ -1044,6 +1046,7 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
 
 # /mute
 @bot.tree.command(name="mute", description="Timeout a member")
+@app_commands.default_permissions(moderate_members=True)
 async def mute(interaction: discord.Interaction, member: discord.Member, minutes: int = 10, reason: str = "No reason provided"):
     if not await check_access(interaction, "mute", "moderate_members"): return
     if member.top_role >= interaction.guild.me.top_role:
@@ -1078,6 +1081,7 @@ async def mute(interaction: discord.Interaction, member: discord.Member, minutes
 
 # /unmute
 @bot.tree.command(name="unmute", description="Remove timeout from a member")
+@app_commands.default_permissions(moderate_members=True)
 async def unmute(interaction: discord.Interaction, member: discord.Member):
     if not await check_access(interaction, "unmute", "moderate_members"): return
     if member.top_role >= interaction.guild.me.top_role:
@@ -1093,6 +1097,7 @@ async def unmute(interaction: discord.Interaction, member: discord.Member):
 
 # /unban
 @bot.tree.command(name="unban", description="Unban a user by ID")
+@app_commands.default_permissions(ban_members=True)
 async def unban(interaction: discord.Interaction, user_id: str):
     if not await check_access(interaction, "unban", "ban_members"): return
     try:
@@ -1109,6 +1114,7 @@ async def unban(interaction: discord.Interaction, user_id: str):
 
 # /warn
 @bot.tree.command(name="warn", description="Warn a member")
+@app_commands.default_permissions(manage_messages=True)
 async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     if not await check_access(interaction, "warn", "manage_messages"): return
     if member.top_role >= interaction.guild.me.top_role:
@@ -1160,6 +1166,7 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
 
 # /unwarn
 @bot.tree.command(name="unwarn", description="Remove a warning from a member")
+@app_commands.default_permissions(manage_messages=True)
 async def unwarn(interaction: discord.Interaction, member: discord.Member):
     if not await check_access(interaction, "unwarn", "manage_messages"): return
     await interaction.response.defer()
@@ -1197,6 +1204,7 @@ async def warnings(interaction: discord.Interaction, member: discord.Member):
     filter_by_role="Only delete messages from members with this role",
     filter_by_bots="Only delete messages sent by bots",
 )
+@app_commands.default_permissions(manage_messages=True)
 async def clear(
     interaction: discord.Interaction,
     amount: int,
@@ -1251,6 +1259,7 @@ async def mutelist(interaction: discord.Interaction):
 
 # /roleadd
 @bot.tree.command(name="roleadd", description="Give a role to a member")
+@app_commands.default_permissions(manage_roles=True)
 async def roleadd(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
     if not await check_access(interaction, "roleadd", "manage_roles"): return
     if role >= interaction.guild.me.top_role:
@@ -1271,6 +1280,7 @@ async def roleadd(interaction: discord.Interaction, member: discord.Member, role
 
 # /roleremove
 @bot.tree.command(name="roleremove", description="Remove a role from a member")
+@app_commands.default_permissions(manage_roles=True)
 async def roleremove(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
     if not await check_access(interaction, "roleremove", "manage_roles"): return
     if role >= interaction.guild.me.top_role:
@@ -1291,6 +1301,7 @@ async def roleremove(interaction: discord.Interaction, member: discord.Member, r
 
 # /lock
 @bot.tree.command(name="lock", description="Lock a channel")
+@app_commands.default_permissions(manage_channels=True)
 async def lock(interaction: discord.Interaction, channel: discord.TextChannel = None):
     if not await check_access(interaction, "lock", "manage_channels"): return
     channel = channel or interaction.channel
@@ -1303,6 +1314,7 @@ async def lock(interaction: discord.Interaction, channel: discord.TextChannel = 
 
 # /unlock
 @bot.tree.command(name="unlock", description="Unlock a channel")
+@app_commands.default_permissions(manage_channels=True)
 async def unlock(interaction: discord.Interaction, channel: discord.TextChannel = None):
     if not await check_access(interaction, "unlock", "manage_channels"): return
     channel = channel or interaction.channel
@@ -1315,6 +1327,7 @@ async def unlock(interaction: discord.Interaction, channel: discord.TextChannel 
 
 # /vlock
 @bot.tree.command(name="vlock", description="Lock a voice channel (prevent members from connecting)")
+@app_commands.default_permissions(manage_channels=True)
 async def vlock(interaction: discord.Interaction, channel: discord.VoiceChannel = None):
     if not await check_access(interaction, "vlock", "manage_channels"): return
     channel = channel or (interaction.user.voice.channel if interaction.user.voice else None)
@@ -1343,6 +1356,7 @@ async def vlock(interaction: discord.Interaction, channel: discord.VoiceChannel 
 
 # /vunlock
 @bot.tree.command(name="vunlock", description="Unlock a voice channel")
+@app_commands.default_permissions(manage_channels=True)
 async def vunlock(interaction: discord.Interaction, channel: discord.VoiceChannel = None):
     if not await check_access(interaction, "vunlock", "manage_channels"): return
     channel = channel or (interaction.user.voice.channel if interaction.user.voice else None)
@@ -1389,6 +1403,7 @@ async def lockedchannels(interaction: discord.Interaction):
 
 @bot.tree.command(name="slowmode", description="Set slowmode delay on a channel")
 @app_commands.describe(channel="The channel to apply slowmode to", seconds="Delay in seconds (0 to disable, max 21600)")
+@app_commands.default_permissions(manage_channels=True)
 async def slowmode(interaction: discord.Interaction, channel: discord.TextChannel, seconds: int):
     if not await check_access(interaction, "slowmode", "manage_channels"): return
     seconds = max(0, min(seconds, 21600))
@@ -1402,6 +1417,7 @@ async def slowmode(interaction: discord.Interaction, channel: discord.TextChanne
 
 @bot.tree.command(name="nickname", description="Change a member's nickname")
 @app_commands.describe(member="The member to rename", nickname="New nickname (leave empty to reset)")
+@app_commands.default_permissions(manage_nicknames=True)
 async def nickname(interaction: discord.Interaction, member: discord.Member, nickname: str = None):
     if not await check_access(interaction, "nickname", "manage_nicknames"): return
     if member.top_role >= interaction.guild.me.top_role:
@@ -1423,6 +1439,7 @@ async def nickname(interaction: discord.Interaction, member: discord.Member, nic
 
 @bot.tree.command(name="groupnickname", description="Add or remove a prefix on the nickname of every member with a role")
 @app_commands.describe(role="The role to target", prefix="The prefix to add (e.g. '[EVENT]', a space is added automatically)", remove="Remove this prefix instead of adding it")
+@app_commands.default_permissions(manage_nicknames=True)
 async def groupnickname(interaction: discord.Interaction, role: discord.Role, prefix: str, remove: bool = False):
     if not await check_access(interaction, "groupnickname", "manage_nicknames"): return
     if role >= interaction.guild.me.top_role:
@@ -1459,6 +1476,7 @@ async def groupnickname(interaction: discord.Interaction, role: discord.Role, pr
 
 
 @bot.tree.command(name="warnlist", description="List all warned members")
+@app_commands.default_permissions(manage_messages=True)
 async def warnlist(interaction: discord.Interaction):
     if not await check_access(interaction, "warnlist", "manage_messages"): return
     await interaction.response.defer()
@@ -1665,6 +1683,7 @@ async def notes(interaction: discord.Interaction, member: discord.Member):
 
 @bot.tree.command(name="softban", description="Kick a member and delete their recent messages")
 @app_commands.describe(member="The member to softban", reason="Reason", delete_days="Days of messages to delete (0-7)")
+@app_commands.default_permissions(ban_members=True)
 async def softban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided", delete_days: int = 1):
     if not await check_access(interaction, "softban", "ban_members"): return
     if member.top_role >= interaction.guild.me.top_role:
@@ -1712,6 +1731,7 @@ async def purgeuser(interaction: discord.Interaction, user_id: str):
 
 # /banlist
 @bot.tree.command(name="banlist", description="List all banned members")
+@app_commands.default_permissions(ban_members=True)
 async def banlist(interaction: discord.Interaction):
     if not await check_access(interaction, "banlist", "ban_members"): return
     await interaction.response.defer()
@@ -1731,6 +1751,7 @@ async def banlist(interaction: discord.Interaction):
 
 # /broadcast
 @bot.tree.command(name="broadcast", description="Send a broadcast message")
+@app_commands.default_permissions(manage_messages=True)
 async def broadcast(interaction: discord.Interaction, message: str, mention: str = "none"):
     if not await check_access(interaction, "broadcast", "manage_messages"): return
     if mention == "everyone":
@@ -1776,6 +1797,7 @@ async def setup_wizard(interaction: discord.Interaction):
 
 @bot.tree.command(name="schedule", description="Schedule a message to be posted later")
 @app_commands.describe(channel="Channel to post in", message="What to send", when="When to send it: 30m, 2h, 1d, 1w")
+@app_commands.default_permissions(manage_messages=True)
 async def schedule_command(interaction: discord.Interaction, channel: discord.TextChannel, message: str, when: str):
     if not await check_access(interaction, "schedule", "manage_messages"): return
     seconds = parse_duration(when)
@@ -3040,6 +3062,7 @@ async def poll(interaction: discord.Interaction, question: str, option1: str = N
 
 @bot.tree.command(name="tempban", description="Temporarily ban a member")
 @app_commands.describe(duration="Duration: 30m, 2h, 1d, 1w")
+@app_commands.default_permissions(ban_members=True)
 async def tempban(interaction: discord.Interaction, member: discord.Member, duration: str, reason: str = "No reason provided"):
     if not await check_access(interaction, "tempban", "ban_members"): return
     if member.top_role >= interaction.guild.me.top_role:
@@ -3084,6 +3107,7 @@ async def tempban(interaction: discord.Interaction, member: discord.Member, dura
     channel="Channel where to post the embed",
     pairs="Emoji/role pairs separated by commas, e.g: 🎮 Gamer, 🎵 Music, 🎨 Art"
 )
+@app_commands.default_permissions(manage_roles=True)
 async def reactionrole(interaction: discord.Interaction, title: str, channel: discord.TextChannel, pairs: str):
     if not await check_access(interaction, "reactionrole", "manage_roles"): return
     await interaction.response.defer(ephemeral=True)
