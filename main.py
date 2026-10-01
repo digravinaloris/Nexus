@@ -1717,6 +1717,7 @@ async def softban(interaction: discord.Interaction, member: discord.Member, reas
 
 @bot.tree.command(name="purgeuser", description="Delete all stored data (warnings, sanctions, notes) for a member on this server")
 @app_commands.describe(user_id="The Discord user ID whose data to erase")
+@app_commands.default_permissions(administrator=True)
 @has_admin()
 async def purgeuser(interaction: discord.Interaction, user_id: str):
     guild_id = str(interaction.guild_id)
@@ -1769,6 +1770,7 @@ async def broadcast(interaction: discord.Interaction, message: str, mention: str
 
 
 @bot.tree.command(name="setup", description="Guided setup wizard for this server — admin only")
+@app_commands.default_permissions(administrator=True)
 @has_admin()
 async def setup_wizard(interaction: discord.Interaction):
     cfg = get_config(interaction.guild_id)
@@ -1817,7 +1819,7 @@ async def schedule_command(interaction: discord.Interaction, channel: discord.Te
 # =======================  CONFIG  ===========================
 # ============================================================
 
-config_group = app_commands.Group(name="config", description="Configure the bot (Administrator only)")
+config_group = app_commands.Group(name="config", description="Configure the bot (Administrator only)", default_permissions=discord.Permissions(administrator=True))
 
 @config_group.command(name="logs", description="Set the logs channel")
 @has_admin()
@@ -2491,7 +2493,7 @@ bot.tree.add_command(admin_group)
 
 
 # Revue des appels de ban : /appeal accept|deny — admin only
-appeal_group = app_commands.Group(name="appeal", description="Review sanction appeals — admin only")
+appeal_group = app_commands.Group(name="appeal", description="Review sanction appeals — admin only", default_permissions=discord.Permissions(administrator=True))
 
 
 @appeal_group.command(name="accept", description="Accept a ban appeal and unban the user — admin only")
@@ -2550,7 +2552,7 @@ bot.tree.add_command(appeal_group)
 
 
 # Sauvegarde de la structure du serveur : /backup create|list|restore — server owner only
-backup_group = app_commands.Group(name="backup", description="Server structure backups (roles, channels, permissions) — server owner only")
+backup_group = app_commands.Group(name="backup", description="Server structure backups (roles, channels, permissions) — server owner only", default_permissions=discord.Permissions(administrator=True))
 
 
 @backup_group.command(name="create", description="Snapshot this server's roles, channels, and permissions — server owner only")
@@ -2676,7 +2678,7 @@ async def invites_who(interaction: discord.Interaction, member: discord.Member):
 bot.tree.add_command(invites_group)
 
 
-export_group = app_commands.Group(name="export", description="Export server data as CSV — admin only")
+export_group = app_commands.Group(name="export", description="Export server data as CSV — admin only", default_permissions=discord.Permissions(administrator=True))
 
 
 @export_group.command(name="sanctions", description="Export this server's moderation history as a CSV file — admin only")
@@ -2730,7 +2732,7 @@ FEATURE_TOGGLES = {
 }
 FEATURE_CHOICES = [app_commands.Choice(name=v["label"], value=k) for k, v in FEATURE_TOGGLES.items()]
 
-feature_group = app_commands.Group(name="feature", description="Enable or disable optional bot features — admin only")
+feature_group = app_commands.Group(name="feature", description="Enable or disable optional bot features — admin only", default_permissions=discord.Permissions(administrator=True))
 
 
 @feature_group.command(name="enable", description="Enable an optional feature — admin only")
