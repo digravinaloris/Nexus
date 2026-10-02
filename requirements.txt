@@ -9,3 +9,6 @@ requests
 pyyaml
 pyotp
 pytest
+Pillow
+matplotlib
+deep-translator

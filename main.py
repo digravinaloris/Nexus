@@ -18,8 +18,17 @@ import re
 import secrets
 import subprocess
 import signal
+import io
+from PIL import Image, ImageDraw, ImageFont
+import matplotlib
+matplotlib.use("Agg")  # pas d'affichage sur Render -- rendu fichier uniquement
+import matplotlib.pyplot as plt
+from deep_translator import GoogleTranslator
 import utils
-from utils import parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link
+from utils import (
+    parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
+    is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
+)
 import csv
 import io
 import sys
@@ -43,9 +52,11 @@ server_backups_col = None
 invite_uses_col = None
 role_menus_col = None
 scheduled_col = None
+quarantine_col = None
+reminders_col = None
 
 def init_mongo():
-    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col, invite_uses_col, role_menus_col, scheduled_col
+    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col, invite_uses_col, role_menus_col, scheduled_col, quarantine_col, reminders_col
     mongo = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
     db = mongo["discordbot"]
     warns_col = db["warns"]
@@ -64,6 +75,8 @@ def init_mongo():
     invite_uses_col = db["invite_uses"]
     role_menus_col = db["role_menus"]
     scheduled_col = db["scheduled_announcements"]
+    quarantine_col = db["quarantine"]
+    reminders_col = db["reminders"]
     # Exposé sur l'objet bot (pas avant : init_mongo() tourne dans on_ready(),
     # après setup_hook()/le chargement des cogs) -- un cog qui a besoin de Mongo
     # (ex: cogs/faq.py) lit bot.db au moment de la commande/l'event, jamais à
@@ -208,6 +221,31 @@ def get_config(guild_id):
             "min_account_age_days": 0,
             "banned_domains": [],
             "anti_link_global_enabled": False,
+            "welcome_channel_id": None,
+            "welcome_banner_enabled": False,
+            "verification_enabled": False,
+            "verified_role_id": None,
+            "unverified_role_id": None,
+            "quarantine_enabled": False,
+            "quarantine_role_id": None,
+            "quarantine_channel_id": None,
+            "quarantine_hold_minutes": 30,
+            "quarantine_suspicion_days": 7,
+            "anti_mention_spam_enabled": False,
+            "mention_spam_threshold": 5,
+            "anti_media_flood_enabled": False,
+            "media_flood_count": 5,
+            "media_flood_window": 10,
+            "auto_slowmode_enabled": False,
+            "auto_slowmode_threshold": 10,
+            "auto_slowmode_window": 10,
+            "auto_slowmode_seconds": 10,
+            "auto_slowmode_duration_minutes": 5,
+            "anti_doxx_enabled": False,
+            "raid_pattern_alert_enabled": False,
+            "auto_translate_enabled": False,
+            "remindme_enabled": True,
+            "serverinfo_visual_enabled": False,
             "automod_spam_count": 10,
             "automod_spam_window": 5,
             "automod_caps_ratio": 0.7,
@@ -903,6 +941,7 @@ async def on_ready():
         print(f"Sync error: {e}", flush=True)
     print(f"{bot.user} is online!", flush=True)
     if not getattr(bot, "_nexus_persistent_views_added", False):
+        bot.add_view(VerificationView())
         bot.add_view(TicketPanelView())
         bot.add_view(TicketCloseView())
         bot.add_view(SatisfactionSurveyView())
@@ -914,6 +953,9 @@ async def on_ready():
     bot.loop.create_task(daily_killswitch_email_loop())
     bot.loop.create_task(weekly_digest_loop())
     bot.loop.create_task(scheduled_announcements_loop())
+    bot.loop.create_task(reminders_loop())
+    bot.loop.create_task(auto_slowmode_revert_loop())
+    bot.loop.create_task(quarantine_review_loop())
     for guild in bot.guilds:
         await refresh_invite_cache(guild)
 
@@ -1507,6 +1549,9 @@ SANCTION_ICONS = {
     "automod_spam": "🤖",
     "automod_link": "🔗",
     "automod_link_global": "🌐",
+    "automod_mention_spam": "📢",
+    "automod_media_flood": "🖼️",
+    "automod_doxx": "🪪",
     "automod_caps": "🔠",
 }
 
@@ -2202,6 +2247,72 @@ async def config_boostmessage(interaction: discord.Interaction, channel: discord
     await interaction.response.send_message(f"🎉 Boost thank-you messages will be posted in {where}.", ephemeral=True)
 
 
+@config_group.command(name="welcome", description="Set the welcome banner channel — admin only. Enable via /feature welcome_banner.")
+@app_commands.describe(channel="Channel where the generated welcome banner gets posted")
+@has_admin()
+async def config_welcome(interaction: discord.Interaction, channel: discord.TextChannel):
+    update_config(interaction.guild_id, "welcome_channel_id", channel.id)
+    await interaction.response.send_message(f"🖼️ Welcome banners will be posted in {channel.mention} once enabled (`/feature enable welcome_banner`).", ephemeral=True)
+
+
+verification_group = app_commands.Group(name="verification", description="Set up member verification — admin only", parent=config_group)
+
+
+@verification_group.command(name="setup", description="Create/assign the Verified and Unverified roles — admin only")
+@app_commands.describe(
+    verified_role="Existing role to use as 'Verified' (leave empty to create a new one)",
+    unverified_role="Existing role to use as 'Unverified' (leave empty to create a new one)",
+)
+@has_admin()
+async def verification_setup(interaction: discord.Interaction, verified_role: discord.Role = None, unverified_role: discord.Role = None):
+    guild = interaction.guild
+    if verified_role is None:
+        verified_role = discord.utils.get(guild.roles, name="Verified") or await guild.create_role(name="Verified", reason="Nexus verification setup")
+    if unverified_role is None:
+        unverified_role = discord.utils.get(guild.roles, name="Unverified") or await guild.create_role(name="Unverified", reason="Nexus verification setup")
+    update_config(interaction.guild_id, "verified_role_id", verified_role.id)
+    update_config(interaction.guild_id, "unverified_role_id", unverified_role.id)
+    await interaction.response.send_message(
+        f"✅ Verification roles set: {verified_role.mention} / {unverified_role.mention}.\n"
+        f"**You still need to configure channel permissions yourself** (deny {unverified_role.mention} access to normal channels, "
+        f"allow it only in your verification channel) — Nexus only manages the roles, not channel visibility.\n"
+        f"Next: run `/config verification post` in your verification channel, then `/feature enable verification`.",
+        ephemeral=True,
+    )
+
+
+@verification_group.command(name="post", description="Post the Verify button in this channel — admin only")
+@has_admin()
+async def verification_post(interaction: discord.Interaction):
+    cfg = get_config(interaction.guild_id)
+    if not cfg.get("verified_role_id") or not cfg.get("unverified_role_id"):
+        await interaction.response.send_message("Run `/config verification setup` first.", ephemeral=True)
+        return
+    embed = discord.Embed(title="👋 Verify to get access", description="Click the button below to verify and unlock the rest of the server.", color=0x3399ff)
+    await interaction.channel.send(embed=embed, view=VerificationView())
+    await interaction.response.send_message("✅ Verification button posted.", ephemeral=True)
+
+
+@config_group.command(name="quarantine", description="Configure the quarantine hold for new accounts — admin only. Enable via /feature.")
+@app_commands.describe(
+    role="Role to apply while a member is held for review",
+    channel="Channel where review alerts are posted",
+    suspiciondays="Accounts younger than this (days) get quarantined (default 7)",
+    holdminutes="Minutes before a reminder ping if nobody reviewed it yet (default 30)",
+)
+@has_admin()
+async def config_quarantine(interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel, suspiciondays: int = 7, holdminutes: int = 30):
+    update_config(interaction.guild_id, "quarantine_role_id", role.id)
+    update_config(interaction.guild_id, "quarantine_channel_id", channel.id)
+    update_config(interaction.guild_id, "quarantine_suspicion_days", suspiciondays)
+    update_config(interaction.guild_id, "quarantine_hold_minutes", holdminutes)
+    await interaction.response.send_message(
+        f"🔎 Quarantine configured: accounts under {suspiciondays}d old get {role.mention}, reviewed in {channel.mention} "
+        f"(reminder after {holdminutes} min). Enable with `/feature enable quarantine`.",
+        ephemeral=True,
+    )
+
+
 @config_group.command(name="antinuke", description="Set the anti-nuke sensitivity threshold — admin only. Use /feature enable|disable to turn it on/off.")
 @app_commands.describe(threshold="Destructive actions (bans/kicks/channel or role deletions) by the same person within 60s that trigger it (default 5)")
 @has_admin()
@@ -2729,6 +2840,17 @@ FEATURE_TOGGLES = {
     "weekly_digest": {"config_key": "weekly_digest_enabled", "label": "Weekly DM digest"},
     "dashboard_logging": {"config_key": "log_dashboard_actions", "label": "Log dashboard actions to the logs channel"},
     "anti_link_global": {"config_key": "anti_link_global_enabled", "label": "Block ALL links, not just Discord invites"},
+    "welcome_banner": {"config_key": "welcome_banner_enabled", "label": "Generate a welcome banner image on member join"},
+    "verification": {"config_key": "verification_enabled", "label": "Assign Unverified role on join until member verifies"},
+    "quarantine": {"config_key": "quarantine_enabled", "label": "Hold suspicious new accounts for review"},
+    "anti_mention_spam": {"config_key": "anti_mention_spam_enabled", "label": "Delete messages with too many mentions / @everyone abuse"},
+    "anti_media_flood": {"config_key": "anti_media_flood_enabled", "label": "Delete rapid-fire image/attachment spam"},
+    "auto_slowmode": {"config_key": "auto_slowmode_enabled", "label": "Temporarily enable slowmode when a channel gets hyperactive"},
+    "anti_doxx": {"config_key": "anti_doxx_enabled", "label": "Detect and act on phone numbers / address-like content"},
+    "raid_pattern_alert": {"config_key": "raid_pattern_alert_enabled", "label": "Alert on coordinated-looking join patterns (similar usernames)"},
+    "auto_translate": {"config_key": "auto_translate_enabled", "label": "Translate a message via 🌐 reaction (DMs the translation)"},
+    "remindme": {"config_key": "remindme_enabled", "label": "Enable the /remindme command"},
+    "serverinfo_visual": {"config_key": "serverinfo_visual_enabled", "label": "Attach a 7-day activity chart to /serverinfo"},
 }
 FEATURE_CHOICES = [app_commands.Choice(name=v["label"], value=k) for k, v in FEATURE_TOGGLES.items()]
 
@@ -2922,6 +3044,84 @@ async def scheduled_announcements_loop():
         await asyncio.sleep(60)
 
 
+async def reminders_loop():
+    """Check toutes les 30s les /remindme dus. Comparaison de date faite dans
+    la requête Mongo, pas en Python après lecture (même piège naive/aware que
+    scheduled_announcements_loop à éviter)."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            due = list(reminders_col.find({"sent": False, "due_at": {"$lte": now}}))
+            for doc in due:
+                try:
+                    user = bot.get_user(int(doc["user_id"])) or await bot.fetch_user(int(doc["user_id"]))
+                    embed = discord.Embed(title="⏰ Reminder", description=doc["text"], color=0x3399ff)
+                    await user.send(embed=embed)
+                except discord.HTTPException as e:
+                    print(f"[REMINDME] Failed to DM {doc['user_id']}: {e}", flush=True)
+                reminders_col.update_one({"_id": doc["_id"]}, {"$set": {"sent": True}})
+        except Exception as e:
+            print(f"[REMINDME] loop error: {e}", flush=True)
+        await asyncio.sleep(30)
+
+
+async def auto_slowmode_revert_loop():
+    """Check toutes les 30s les salons dont la fenêtre d'auto-slowmode est
+    passée, et remet slowmode_delay à 0. État en mémoire (_auto_slowmode_active)
+    -- un redémarrage du bot pendant une fenêtre active laisse juste le
+    slowmode manuel en place, rien de cassé, juste pas auto-reverté cette fois."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            expired = [cid for cid, revert_at in _auto_slowmode_active.items() if now >= revert_at]
+            for channel_id in expired:
+                channel = bot.get_channel(channel_id)
+                if channel:
+                    try:
+                        await channel.edit(slowmode_delay=0, reason="Auto-slowmode window expired")
+                    except discord.HTTPException as e:
+                        print(f"[AUTO-SLOWMODE] Failed to revert channel {channel_id}: {e}", flush=True)
+                del _auto_slowmode_active[channel_id]
+        except Exception as e:
+            print(f"[AUTO-SLOWMODE] revert loop error: {e}", flush=True)
+        await asyncio.sleep(30)
+
+
+async def quarantine_review_loop():
+    """Check toutes les 5 min les entrées de quarantaine pas encore reviewées
+    depuis plus de quarantine_hold_minutes -- envoie un rappel unique dans le
+    salon de review (flag 'reminded' pour ne jamais relancer deux fois)."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            pending = list(quarantine_col.find({"reviewed": False, "reminded": False}))
+            for doc in pending:
+                guild = bot.get_guild(int(doc["guild_id"]))
+                if not guild:
+                    continue
+                cfg = get_config(doc["guild_id"])
+                hold_minutes = cfg.get("quarantine_hold_minutes", 30)
+                joined_at = doc["joined_at"]
+                if joined_at.tzinfo is None:
+                    joined_at = joined_at.replace(tzinfo=datetime.timezone.utc)
+                if (now - joined_at).total_seconds() < hold_minutes * 60:
+                    continue
+                channel_id = cfg.get("quarantine_channel_id")
+                channel = guild.get_channel(int(channel_id)) if channel_id else None
+                if channel:
+                    try:
+                        await channel.send(f"⏳ Reminder: <@{doc['user_id']}> is still waiting for quarantine review (joined {hold_minutes}+ min ago).")
+                    except discord.HTTPException as e:
+                        print(f"[QUARANTINE] Failed to send reminder: {e}", flush=True)
+                quarantine_col.update_one({"_id": doc["_id"]}, {"$set": {"reminded": True}})
+        except Exception as e:
+            print(f"[QUARANTINE] review loop error: {e}", flush=True)
+        await asyncio.sleep(300)
+
+
 @bot.tree.command(name="userinfo", description="Show information about a member")
 async def userinfo(interaction: discord.Interaction, member: discord.Member = None):
     member = member or interaction.user
@@ -2950,6 +3150,48 @@ async def userinfo(interaction: discord.Interaction, member: discord.Member = No
     await interaction.response.send_message(embed=embed)
 
 
+@bot.tree.command(name="remindme", description="Set a personal reminder — Nexus will DM you when it's time")
+@app_commands.describe(duration="e.g. 10m, 2h, 1d, 1w", text="What to remind you about")
+async def remindme(interaction: discord.Interaction, duration: str, text: str):
+    cfg = get_config(interaction.guild_id) if interaction.guild_id else {}
+    if interaction.guild_id and not cfg.get("remindme_enabled", True):
+        await interaction.response.send_message("❌ `/remindme` is disabled on this server.", ephemeral=True)
+        return
+    seconds = parse_duration(duration)
+    if seconds <= 0:
+        await interaction.response.send_message("❌ Invalid duration. Use something like `10m`, `2h`, `1d`, `1w`.", ephemeral=True)
+        return
+    due_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=seconds)
+    reminders_col.insert_one({
+        "user_id": str(interaction.user.id),
+        "guild_id": str(interaction.guild_id) if interaction.guild_id else None,
+        "text": text,
+        "due_at": due_at,
+        "sent": False,
+        "created_at": datetime.datetime.now(datetime.timezone.utc),
+    })
+    await interaction.response.send_message(f"⏰ Got it — I'll DM you in **{duration}**: \"{text}\"", ephemeral=True)
+
+
+def _generate_activity_chart(guild_id):
+    """CPU-bound (matplotlib) -- toujours appelée via asyncio.to_thread.
+    Barres sobres, cohérentes avec le reste de l'identité visuelle du bot (bleu #3399ff)."""
+    stats = get_sanction_stats(guild_id, days=7)
+    labels = [label for label, _ in stats]
+    values = [count for _, count in stats]
+    fig, ax = plt.subplots(figsize=(6, 2.2), dpi=120)
+    ax.bar(labels, values, color="#3399ff")
+    ax.set_title("Moderation activity · last 7 days", fontsize=10, color="#333333")
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.tick_params(labelsize=8)
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", transparent=True)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
 @bot.tree.command(name="serverinfo", description="Show information about the server")
 async def serverinfo(interaction: discord.Interaction):
     guild = interaction.guild
@@ -2970,6 +3212,20 @@ async def serverinfo(interaction: discord.Interaction):
     embed.add_field(name="Roles", value=str(len(guild.roles) - 1), inline=True)
     embed.add_field(name="Boosts", value=f"⚡ {guild.premium_subscription_count} (Level {guild.premium_tier})", inline=True)
     embed.add_field(name="Verification Level", value=str(guild.verification_level).title(), inline=True)
+
+    cfg = get_config(guild.id)
+    if cfg.get("serverinfo_visual_enabled"):
+        await interaction.response.defer()
+        try:
+            buf = await asyncio.to_thread(_generate_activity_chart, guild.id)
+            file = discord.File(buf, filename="activity.png")
+            embed.set_image(url="attachment://activity.png")
+            await interaction.followup.send(embed=embed, file=file)
+        except Exception as e:
+            print(f"[SERVERINFO] Chart generation failed: {e}", flush=True)
+            await interaction.followup.send(embed=embed)
+        return
+
     await interaction.response.send_message(embed=embed)
 
 
@@ -3639,6 +3895,33 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
         await interaction.response.send_message(f"✅ Ticket created: {channel.mention}", ephemeral=True)
 
 
+class VerificationView(discord.ui.View):
+    """Bouton persistant posté par /config verification post -- retire le rôle
+    Unverified et donne le rôle Verified. Les salons restent à configurer
+    manuellement par l'admin (permissions Discord), le bot ne gère que les rôles."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Verify", style=discord.ButtonStyle.success, emoji="✅", custom_id="nexus_verify")
+    async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = get_config(interaction.guild_id)
+        unverified_id = cfg.get("unverified_role_id")
+        verified_id = cfg.get("verified_role_id")
+        if not unverified_id or not verified_id:
+            await interaction.response.send_message("Verification isn't configured properly. Ask an admin to run `/config verification setup`.", ephemeral=True)
+            return
+        unverified_role = interaction.guild.get_role(int(unverified_id))
+        verified_role = interaction.guild.get_role(int(verified_id))
+        try:
+            if unverified_role and unverified_role in interaction.user.roles:
+                await interaction.user.remove_roles(unverified_role, reason="Verified")
+            if verified_role:
+                await interaction.user.add_roles(verified_role, reason="Verified")
+            await interaction.response.send_message("✅ You're verified! Welcome in.", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"❌ Couldn't update your roles: {e}", ephemeral=True)
+
+
 class TicketPanelView(discord.ui.View):
     """Bouton persistant posté par /config ticket setup pour ouvrir un ticket."""
     def __init__(self):
@@ -3749,6 +4032,10 @@ _recent_messages = {}  # {(guild_id, user_id): [timestamps]}
 
 # Suivi en mémoire des arrivées récentes par serveur, pour la détection de raid.
 _recent_joins = {}  # {guild_id: [timestamps]}
+_recent_join_names = {}  # {guild_id: [(timestamp, display_name)]} -- pour la détection de pattern de raid
+_media_flood_tracker = {}  # {(guild_id, user_id): [timestamps]}
+_channel_activity_tracker = {}  # {channel_id: [timestamps]} -- pour déclencher l'auto-slowmode
+_auto_slowmode_active = {}  # {channel_id: revert_at (datetime aware UTC)}
 
 SPAM_MESSAGE_COUNT = 10
 SPAM_WINDOW_SECONDS = 5
@@ -3878,6 +4165,44 @@ def check_raid(guild_id, cfg=None):
     return len(timestamps) >= raid_count
 
 
+def record_join_name_and_check_pattern(guild_id, display_name, window_seconds=30):
+    """Enregistre le pseudo d'un membre qui vient de join, et retourne True si
+    les pseudos récents (fenêtre glissante) partagent un pattern suspect
+    (voir utils.detect_raid_username_pattern). Indépendant du seuil brut de
+    check_raid -- peut se déclencher même sous le seuil de comptage."""
+    now = time.time()
+    entries = _recent_join_names.get(guild_id, [])
+    entries = [(t, n) for t, n in entries if now - t < window_seconds]
+    entries.append((now, display_name))
+    _recent_join_names[guild_id] = entries
+    return detect_raid_username_pattern([n for _, n in entries])
+
+
+def check_media_flood(guild_id, user_id, cfg):
+    """True si ce membre poste des images/pièces jointes trop vite (seuils
+    /config dans media_flood_count / media_flood_window)."""
+    count_threshold = cfg.get("media_flood_count", 5)
+    window = cfg.get("media_flood_window", 10)
+    now = time.time()
+    key = (guild_id, user_id)
+    timestamps = _media_flood_tracker.get(key, [])
+    timestamps = [t for t in timestamps if now - t < window]
+    timestamps.append(now)
+    _media_flood_tracker[key] = timestamps
+    return len(timestamps) > count_threshold
+
+
+def check_channel_burst(channel_id, cfg):
+    """True si ce salon reçoit trop de messages trop vite (tous auteurs
+    confondus) -- déclenche l'auto-slowmode temporaire."""
+    threshold = cfg.get("auto_slowmode_threshold", 10)
+    window = cfg.get("auto_slowmode_window", 10)
+    now = time.time()
+    timestamps = _channel_activity_tracker.get(channel_id, [])
+    timestamps = [t for t in timestamps if now - t < window]
+    timestamps.append(now)
+    _channel_activity_tracker[channel_id] = timestamps
+    return len(timestamps) > threshold
 
 
 def check_invite_link(content):
@@ -3943,6 +4268,50 @@ async def on_message(message):
         if check_banned_domains(message.content, cfg.get("banned_domains", [])):
             await apply_automod_action(message, "automod_domain", "sharing a blocked link/domain")
             return
+        if cfg.get("anti_mention_spam_enabled"):
+            has_mass_mention = message.mention_everyone
+            mention_count = len(message.mentions) + len(message.role_mentions)
+            if is_mention_spam(mention_count, has_mass_mention, cfg.get("mention_spam_threshold", 5)):
+                await apply_automod_action(message, "automod_mention_spam", "mass-mentioning members/@everyone")
+                return
+        if cfg.get("anti_media_flood_enabled") and message.attachments:
+            if check_media_flood(message.guild.id, message.author.id, cfg):
+                await apply_automod_action(message, "automod_media_flood", "posting images/attachments too quickly")
+                return
+        if cfg.get("anti_doxx_enabled"):
+            phone_confidence = detect_phone_number(message.content)
+            address_hint = detect_address_hint(message.content)
+            if phone_confidence == "high":
+                await apply_automod_action(message, "automod_doxx", "posting what looks like a phone number")
+                return
+            if phone_confidence == "low" or address_hint:
+                # Confiance basse -- jamais de suppression auto, juste une alerte pour review humaine.
+                alert = discord.Embed(
+                    title="🔎 Possible Personal Info Shared",
+                    description=f"{message.author.mention} in {message.channel.mention} — low-confidence match, left in place for a human to review.",
+                    color=0xffaa00,
+                )
+                alert.add_field(name="Message", value=message.content[:1000] or "*(empty)*", inline=False)
+                await _send_log_embed(message.guild, alert)
+
+    # Auto-slowmode : suivi de l'activité du salon tous auteurs confondus
+    # (indépendant de l'exemption automod -- c'est une question de charge, pas de faute).
+    if cfg.get("auto_slowmode_enabled") and message.channel.id not in _auto_slowmode_active:
+        if check_channel_burst(message.channel.id, cfg):
+            seconds = cfg.get("auto_slowmode_seconds", 10)
+            duration_minutes = cfg.get("auto_slowmode_duration_minutes", 5)
+            try:
+                await message.channel.edit(slowmode_delay=seconds, reason="Auto-slowmode: channel activity burst detected")
+                revert_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=duration_minutes)
+                _auto_slowmode_active[message.channel.id] = revert_at
+                alert = discord.Embed(
+                    title="🐌 Auto-Slowmode Enabled",
+                    description=f"{message.channel.mention} is getting hyperactive — slowmode set to {seconds}s for {duration_minutes} min.",
+                    color=0x3399ff,
+                )
+                await _send_log_embed(message.guild, alert)
+            except discord.HTTPException as e:
+                print(f"[AUTO-SLOWMODE] Failed on channel {message.channel.id}: {e}", flush=True)
 
     # Message épinglé (sticky) : republié en bas du salon après le passage
     # d'un cooldown, pour rester visible sans spammer à chaque message.
@@ -3973,6 +4342,51 @@ async def on_message(message):
     # Nécessaire pour que les éventuelles commandes à préfixe continuent de fonctionner
     # (aucune n'est définie actuellement, mais ça évite un piège classique si on en ajoute plus tard)
     await bot.process_commands(message)
+
+
+_WELCOME_BANNER_BG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "welcome_banner_bg.jpg")
+_MPL_FONT_PATH = os.path.join(os.path.dirname(matplotlib.__file__), "mpl-data", "fonts", "ttf", "DejaVuSans-Bold.ttf")
+
+
+def _compose_welcome_banner(member_name, avatar_bytes):
+    """CPU-bound (Pillow) -- toujours appelée via asyncio.to_thread, jamais
+    directement dans une coroutine. Retourne un BytesIO PNG prêt à envoyer."""
+    bg = Image.open(_WELCOME_BANNER_BG_PATH).convert("RGBA").resize((900, 300))
+    avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA").resize((160, 160))
+    mask = Image.new("L", avatar.size, 0)
+    ImageDraw.Draw(mask).ellipse((0, 0) + avatar.size, fill=255)
+    avatar_pos = (60, 70)
+    bg.paste(avatar, avatar_pos, mask)
+
+    draw = ImageDraw.Draw(bg)
+    try:
+        title_font = ImageFont.truetype(_MPL_FONT_PATH, 42)
+        subtitle_font = ImageFont.truetype(_MPL_FONT_PATH, 22)
+    except OSError:
+        title_font = ImageFont.load_default()
+        subtitle_font = ImageFont.load_default()
+
+    text_x = avatar_pos[0] + avatar.width + 30
+    draw.text((text_x, 108), f"Welcome, {member_name}!", font=title_font, fill=(255, 255, 255, 255))
+    draw.text((text_x, 168), "We're glad you're here.", font=subtitle_font, fill=(200, 200, 200, 255))
+
+    buf = io.BytesIO()
+    bg.convert("RGB").save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
+async def send_welcome_banner(member, channel):
+    """Télécharge l'avatar (réseau, thread) puis compose l'image (CPU, thread)
+    avant de poster. Ne lève jamais -- une bannière ratée ne doit pas empêcher
+    le reste de on_member_join de tourner."""
+    try:
+        avatar_bytes = await asyncio.to_thread(lambda: requests.get(member.display_avatar.replace(size=256).url, timeout=10).content)
+        buf = await asyncio.to_thread(_compose_welcome_banner, member.display_name, avatar_bytes)
+        await channel.send(file=discord.File(buf, filename="welcome.png"))
+    except Exception as e:
+        print(f"[WELCOME BANNER] Failed for {member.id}: {e}", flush=True)
+
 
 # Logs
 @bot.event
@@ -4029,14 +4443,74 @@ async def on_member_join(member):
     except discord.HTTPException:
         pass  # probablement pas la permission Manage Server
 
+    # Quarantine : compte jugé suspect (trop récent) -> rôle de confinement +
+    # file d'attente de review, au lieu de l'autorole/vérification normale.
+    quarantined = False
+    if cfg.get("quarantine_enabled") and member.guild.id not in bot.locked_guilds:
+        suspicion_days = cfg.get("quarantine_suspicion_days", 7)
+        account_age_days = (datetime.datetime.now(datetime.timezone.utc) - member.created_at).days
+        quarantine_role_id = cfg.get("quarantine_role_id")
+        quarantine_channel_id = cfg.get("quarantine_channel_id")
+        if account_age_days < suspicion_days and quarantine_role_id and quarantine_channel_id:
+            role = member.guild.get_role(int(quarantine_role_id))
+            channel = member.guild.get_channel(int(quarantine_channel_id))
+            if role and channel:
+                quarantined = True
+                try:
+                    await member.add_roles(role, reason="Quarantine: new account held for review")
+                except discord.HTTPException as e:
+                    print(f"[QUARANTINE] Failed to add role to {member.id}: {e}", flush=True)
+                quarantine_col.insert_one({
+                    "guild_id": str(member.guild.id),
+                    "user_id": str(member.id),
+                    "account_age_days": account_age_days,
+                    "joined_at": datetime.datetime.now(datetime.timezone.utc),
+                    "reviewed": False,
+                    "reminded": False,
+                })
+                review_embed = discord.Embed(
+                    title="🔎 New Account Held for Review",
+                    description=f"**{member}** (<@{member.id}>) joined with an account only **{account_age_days} day(s)** old.",
+                    color=0xffaa00,
+                )
+                review_embed.add_field(name="Hold duration", value=f"{cfg.get('quarantine_hold_minutes', 30)} min before a reminder ping", inline=False)
+                await channel.send(embed=review_embed)
+
     autorole_id = cfg.get("autorole")
-    # On ne file pas l'autorole si le serveur est déjà verrouillé (raid en cours) :
-    # pas de vérification anti-alt/anti-raid en amont, donc mieux vaut ne rien
+    verified_flow = cfg.get("verification_enabled") and cfg.get("unverified_role_id")
+    # On ne file pas de rôle si le serveur est déjà verrouillé (raid en cours),
+    # ou si le membre vient d'être placé en quarantine juste au-dessus : pas de
+    # vérification anti-alt/anti-raid en amont, donc mieux vaut ne rien
     # distribuer automatiquement tant que la situation n'est pas confirmée saine.
-    if autorole_id and member.guild.id not in bot.locked_guilds:
-        role = member.guild.get_role(autorole_id)
-        if role:
-            await member.add_roles(role)
+    if not quarantined and member.guild.id not in bot.locked_guilds:
+        if verified_flow:
+            role = member.guild.get_role(int(cfg["unverified_role_id"]))
+            if role:
+                try:
+                    await member.add_roles(role, reason="Awaiting verification")
+                except discord.HTTPException as e:
+                    print(f"[VERIFICATION] Failed to add Unverified role to {member.id}: {e}", flush=True)
+        elif autorole_id:
+            role = member.guild.get_role(autorole_id)
+            if role:
+                await member.add_roles(role)
+
+    # Bannière de bienvenue générée (image perso pseudo + avatar).
+    if cfg.get("welcome_banner_enabled") and cfg.get("welcome_channel_id"):
+        welcome_channel = member.guild.get_channel(int(cfg["welcome_channel_id"]))
+        if welcome_channel:
+            asyncio.create_task(send_welcome_banner(member, welcome_channel))
+
+    # Détection de pattern de raid par pseudo (indépendante du seuil brut de
+    # check_raid -- peut capter un raid coordonné même sous le seuil de comptage).
+    if cfg.get("raid_pattern_alert_enabled"):
+        if record_join_name_and_check_pattern(member.guild.id, member.name):
+            pattern_alert = discord.Embed(
+                title="⚠️ Suspicious Join Pattern",
+                description=f"Recent joins share a suspicious username pattern (possible coordinated raid). Latest: **{member}**.",
+                color=0xff6600,
+            )
+            await _send_log_embed(member.guild, pattern_alert)
     embed = discord.Embed(title="✅ Member Joined", color=0x00cc00)
     embed.add_field(name="User", value=f"**{member}**", inline=True)
     if inviter_id:
@@ -4186,11 +4660,40 @@ async def on_message_edit(before, after):
     await _send_log_embed(before.guild, embed)
 
 
+async def _handle_translate_reaction(payload):
+    """Traduit le contenu du message réagi (🌐) vers l'anglais et l'envoie en
+    DM au réacteur. deep-translator passe par Google Translate (pas de clé
+    API) -- best-effort, comme yt-dlp ailleurs dans ce projet : jamais fatal
+    si ça échoue, juste un DM d'erreur discret."""
+    try:
+        channel = bot.get_channel(payload.channel_id)
+        if channel is None:
+            return
+        message = await channel.fetch_message(payload.message_id)
+        if not message.content.strip():
+            return
+        translated = await asyncio.to_thread(lambda: GoogleTranslator(source="auto", target="en").translate(message.content))
+        reactor = bot.get_user(payload.user_id) or await bot.fetch_user(payload.user_id)
+        embed = discord.Embed(title="🌐 Translation", description=translated[:4000], color=0x3399ff)
+        embed.set_footer(text=f"Original by {message.author}")
+        await reactor.send(embed=embed)
+    except Exception as e:
+        print(f"[TRANSLATE] Failed: {e}", flush=True)
+
+
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if payload.guild_id is None or payload.member is None or payload.member.bot:
         return
     emoji_str = str(payload.emoji)
+
+    # Traduction auto : réaction 🌐 sur un message -> traduction envoyée en DM
+    # au réacteur. Complètement indépendant du système de reaction roles ci-dessous.
+    if emoji_str == "🌐":
+        cfg = get_config(payload.guild_id)
+        if cfg.get("auto_translate_enabled"):
+            asyncio.create_task(_handle_translate_reaction(payload))
+
     doc = get_reaction_role(payload.guild_id, payload.message_id, emoji_str)
     if not doc:
         return
