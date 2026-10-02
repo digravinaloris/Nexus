@@ -15,6 +15,10 @@ from utils import (
     check_any_link,
     looks_like_question,
     match_faq_entries,
+    is_mention_spam,
+    detect_phone_number,
+    detect_address_hint,
+    detect_raid_username_pattern,
     format_uptime,
 )
 
@@ -176,6 +180,62 @@ class TestMatchFaqEntries:
 
     def test_empty_entries(self):
         assert match_faq_entries("comment ça marche ?", []) == []
+
+
+class TestIsMentionSpam:
+    def test_mass_mention_always_flagged(self):
+        assert is_mention_spam(mention_count=0, has_mass_mention=True, threshold=5) is True
+
+    def test_under_threshold(self):
+        assert is_mention_spam(mention_count=3, has_mass_mention=False, threshold=5) is False
+
+    def test_at_threshold(self):
+        assert is_mention_spam(mention_count=5, has_mass_mention=False, threshold=5) is True
+
+
+class TestDetectPhoneNumber:
+    def test_structured_international_format(self):
+        assert detect_phone_number("call me at +33 6 12 34 56 78") == "high"
+
+    def test_structured_local_format(self):
+        assert detect_phone_number("06.12.34.56.78 appelle moi") == "high"
+
+    def test_bare_digit_run_is_low_confidence(self):
+        assert detect_phone_number("my id is 1234567890") == "low"
+
+    def test_no_match(self):
+        assert detect_phone_number("let's meet at 5pm tomorrow") is None
+
+    def test_short_number_not_flagged(self):
+        assert detect_phone_number("I'm 25 years old") is None
+
+
+class TestDetectAddressHint:
+    def test_number_plus_street_word(self):
+        assert detect_address_hint("I live at 12 rue de la paix") is True
+
+    def test_street_word_without_number(self):
+        assert detect_address_hint("meet me on main street sometime") is False
+
+    def test_number_without_street_word(self):
+        assert detect_address_hint("I scored 12 points today") is False
+
+    def test_no_match(self):
+        assert detect_address_hint("hello there") is False
+
+
+class TestDetectRaidUsernamePattern:
+    def test_common_prefix_detected(self):
+        assert detect_raid_username_pattern(["RaidBot001", "RaidBot002", "RaidBot003"]) is True
+
+    def test_digit_suffix_pattern_detected(self):
+        assert detect_raid_username_pattern(["User8291", "Member4471", "Guest9931"]) is True
+
+    def test_normal_usernames_not_flagged(self):
+        assert detect_raid_username_pattern(["Alice", "Bob", "Charlie"]) is False
+
+    def test_too_few_to_judge(self):
+        assert detect_raid_username_pattern(["RaidBot001", "RaidBot002"]) is False
 
 
 class TestFormatUptime:
