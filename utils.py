@@ -100,6 +100,70 @@ def match_faq_entries(content, entries):
     return matches
 
 
+def is_mention_spam(mention_count, has_mass_mention, threshold):
+    """mention_count = nombre de mentions individuelles dans le message.
+    has_mass_mention = True si @everyone/@here est utilisé (toujours flaggé,
+    peu importe le seuil -- un seul @everyone suffit)."""
+    if has_mass_mention:
+        return True
+    return mention_count >= threshold
+
+
+# Formats de téléphone "haute confiance" : groupes bien séparés par espaces/points/tirets,
+# avec ou sans indicatif international. Volontairement strict pour limiter les faux positifs
+# (un numéro de case, une date, un ID Discord ne doivent pas matcher).
+_PHONE_HIGH_CONFIDENCE_RE = re.compile(
+    r"(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]){3,5}\d{2,4}"
+)
+# Juste une longue suite de chiffres (7+) sans séparateurs -- pourrait être un
+# téléphone, mais aussi un ID Discord, un code, etc. Confiance basse seulement.
+_PHONE_LOW_CONFIDENCE_RE = re.compile(r"\b\d{7,}\b")
+
+_ADDRESS_STREET_WORDS = (
+    "rue", "avenue", "boulevard", "allée", "allee", "impasse", "chemin", "route",
+    "street", "st.", "avenue", "ave.", "road", "rd.", "drive", "lane", "apt", "appartement",
+)
+
+
+def detect_phone_number(content):
+    """Retourne 'high' (format clairement structuré), 'low' (suite de chiffres
+    ambiguë) ou None (rien trouvé). Jamais de faux 'high' sur un ID Discord
+    (trop long, pas de séparateurs) ou une date (trop court)."""
+    if _PHONE_HIGH_CONFIDENCE_RE.search(content):
+        return "high"
+    if _PHONE_LOW_CONFIDENCE_RE.search(content):
+        return "low"
+    return None
+
+
+def detect_address_hint(content):
+    """Signal bas niveau de confiance : un nombre suivi (à proximité) d'un mot
+    de type voie. Les adresses sont trop variables pour une vraie détection
+    fiable par regex -- ceci sert uniquement d'alerte, jamais de suppression auto."""
+    lowered = content.lower()
+    has_number = bool(re.search(r"\b\d{1,5}\b", lowered))
+    has_street_word = any(re.search(r"\b" + re.escape(w) + r"\b", lowered) for w in _ADDRESS_STREET_WORDS)
+    return has_number and has_street_word
+
+
+def detect_raid_username_pattern(usernames):
+    """True si plusieurs pseudos récents partagent un pattern suspect : même
+    préfixe d'au moins 4 caractères, ou tous terminés par une longue suite de
+    chiffres (pattern typique des comptes générés en masse)."""
+    if len(usernames) < 3:
+        return False
+    lowered = [u.lower() for u in usernames]
+    # préfixe commun
+    for length in (6, 5, 4):
+        prefixes = {u[:length] for u in lowered if len(u) >= length}
+        for prefix in prefixes:
+            if sum(1 for u in lowered if u.startswith(prefix)) >= max(3, len(lowered) // 2 + 1):
+                return True
+    # tous se terminent par 4+ chiffres (ex: "User8291", "Member4471"...)
+    digit_suffix_count = sum(1 for u in lowered if re.search(r"\d{4,}$", u))
+    return digit_suffix_count >= max(3, len(lowered) // 2 + 1)
+
+
 def format_uptime(total_seconds):
     """Formate un nombre de secondes en chaîne lisible ('2d 5h', '14m')."""
     total_seconds = int(total_seconds)
