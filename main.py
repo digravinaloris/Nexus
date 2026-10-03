@@ -54,9 +54,10 @@ role_menus_col = None
 scheduled_col = None
 quarantine_col = None
 reminders_col = None
+templates_col = None  # globale -- PAS scopée par guild_id, contrairement à tout le reste
 
 def init_mongo():
-    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col, invite_uses_col, role_menus_col, scheduled_col, quarantine_col, reminders_col
+    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col, invite_uses_col, role_menus_col, scheduled_col, quarantine_col, reminders_col, templates_col
     mongo = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
     db = mongo["discordbot"]
     warns_col = db["warns"]
@@ -77,6 +78,7 @@ def init_mongo():
     scheduled_col = db["scheduled_announcements"]
     quarantine_col = db["quarantine"]
     reminders_col = db["reminders"]
+    templates_col = db["templates"]
     # Exposé sur l'objet bot (pas avant : init_mongo() tourne dans on_ready(),
     # après setup_hook()/le chargement des cogs) -- un cog qui a besoin de Mongo
     # (ex: cogs/faq.py) lit bot.db au moment de la commande/l'event, jamais à
@@ -2663,6 +2665,90 @@ bot.tree.add_command(appeal_group)
 
 
 # Sauvegarde de la structure du serveur : /backup create|list|restore — server owner only
+template_transfer_group = app_commands.Group(
+    name="template",
+    description="Share bot config (automod, features, command perms) between servers via a code — admin only",
+    default_permissions=discord.Permissions(administrator=True),
+)
+# Distinct de /config template (templates de permissions internes à CE serveur) --
+# celui-ci exporte/importe de la config ENTRE serveurs via un code partageable.
+
+
+@template_transfer_group.command(name="create", description="Snapshot this server's config into a shareable code — admin only")
+@has_admin()
+async def template_create(interaction: discord.Interaction):
+    guild = interaction.guild
+    cfg = get_config(guild.id)
+
+    feature_toggles = {key: bool(cfg.get(meta["config_key"])) for key, meta in FEATURE_TOGGLES.items()}
+    automod = {k: cfg.get(k) for k in (
+        "banned_words", "banned_domains", "automod_spam_count", "automod_spam_window",
+        "automod_caps_ratio", "automod_raid_count", "automod_raid_window",
+    )}
+    command_roles_by_name = {}
+    for command, role_ids in cfg.get("command_roles", {}).items():
+        names = [role.name for rid in role_ids if (role := guild.get_role(int(rid)))]
+        if names:
+            command_roles_by_name[command] = names
+
+    code = secrets.token_hex(4)
+    while templates_col.find_one({"code": code}):
+        code = secrets.token_hex(4)
+
+    templates_col.insert_one({
+        "code": code,
+        "created_guild_id": str(guild.id),
+        "created_guild_name": guild.name,
+        "created_by": str(interaction.user.id),
+        "created_at": datetime.datetime.now(datetime.timezone.utc),
+        "snapshot": {
+            "feature_toggles": feature_toggles,
+            "automod": automod,
+            "warn_escalation_enabled": cfg.get("warn_escalation_enabled", False),
+            "command_roles_by_name": command_roles_by_name,
+        },
+    })
+
+    embed = discord.Embed(title="📦 Template Created", description=f"Share this code with the other server's admin:\n```\n{code}\n```", color=0x00cc00)
+    embed.add_field(name="Includes", value=f"{len(feature_toggles)} feature toggles, automod settings, warn escalation, {len(command_roles_by_name)} command role permission(s)", inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@template_transfer_group.command(name="load", description="Apply a config template from another server using its code — admin only")
+@app_commands.describe(code="The code shared by the server that ran /template create")
+@has_admin()
+async def template_load(interaction: discord.Interaction, code: str):
+    doc = templates_col.find_one({"code": code.strip()})
+    if not doc:
+        await interaction.response.send_message("❌ No template found with that code.", ephemeral=True)
+        return
+    snapshot = doc["snapshot"]
+    guild_id = interaction.guild_id
+
+    for key, enabled in snapshot.get("feature_toggles", {}).items():
+        if key in FEATURE_TOGGLES:
+            update_config(guild_id, FEATURE_TOGGLES[key]["config_key"], enabled)
+    for key, value in snapshot.get("automod", {}).items():
+        if value is not None:
+            update_config(guild_id, key, value)
+    update_config(guild_id, "warn_escalation_enabled", snapshot.get("warn_escalation_enabled", False))
+
+    command_roles_by_name = snapshot.get("command_roles_by_name", {})
+    distinct_names = sorted({name for names in command_roles_by_name.values() for name in names})
+
+    if not distinct_names:
+        await interaction.response.send_message(f"✅ Template from **{doc['created_guild_name']}** applied (no role permissions to map).", ephemeral=True)
+        return
+
+    batch, remaining = distinct_names[:4], distinct_names[4:]
+    view = RoleMappingView(guild_id, batch, command_roles_by_name, remaining)
+    await interaction.response.send_message(
+        f"✅ Config from **{doc['created_guild_name']}** applied. Now map the old command-permission role(s) to roles on this server:",
+        view=view,
+        ephemeral=True,
+    )
+
+
 backup_group = app_commands.Group(name="backup", description="Server structure backups (roles, channels, permissions) — server owner only", default_permissions=discord.Permissions(administrator=True))
 
 
@@ -2751,6 +2837,7 @@ async def backup_restore(interaction: discord.Interaction, backup_id: str, confi
 
 
 bot.tree.add_command(backup_group)
+bot.tree.add_command(template_transfer_group)
 
 
 invites_group = app_commands.Group(name="invites", description="Track who invited whom on this server")
@@ -3895,6 +3982,42 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
         await interaction.response.send_message(f"✅ Ticket created: {channel.mention}", ephemeral=True)
 
 
+class RoleMappingView(discord.ui.View):
+    """Posée par /template load quand le template importe des permissions de
+    commande liées à des rôles -- un RoleSelect par nom de rôle distinct de
+    l'ancien serveur. Max 4 par passage : Discord limite à 5 lignes par message
+    et la ligne 4 est réservée au bouton Confirm (au-delà, l'admin relance
+    /template load pour le reste). Pas persistante (timeout normal) : c'est un
+    flux ponctuel, pas un bouton qui doit survivre à un redémarrage."""
+    def __init__(self, guild_id, role_names, command_roles_by_name, remaining_role_names):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        self.role_names = role_names  # ordre stable, correspond à l'ordre des selects ajoutés
+        self.command_roles_by_name = command_roles_by_name
+        self.remaining_role_names = remaining_role_names  # noms pas traités dans ce batch (si >4)
+        for i, name in enumerate(role_names):
+            select = discord.ui.RoleSelect(placeholder=f"Map old role: {name}", min_values=1, max_values=1, row=i)
+            self.add_item(select)
+
+    @discord.ui.button(label="Confirm mapping", style=discord.ButtonStyle.success, row=4)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        selects = [item for item in self.children if isinstance(item, discord.ui.RoleSelect)]
+        if any(not s.values for s in selects):
+            await interaction.response.send_message("❌ Pick a role for every mapping before confirming.", ephemeral=True)
+            return
+        name_to_new_id = {name: selects[i].values[0].id for i, name in enumerate(self.role_names)}
+        new_command_roles = get_config(self.guild_id).get("command_roles", {})
+        for command, old_names in self.command_roles_by_name.items():
+            mapped_ids = [name_to_new_id[n] for n in old_names if n in name_to_new_id]
+            if mapped_ids:
+                new_command_roles[command] = mapped_ids
+        update_config(self.guild_id, "command_roles", new_command_roles)
+        note = ""
+        if self.remaining_role_names:
+            note = f"\n⚠️ {len(self.remaining_role_names)} more role(s) in this template weren't mapped yet (5 per batch) — run `/template load` again with the same code to continue."
+        await interaction.response.edit_message(content=f"✅ Role mapping applied for this batch.{note}", view=None)
+
+
 class VerificationView(discord.ui.View):
     """Bouton persistant posté par /config verification post -- retire le rôle
     Unverified et donne le rôle Verified. Les salons restent à configurer
@@ -3912,6 +4035,12 @@ class VerificationView(discord.ui.View):
             return
         unverified_role = interaction.guild.get_role(int(unverified_id))
         verified_role = interaction.guild.get_role(int(verified_id))
+        # Anti-spam : déjà vérifié -> réponse immédiate, aucun appel à l'API Discord.
+        # Protège à la fois contre le spam-click d'un même membre et le risque de
+        # rate-limit si plusieurs clics arrivent d'un coup sur un bouton partagé.
+        if verified_role and verified_role in interaction.user.roles:
+            await interaction.response.send_message("✅ You're already verified.", ephemeral=True)
+            return
         try:
             if unverified_role and unverified_role in interaction.user.roles:
                 await interaction.user.remove_roles(unverified_role, reason="Verified")
