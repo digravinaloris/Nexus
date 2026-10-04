@@ -24,6 +24,10 @@ import matplotlib
 matplotlib.use("Agg")  # pas d'affichage sur Render -- rendu fichier uniquement
 import matplotlib.pyplot as plt
 from deep_translator import GoogleTranslator
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
+import json as _json
+import zipfile
 import utils
 from utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
@@ -942,6 +946,7 @@ async def on_ready():
     except Exception as e:
         print(f"Sync error: {e}", flush=True)
     print(f"{bot.user} is online!", flush=True)
+    log_json("info", "bot_ready", user=str(bot.user), guild_count=len(bot.guilds))
     if not getattr(bot, "_nexus_persistent_views_added", False):
         bot.add_view(VerificationView())
         bot.add_view(TicketPanelView())
@@ -956,6 +961,7 @@ async def on_ready():
     bot.loop.create_task(weekly_digest_loop())
     bot.loop.create_task(scheduled_announcements_loop())
     bot.loop.create_task(reminders_loop())
+    bot.loop.create_task(mongo_backup_loop())
     bot.loop.create_task(auto_slowmode_revert_loop())
     bot.loop.create_task(quarantine_review_loop())
     for guild in bot.guilds:
@@ -2316,7 +2322,7 @@ async def config_quarantine(interaction: discord.Interaction, role: discord.Role
 
 
 @config_group.command(name="antinuke", description="Set the anti-nuke sensitivity threshold — admin only. Use /feature enable|disable to turn it on/off.")
-@app_commands.describe(threshold="Destructive actions (bans/kicks/channel or role deletions) by the same person within 60s that trigger it (default 5)")
+@app_commands.describe(threshold="Destructive actions by the same person within 60s that trigger it (default 5)")
 @has_admin()
 async def config_antinuke(interaction: discord.Interaction, threshold: int = 5):
     threshold = max(2, min(threshold, 20))
@@ -2674,12 +2680,8 @@ template_transfer_group = app_commands.Group(
 # celui-ci exporte/importe de la config ENTRE serveurs via un code partageable.
 
 
-@template_transfer_group.command(name="create", description="Snapshot this server's config into a shareable code — admin only")
-@has_admin()
-async def template_create(interaction: discord.Interaction):
-    guild = interaction.guild
-    cfg = get_config(guild.id)
-
+def _build_template_snapshot(guild, cfg):
+    """Partagé par /template create (Discord) et la marketplace web."""
     feature_toggles = {key: bool(cfg.get(meta["config_key"])) for key, meta in FEATURE_TOGGLES.items()}
     automod = {k: cfg.get(k) for k in (
         "banned_words", "banned_domains", "automod_spam_count", "automod_spam_window",
@@ -2690,6 +2692,34 @@ async def template_create(interaction: discord.Interaction):
         names = [role.name for rid in role_ids if (role := guild.get_role(int(rid)))]
         if names:
             command_roles_by_name[command] = names
+    return {
+        "feature_toggles": feature_toggles,
+        "automod": automod,
+        "warn_escalation_enabled": cfg.get("warn_escalation_enabled", False),
+        "command_roles_by_name": command_roles_by_name,
+    }
+
+
+def _apply_template_base_config(guild_id, snapshot):
+    """Applique la partie 100% portable (toggles/automod/warn escalation) --
+    jamais les rôles, qui ont toujours besoin d'un remapping explicite.
+    Partagé par /template load (Discord) et l'import depuis la marketplace web."""
+    for key, enabled in snapshot.get("feature_toggles", {}).items():
+        if key in FEATURE_TOGGLES:
+            update_config(guild_id, FEATURE_TOGGLES[key]["config_key"], enabled)
+    for key, value in snapshot.get("automod", {}).items():
+        if value is not None:
+            update_config(guild_id, key, value)
+    update_config(guild_id, "warn_escalation_enabled", snapshot.get("warn_escalation_enabled", False))
+
+
+@template_transfer_group.command(name="create", description="Snapshot this server's config into a shareable code — admin only")
+@app_commands.describe(name="Short label shown if you list it on the dashboard marketplace", public="List this template on the web dashboard marketplace for any admin to browse")
+@has_admin()
+async def template_create(interaction: discord.Interaction, name: str = None, public: bool = False):
+    guild = interaction.guild
+    cfg = get_config(guild.id)
+    snapshot = _build_template_snapshot(guild, cfg)
 
     code = secrets.token_hex(4)
     while templates_col.find_one({"code": code}):
@@ -2697,20 +2727,19 @@ async def template_create(interaction: discord.Interaction):
 
     templates_col.insert_one({
         "code": code,
+        "name": name or f"{guild.name} template",
+        "public": bool(public),
         "created_guild_id": str(guild.id),
         "created_guild_name": guild.name,
         "created_by": str(interaction.user.id),
         "created_at": datetime.datetime.now(datetime.timezone.utc),
-        "snapshot": {
-            "feature_toggles": feature_toggles,
-            "automod": automod,
-            "warn_escalation_enabled": cfg.get("warn_escalation_enabled", False),
-            "command_roles_by_name": command_roles_by_name,
-        },
+        "snapshot": snapshot,
     })
 
     embed = discord.Embed(title="📦 Template Created", description=f"Share this code with the other server's admin:\n```\n{code}\n```", color=0x00cc00)
-    embed.add_field(name="Includes", value=f"{len(feature_toggles)} feature toggles, automod settings, warn escalation, {len(command_roles_by_name)} command role permission(s)", inline=False)
+    embed.add_field(name="Includes", value=f"{len(snapshot['feature_toggles'])} feature toggles, automod settings, warn escalation, {len(snapshot['command_roles_by_name'])} command role permission(s)", inline=False)
+    if public:
+        embed.add_field(name="Marketplace", value="✅ Listed publicly on the dashboard marketplace (any admin can browse/import it).", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -2724,14 +2753,7 @@ async def template_load(interaction: discord.Interaction, code: str):
         return
     snapshot = doc["snapshot"]
     guild_id = interaction.guild_id
-
-    for key, enabled in snapshot.get("feature_toggles", {}).items():
-        if key in FEATURE_TOGGLES:
-            update_config(guild_id, FEATURE_TOGGLES[key]["config_key"], enabled)
-    for key, value in snapshot.get("automod", {}).items():
-        if value is not None:
-            update_config(guild_id, key, value)
-    update_config(guild_id, "warn_escalation_enabled", snapshot.get("warn_escalation_enabled", False))
+    _apply_template_base_config(guild_id, snapshot)
 
     command_roles_by_name = snapshot.get("command_roles_by_name", {})
     distinct_names = sorted({name for names in command_roles_by_name.values() for name in names})
@@ -2899,20 +2921,65 @@ async def export_sanctions(interaction: discord.Interaction):
     await interaction.followup.send("📄 Here's the export:", file=file, ephemeral=True)
 
 
-@export_group.command(name="audit", description="Export this server's dashboard audit log as a CSV file — admin only")
-@has_admin()
-async def export_audit(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    records = list(audit_col.find({"guild_id": str(interaction.guild_id)}).sort("timestamp", -1))
-    if not records:
-        await interaction.followup.send("No audit entries to export.", ephemeral=True)
-        return
+def _get_audit_records(guild_id):
+    return list(audit_col.find({"guild_id": str(guild_id)}).sort("timestamp", -1))
+
+
+def _build_audit_csv_bytes(records):
+    """Partagé entre /export audit (Discord) et le bouton d'export du dashboard web."""
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["actor_name", "action", "details", "timestamp"])
     for r in records:
         writer.writerow([r.get("actor_name", ""), r.get("action", ""), r.get("details", ""), r.get("timestamp", "")])
-    file = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename=f"audit_{interaction.guild_id}.csv")
+    return buf.getvalue().encode("utf-8")
+
+
+def _build_audit_pdf_bytes(records, guild_name):
+    """Tableau simple via reportlab -- pas de dépendance système (contrairement
+    à weasyprint/wkhtmltopdf, qui demanderaient des libs non dispo sur le free
+    tier Render sans apt-get)."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, topMargin=0.5 * inch)
+    styles = getSampleStyleSheet()
+    elements = [Paragraph(f"Audit Log — {guild_name}", styles["Title"])]
+    data = [["Actor", "Action", "Details", "Timestamp"]]
+    for r in records:
+        data.append([
+            str(r.get("actor_name", ""))[:30],
+            str(r.get("action", ""))[:40],
+            str(r.get("details", ""))[:60],
+            str(r.get("timestamp", ""))[:19],
+        ])
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#262b3d")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f1f6")]),
+    ]))
+    elements.append(table)
+    doc.build(elements)
+    buf.seek(0)
+    return buf.read()
+
+
+@export_group.command(name="audit", description="Export this server's dashboard audit log as a CSV file — admin only")
+@has_admin()
+async def export_audit(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    records = _get_audit_records(interaction.guild_id)
+    if not records:
+        await interaction.followup.send("No audit entries to export.", ephemeral=True)
+        return
+    file = discord.File(io.BytesIO(_build_audit_csv_bytes(records)), filename=f"audit_{interaction.guild_id}.csv")
     await interaction.followup.send("📄 Here's the export:", file=file, ephemeral=True)
 
 
@@ -3131,6 +3198,41 @@ async def scheduled_announcements_loop():
         await asyncio.sleep(60)
 
 
+async def mongo_backup_loop():
+    """Dump quotidien de TOUTES les collections Mongo en JSON, zippé, envoyé
+    en DM au bot owner (is_bot_owner -- même notion que /admin killswitch,
+    pas le owner d'un serveur Discord précis). Mongo Atlas M0 (free tier)
+    n'inclut aucun backup automatique -- celui-ci comble ce trou.
+    ⚠️ Le dump contient tout tel quel, y compris les clés API stockées en
+    config -- volontairement envoyé seulement en DM au bot owner, jamais
+    ailleurs."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            if db is not None:
+                app_info = await bot.application_info()
+                owner = app_info.owner
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for name in db.list_collection_names():
+                        docs = list(db[name].find({}))
+                        zf.writestr(f"{name}.json", _json.dumps(docs, default=str, indent=2))
+                buf.seek(0)
+                size_mb = buf.getbuffer().nbytes / (1024 * 1024)
+                if size_mb > 9:
+                    log_json("warning", "mongo_backup_too_large", size_mb=round(size_mb, 1))
+                else:
+                    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+                    await owner.send(
+                        content=f"🗄️ Daily Mongo backup — {stamp}",
+                        file=discord.File(buf, filename=f"nexus_backup_{stamp}.zip"),
+                    )
+                    log_json("info", "mongo_backup_sent", size_mb=round(size_mb, 2))
+        except Exception as e:
+            log_json("error", "mongo_backup_loop_error", error=str(e))
+        await asyncio.sleep(86400)  # 24h
+
+
 async def reminders_loop():
     """Check toutes les 30s les /remindme dus. Comparaison de date faite dans
     la requête Mongo, pas en Python après lecture (même piège naive/aware que
@@ -3146,10 +3248,10 @@ async def reminders_loop():
                     embed = discord.Embed(title="⏰ Reminder", description=doc["text"], color=0x3399ff)
                     await user.send(embed=embed)
                 except discord.HTTPException as e:
-                    print(f"[REMINDME] Failed to DM {doc['user_id']}: {e}", flush=True)
+                    log_json("error", "remindme_dm_failed", user_id=doc["user_id"], error=str(e))
                 reminders_col.update_one({"_id": doc["_id"]}, {"$set": {"sent": True}})
         except Exception as e:
-            print(f"[REMINDME] loop error: {e}", flush=True)
+            log_json("error", "remindme_loop_error", error=str(e))
         await asyncio.sleep(30)
 
 
@@ -3169,10 +3271,10 @@ async def auto_slowmode_revert_loop():
                     try:
                         await channel.edit(slowmode_delay=0, reason="Auto-slowmode window expired")
                     except discord.HTTPException as e:
-                        print(f"[AUTO-SLOWMODE] Failed to revert channel {channel_id}: {e}", flush=True)
+                        log_json("error", "auto_slowmode_revert_failed", channel_id=channel_id, error=str(e))
                 del _auto_slowmode_active[channel_id]
         except Exception as e:
-            print(f"[AUTO-SLOWMODE] revert loop error: {e}", flush=True)
+            log_json("error", "auto_slowmode_revert_loop_error", error=str(e))
         await asyncio.sleep(30)
 
 
@@ -3202,10 +3304,10 @@ async def quarantine_review_loop():
                     try:
                         await channel.send(f"⏳ Reminder: <@{doc['user_id']}> is still waiting for quarantine review (joined {hold_minutes}+ min ago).")
                     except discord.HTTPException as e:
-                        print(f"[QUARANTINE] Failed to send reminder: {e}", flush=True)
+                        log_json("error", "quarantine_reminder_failed", error=str(e))
                 quarantine_col.update_one({"_id": doc["_id"]}, {"$set": {"reminded": True}})
         except Exception as e:
-            print(f"[QUARANTINE] review loop error: {e}", flush=True)
+            log_json("error", "quarantine_review_loop_error", error=str(e))
         await asyncio.sleep(300)
 
 
@@ -3309,7 +3411,7 @@ async def serverinfo(interaction: discord.Interaction):
             embed.set_image(url="attachment://activity.png")
             await interaction.followup.send(embed=embed, file=file)
         except Exception as e:
-            print(f"[SERVERINFO] Chart generation failed: {e}", flush=True)
+            log_json("error", "serverinfo_chart_failed", error=str(e))
             await interaction.followup.send(embed=embed)
         return
 
@@ -3841,6 +3943,36 @@ class SatisfactionSurveyView(discord.ui.View):
         await self._record(interaction, False)
 
 
+async def _generate_ticket_transcript(channel):
+    """HTML simple et lisible (pas de JS, cohérent avec le reste du projet) --
+    auteur, horodatage, contenu de chaque message, dans l'ordre chronologique."""
+    messages = [m async for m in channel.history(limit=500, oldest_first=True)]
+    rows = []
+    for m in messages:
+        content = discord.utils.escape_markdown(m.content) if m.content else ""
+        content_html = content.replace("\n", "<br>") or "<em>(no text content)</em>"
+        attachments = "".join(f'<div class="att">📎 {a.filename}</div>' for a in m.attachments)
+        rows.append(
+            f'<div class="msg"><span class="author">{m.author}</span> '
+            f'<span class="time">{m.created_at.strftime("%Y-%m-%d %H:%M UTC")}</span>'
+            f'<div class="content">{content_html}</div>{attachments}</div>'
+        )
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Transcript — {channel.name}</title>
+<style>
+body {{ font-family: sans-serif; background: #171a24; color: #eceef5; padding: 20px; }}
+.msg {{ border-bottom: 1px solid #2a2f42; padding: 10px 0; }}
+.author {{ font-weight: 600; }}
+.time {{ color: #8b90a8; font-size: 12px; margin-left: 8px; }}
+.content {{ margin-top: 4px; white-space: pre-wrap; }}
+.att {{ color: #ffb84d; font-size: 13px; }}
+</style></head><body>
+<h2>Transcript — #{channel.name}</h2>
+<p>{len(messages)} messages</p>
+{"".join(rows)}
+</body></html>"""
+    return html
+
+
 class TicketCloseView(discord.ui.View):
     """Bouton persistant dans chaque ticket ouvert pour le fermer."""
     def __init__(self):
@@ -3878,6 +4010,29 @@ class TicketCloseView(discord.ui.View):
                 )
             except discord.HTTPException:
                 pass
+
+        # Transcript : généré avant tout archivage/suppression, envoyé dans le
+        # salon de logs configuré + en DM à la personne qui a ouvert le ticket.
+        try:
+            transcript_html = await _generate_ticket_transcript(channel)
+            filename = f"transcript-{channel.name}.html"
+            logs_channel = discord.utils.get(interaction.guild.text_channels, name=cfg.get("logs_channel", "logs"))
+            if logs_channel:
+                await logs_channel.send(
+                    content=f"📜 Transcript for closed ticket **#{channel.name}** (by {interaction.user.mention}):",
+                    file=discord.File(io.BytesIO(transcript_html.encode("utf-8")), filename=filename),
+                )
+            if opener_id and opener_id.isdigit():
+                try:
+                    opener_user = await bot.fetch_user(int(opener_id))
+                    await opener_user.send(
+                        content="Here's a transcript of your ticket:",
+                        file=discord.File(io.BytesIO(transcript_html.encode("utf-8")), filename=filename),
+                    )
+                except discord.HTTPException:
+                    pass
+        except Exception as e:
+            log_json("error", "ticket_transcript_failed", channel_id=channel.id, guild_id=interaction.guild_id, error=str(e))
 
         archive_category = None
         archive_category_id = cfg.get("ticket_archive_category_id")
@@ -4440,7 +4595,7 @@ async def on_message(message):
                 )
                 await _send_log_embed(message.guild, alert)
             except discord.HTTPException as e:
-                print(f"[AUTO-SLOWMODE] Failed on channel {message.channel.id}: {e}", flush=True)
+                log_json("error", "auto_slowmode_apply_failed", channel_id=message.channel.id, guild_id=message.guild.id, error=str(e))
 
     # Message épinglé (sticky) : republié en bas du salon après le passage
     # d'un cooldown, pour rester visible sans spammer à chaque message.
@@ -4514,7 +4669,7 @@ async def send_welcome_banner(member, channel):
         buf = await asyncio.to_thread(_compose_welcome_banner, member.display_name, avatar_bytes)
         await channel.send(file=discord.File(buf, filename="welcome.png"))
     except Exception as e:
-        print(f"[WELCOME BANNER] Failed for {member.id}: {e}", flush=True)
+        log_json("error", "welcome_banner_failed", user_id=member.id, guild_id=member.guild.id, error=str(e))
 
 
 # Logs
@@ -4588,7 +4743,7 @@ async def on_member_join(member):
                 try:
                     await member.add_roles(role, reason="Quarantine: new account held for review")
                 except discord.HTTPException as e:
-                    print(f"[QUARANTINE] Failed to add role to {member.id}: {e}", flush=True)
+                    log_json("error", "quarantine_role_add_failed", user_id=member.id, guild_id=member.guild.id, error=str(e))
                 quarantine_col.insert_one({
                     "guild_id": str(member.guild.id),
                     "user_id": str(member.id),
@@ -4807,7 +4962,7 @@ async def _handle_translate_reaction(payload):
         embed.set_footer(text=f"Original by {message.author}")
         await reactor.send(embed=embed)
     except Exception as e:
-        print(f"[TRANSLATE] Failed: {e}", flush=True)
+        log_json("error", "translate_reaction_failed", error=str(e))
 
 
 @bot.event
@@ -4862,6 +5017,24 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 # ============================================================
 # ===================  API REST (App Android) =================
 # ============================================================
+
+def log_json(level, event, **fields):
+    """Log structuré en une ligne JSON -- Render capture stdout tel quel, donc
+    une ligne JSON devient greppable/filtrable dans ses logs sans rien de plus
+    à configurer côté infra. N'écrit jamais rien d'autre que cette ligne.
+    Migration progressive depuis print(...) -- voir le changelog pour la liste
+    des points déjà convertis ; le reste des print() existants n'a pas été
+    touché pour ne rien risquer de casser sans pouvoir tester en prod."""
+    payload = {"level": level, "event": event, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), **fields}
+    print(_json.dumps(payload, default=str), flush=True)
+
+
+_SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if _SENTRY_DSN:
+    sentry_sdk.init(dsn=_SENTRY_DSN, integrations=[FlaskIntegration()], traces_sample_rate=0.1)
+    log_json("info", "sentry_initialized")
+# Si SENTRY_DSN n'est pas défini sur Render, sentry_sdk.init() n'est jamais
+# appelé -- aucun comportement différent, complètement silencieux/opt-in.
 
 api = Flask('')
 
@@ -5017,7 +5190,22 @@ def log_unwarn(guild, member, count):
 
 @api.route('/')
 def home():
-    return "Bot is alive!"
+    # Reste toujours 200 (UptimeRobot et Render s'en servent comme simple ping
+    # de "le serveur web répond") -- le détail par composant est dans le JSON,
+    # pas dans le status code, pour ne jamais déclencher de faux downtime sur
+    # un blip Mongo passager.
+    mongo_ok = False
+    try:
+        mongo.admin.command("ping")
+        mongo_ok = True
+    except Exception:
+        pass
+    return jsonify({
+        "status": "alive",
+        "discord_gateway": "connected" if bot.is_ready() else "disconnected",
+        "mongodb": "connected" if mongo_ok else "unreachable",
+        "guild_count": len(bot.guilds) if bot.is_ready() else 0,
+    })
 
 @api.route('/api/health', methods=['GET'])
 @require_api_key
@@ -5744,6 +5932,7 @@ MODERATION_COMMANDS = [
 ]
 
 BASE_STYLE = """
+<script>document.documentElement.dataset.theme = "{{ theme() }}";</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -5761,6 +5950,19 @@ BASE_STYLE = """
     --lime-dim: #26301a;
     --amber: #ffb84d;
     --amber-dim: #3a2c14;
+  }
+  /* Thème clair : mêmes accents (raspberry/lime/amber), juste les neutres inversés. */
+  html[data-theme="light"] {
+    --ink: #f4f5fa;
+    --surface: #ffffff;
+    --surface-2: #f1f1f6;
+    --surface-3: #e6e7f0;
+    --line: #dcdde8;
+    --text: #15161e;
+    --muted: #5c6079;
+    --raspberry-dim: #ffe0ea;
+    --lime-dim: #eaf7cf;
+    --amber-dim: #fff0d9;
   }
   * { box-sizing: border-box; }
   body {
@@ -5969,8 +6171,13 @@ def current_lang():
     return session.get("lang", "en")
 
 
+def current_theme():
+    return session.get("theme", "dark")
+
+
 api.jinja_env.globals["t"] = t
 api.jinja_env.globals["lang"] = current_lang
+api.jinja_env.globals["theme"] = current_theme
 
 
 # ---------- Modèles de permissions par commande ----------
@@ -5996,6 +6203,10 @@ TOPBAR = """
     <div class="lang-switch">
       <a href="{{ url_for('dash_set_lang', lang_code='en', next=request.path) }}" class="{{ 'active' if lang()=='en' else '' }}">EN</a>
       <a href="{{ url_for('dash_set_lang', lang_code='fr', next=request.path) }}" class="{{ 'active' if lang()=='fr' else '' }}">FR</a>
+    </div>
+    <div class="lang-switch">
+      <a href="{{ url_for('dash_set_theme', theme_name='dark', next=request.path) }}" class="{{ 'active' if theme()=='dark' else '' }}">🌙</a>
+      <a href="{{ url_for('dash_set_theme', theme_name='light', next=request.path) }}" class="{{ 'active' if theme()=='light' else '' }}">☀️</a>
     </div>
     {% if user and user.avatar %}
       <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png" alt="">
@@ -6043,11 +6254,13 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
     <span class="pill"><span class="pip"></span> {{ channels|length }} {{ t('status_text_channels') }}</span>
     <span class="pill"><span class="pip"></span> {{ roles|length }} {{ t('status_roles') }}</span>
     {% if is_owner %}<span class="pill"><span class="pip" style="background: var(--amber);"></span> {{ t('status_owner') }}</span>{% endif %}
+    <span class="pill" id="presence-widget" style="display:none;"><span class="pip" style="background: var(--lime);"></span> <span id="presence-names"></span></span>
   </div>
 
   <div class="row" style="margin-top:16px;">
     <a class="btn ghost" href="{{ url_for('dash_cases_page', guild_id=guild.id) }}">{{ t('nav_cases') }}</a>
     <a class="btn ghost" href="{{ url_for('dash_appeals_page', guild_id=guild.id) }}">{{ t('nav_appeals') }}</a>
+    <a class="btn ghost" href="{{ url_for('dash_template_marketplace', guild_id=guild.id) }}">Templates</a>
   </div>
 
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
@@ -6104,6 +6317,30 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
     document.addEventListener('DOMContentLoaded', function() {
       checkRiskyRole(document.getElementById('autorole'));
     });
+
+    // Présence live : ping toutes les 10s pour signaler "je regarde cette page",
+    // et récupère la liste de qui d'autre est dessus. Polling simple plutôt que
+    // websocket -- le service Render tourne avec un seul worker, un dict en
+    // mémoire suffit, pas besoin d'une dépendance type flask-socketio.
+    function pollPresence() {
+      fetch("{{ url_for('dash_presence_ping', guild_id=guild.id) }}", { method: "POST" });
+      fetch("{{ url_for('dash_presence_who', guild_id=guild.id) }}")
+        .then(r => r.json())
+        .then(data => {
+          var widget = document.getElementById('presence-widget');
+          var names = document.getElementById('presence-names');
+          var others = data.viewers.filter(function(n) { return n !== "{{ user.global_name or user.username }}"; });
+          if (others.length > 0) {
+            names.textContent = others.join(', ') + '{{ " also viewing" if lang()=="en" else " regarde aussi" }}';
+            widget.style.display = 'inline-flex';
+          } else {
+            widget.style.display = 'none';
+          }
+        })
+        .catch(function() {});
+    }
+    pollPresence();
+    setInterval(pollPresence, 10000);
   </script>
 
   <form method="POST" action="{{ url_for('dash_automod', guild_id=guild.id) }}">
@@ -6273,7 +6510,16 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
   </div>
 
   <div class="panel" style="animation-delay:.22s">
-    <div class="panel-head"><h2>{{ t('panel_audit_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
+    <div class="panel-head">
+      <h2>{{ t('panel_audit_title') }}</h2>
+      <span class="badge owner">{{ t('badge_owner') }}</span>
+      {% if audit_entries %}
+      <span style="margin-left:auto;font-size:13px;">
+        <a href="/dashboard/{{ guild.id }}/audit/export.csv">CSV</a> ·
+        <a href="/dashboard/{{ guild.id }}/audit/export.pdf">PDF</a>
+      </span>
+      {% endif %}
+    </div>
     <div class="desc">{{ t('panel_audit_desc') }}</div>
     {% if audit_entries %}
     <div class="audit-list">
@@ -6299,6 +6545,151 @@ GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
 def dash_set_lang(lang_code):
     if lang_code in TRANSLATIONS:
         session["lang"] = lang_code
+    next_url = request.args.get("next") or url_for("dash_home")
+    return redirect(next_url)
+
+
+_dashboard_presence = {}  # {guild_id: {user_id: (name, last_seen_epoch)}}
+_PRESENCE_TTL_SECONDS = 25  # un peu plus que l'intervalle de ping JS (10s) côté client
+
+
+@api.route("/dashboard/<guild_id>/presence/ping", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_presence_ping(guild_id):
+    user = session.get("dash_user") or {}
+    name = user.get("global_name") or user.get("username") or "?"
+    _dashboard_presence.setdefault(guild_id, {})[user.get("id")] = (name, time.time())
+    return jsonify({"ok": True})
+
+
+@api.route("/dashboard/<guild_id>/presence/who", methods=["GET"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_presence_who(guild_id):
+    now = time.time()
+    entries = _dashboard_presence.get(guild_id, {})
+    active = [name for name, last_seen in entries.values() if now - last_seen < _PRESENCE_TTL_SECONDS]
+    return jsonify({"viewers": active})
+
+
+TEMPLATE_MARKETPLACE_TEMPLATE = BASE_STYLE + TOPBAR + """
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <div class="eyebrow">Marketplace</div>
+  <h1>Config Templates</h1>
+  <p class="lead">Import another server's automod/feature setup into <strong>{{ guild.name }}</strong>. Role-based command permissions get mapped to your own roles before anything is applied.</p>
+
+  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  {% if templates %}
+  <div class="panel">
+    {% for tpl in templates %}
+    <div class="audit-entry">
+      <div class="audit-meta"><strong>{{ tpl.name }}</strong> · from {{ tpl.created_guild_name }} · {{ tpl.created_at.strftime('%Y-%m-%d') }}</div>
+      <div class="audit-action">
+        {{ tpl.snapshot.feature_toggles|length }} toggles, {{ tpl.snapshot.command_roles_by_name|length }} role permission(s)
+        <a class="btn ghost" style="margin-left:10px;" href="{{ url_for('dash_template_import', guild_id=guild.id, code=tpl.code) }}">Import</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="no-perms">No public templates yet. Create one with <code>/template create name:"..." public:True</code> on any of your servers.</div>
+  {% endif %}
+
+  <div style="height:20px;"></div>
+  <p class="lead">Got a code directly instead?</p>
+  <form method="GET" action="{{ url_for('dash_template_import', guild_id=guild.id, code='_') }}" onsubmit="this.action = this.action.replace('_', document.getElementById('code-input').value.trim()); return true;">
+    <input id="code-input" type="text" placeholder="Template code" style="width:200px;">
+    <button type="submit">Import by code</button>
+  </form>
+</div>
+"""
+
+TEMPLATE_IMPORT_TEMPLATE = BASE_STYLE + TOPBAR + """
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_template_marketplace', guild_id=guild.id) }}">&larr; Marketplace</a>
+  <div class="eyebrow">Import Template</div>
+  <h1>{{ tpl.name }}</h1>
+  <p class="lead">From <strong>{{ tpl.created_guild_name }}</strong>. The base config (feature toggles, automod, warn escalation) applies automatically. Map any role-based command permissions below before confirming.</p>
+
+  <form method="POST">
+    {% if distinct_names %}
+    <div class="panel">
+      <h2>Map roles</h2>
+      {% for name in distinct_names %}
+      <div class="field">
+        <label>Old role: <strong>{{ name }}</strong></label>
+        <select name="map__{{ loop.index0 }}">
+          <option value="">— skip this role —</option>
+          {% for role in roles %}
+          <option value="{{ role.id }}">{{ role.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-perms">No role-based command permissions in this template — nothing to map.</div>
+    {% endif %}
+    <div style="height:14px;"></div>
+    <button type="submit">Apply Template</button>
+  </form>
+</div>
+"""
+
+
+@api.route("/dashboard/<guild_id>/templates", methods=["GET"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_template_marketplace(guild_id):
+    guild = bot.get_guild(int(guild_id))
+    templates = list(templates_col.find({"public": True}).sort("created_at", -1).limit(50))
+    return render_template_string(TEMPLATE_MARKETPLACE_TEMPLATE, guild=guild, templates=templates, user=session.get("dash_user"))
+
+
+@api.route("/dashboard/<guild_id>/templates/import/<code>", methods=["GET", "POST"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_template_import(guild_id, code):
+    guild = bot.get_guild(int(guild_id))
+    doc = templates_col.find_one({"code": code.strip()})
+    if not doc:
+        flash("No template found with that code." if current_lang() == "en" else "Aucun template trouvé avec ce code.")
+        return redirect(url_for("dash_template_marketplace", guild_id=guild_id))
+
+    snapshot = doc["snapshot"]
+    command_roles_by_name = snapshot.get("command_roles_by_name", {})
+    distinct_names = sorted({name for names in command_roles_by_name.values() for name in names})
+
+    if request.method == "POST":
+        _apply_template_base_config(guild_id, snapshot)
+        name_to_new_id = {}
+        for i, old_name in enumerate(distinct_names):
+            selected = request.form.get(f"map__{i}", "")
+            if selected:
+                name_to_new_id[old_name] = int(selected)
+        new_command_roles = get_config(guild_id).get("command_roles", {})
+        for command, old_names in command_roles_by_name.items():
+            mapped_ids = [name_to_new_id[n] for n in old_names if n in name_to_new_id]
+            if mapped_ids:
+                new_command_roles[command] = mapped_ids
+        update_config(guild_id, "command_roles", new_command_roles)
+        dash_log_action(guild, guild_id, f"Imported template '{doc.get('name', doc['code'])}' from {doc['created_guild_name']}")
+        flash("Template applied." if current_lang() == "en" else "Template appliqué.")
+        return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
+    return render_template_string(
+        TEMPLATE_IMPORT_TEMPLATE, guild=guild, tpl=doc, distinct_names=distinct_names,
+        roles=[r for r in guild.roles if not r.is_default()], user=session.get("dash_user"),
+    )
+
+
+@api.route("/dashboard/theme/<theme_name>")
+def dash_set_theme(theme_name):
+    if theme_name in ("dark", "light"):
+        session["theme"] = theme_name
     next_url = request.args.get("next") or url_for("dash_home")
     return redirect(next_url)
 
@@ -6566,6 +6957,35 @@ def dash_apikey_regen(guild_id):
     dash_log_action(guild, guild_id, "Regenerated mobile API key")
     flash("New API key generated — the old one no longer works." if current_lang() == "en" else "Nouvelle clé API générée — l'ancienne ne fonctionne plus.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
+
+
+@api.route("/dashboard/<guild_id>/audit/export.csv", methods=["GET"])
+@dash_login_required
+@dash_guild_admin_required
+@dash_owner_required
+def dash_export_audit_csv(guild_id):
+    from flask import Response
+    records = _get_audit_records(guild_id)
+    return Response(
+        _build_audit_csv_bytes(records),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=audit_{guild_id}.csv"},
+    )
+
+
+@api.route("/dashboard/<guild_id>/audit/export.pdf", methods=["GET"])
+@dash_login_required
+@dash_guild_admin_required
+@dash_owner_required
+def dash_export_audit_pdf(guild_id):
+    from flask import Response
+    guild = bot.get_guild(int(guild_id))
+    records = _get_audit_records(guild_id)
+    return Response(
+        _build_audit_pdf_bytes(records, guild.name if guild else guild_id),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=audit_{guild_id}.pdf"},
+    )
 
 
 @api.route("/dashboard/<guild_id>/lock", methods=["POST"])
@@ -7026,6 +7446,7 @@ keep_alive()
 # avant de quitter, plutôt qu'une coupure brutale en plein milieu).
 def _handle_sigterm(signum, frame):
     print("[SHUTDOWN] Received SIGTERM, shutting down gracefully...", flush=True)
+    log_json("info", "shutdown_sigterm")
     raise KeyboardInterrupt()
 
 signal.signal(signal.SIGTERM, _handle_sigterm)

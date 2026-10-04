@@ -12,3 +12,5 @@ pytest
 Pillow
 matplotlib
 deep-translator
+reportlab
+sentry-sdk[flask]
