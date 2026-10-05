@@ -3228,6 +3228,11 @@ async def mongo_backup_loop():
                         file=discord.File(buf, filename=f"nexus_backup_{stamp}.zip"),
                     )
                     log_json("info", "mongo_backup_sent", size_mb=round(size_mb, 2))
+        except discord.Forbidden:
+            log_json(
+                "error", "mongo_backup_dm_blocked",
+                hint="Owner has DMs closed from the bot. Enable 'Allow direct messages from server members' on a shared server to receive backups.",
+            )
         except Exception as e:
             log_json("error", "mongo_backup_loop_error", error=str(e))
         await asyncio.sleep(86400)  # 24h
