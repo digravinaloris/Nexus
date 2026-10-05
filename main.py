@@ -7451,25 +7451,26 @@ def _handle_sigterm(signum, frame):
 
 signal.signal(signal.SIGTERM, _handle_sigterm)
 
-# Si Discord/Cloudflare renvoie un 429 au login (rate limit), on ne laisse pas
-# le process planter : Render le relancerait instantanément, ce qui martèle
-# encore plus l'endpoint de login et prolonge le blocage. On attend avec un
-# backoff progressif à la place.
-_login_attempt = 0
-while True:
-    try:
-        bot.run(os.getenv("TOKEN"))
-        break  # bot.run() ne revient normalement qu'à l'arrêt volontaire
-    except discord.errors.HTTPException as e:
-        if e.status == 429:
-            _login_attempt += 1
-            wait = min(60 * (2 ** (_login_attempt - 1)), 900)  # 60s, 120s, 240s... max 15 min
-            print(f"[LOGIN] 429 rate limited par Discord/Cloudflare, retry dans {wait}s (tentative {_login_attempt})", flush=True)
-            time.sleep(wait)
-        else:
-            raise
-    except KeyboardInterrupt:
-        break
+# Si Discord/Cloudflare renvoie un 429 au login (rate limit) : bot.run() ferme
+# sa session HTTP en interne dès qu'il ressort (même sur erreur, via son
+# `async with self:`), donc rappeler bot.run() sur CE MÊME objet `bot` ensuite
+# plante avec "Session is closed" -- discord.py ne supporte pas de relancer un
+# client déjà fermé. Au lieu de boucler dans le même process, on attend le
+# backoff ICI (le process reste vivant pendant l'attente, donc Render ne nous
+# redémarre pas entre-temps), puis on laisse le process ressortir pour de bon :
+# Render le relance avec un `bot` tout neuf, sans l'état cassé de l'ancien.
+# Contrepartie connue : le compteur de tentatives repart de zéro à chaque
+# redémarrage process (pas d'escalade 60s/120s/240s qui survit à un restart) --
+# avant si pépin après la 1ère attente de 60s.
+try:
+    bot.run(os.getenv("TOKEN"))
+except discord.errors.HTTPException as e:
+    if e.status == 429:
+        print("[LOGIN] 429 rate limited par Discord/Cloudflare, attente 60s avant de laisser Render redémarrer proprement", flush=True)
+        time.sleep(60)
+    raise
+except KeyboardInterrupt:
+    pass
 
 if mongo:
     try:
