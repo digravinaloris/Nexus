@@ -5937,6 +5937,9 @@ MODERATION_COMMANDS = [
 ]
 
 BASE_STYLE = """
+<link rel="icon" type="image/png" href="https://github.com/digravinaloris/Nexus/blob/main/Nexus.png?raw=true">
+<script>document.documentElement.dataset.theme = "{{ theme() }}";</script>
+<style>
 <script>document.documentElement.dataset.theme = "{{ theme() }}";</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
