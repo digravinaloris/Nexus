@@ -252,6 +252,8 @@ def get_config(guild_id):
             "auto_translate_enabled": False,
             "remindme_enabled": True,
             "serverinfo_visual_enabled": False,
+            "trap_channel_enabled": False,
+            "trap_channel_id": None,
             "automod_spam_count": 10,
             "automod_spam_window": 5,
             "automod_caps_ratio": 0.7,
@@ -2301,6 +2303,19 @@ async def verification_post(interaction: discord.Interaction):
     await interaction.response.send_message("✅ Verification button posted.", ephemeral=True)
 
 
+@config_group.command(name="trapchannel", description="Set the trap channel — any message there = instant softban. Admin only.")
+@app_commands.describe(channel="Channel where ANY message posted gets the author instantly softbanned")
+@has_admin()
+async def config_trapchannel(interaction: discord.Interaction, channel: discord.TextChannel):
+    update_config(interaction.guild_id, "trap_channel_id", channel.id)
+    await interaction.response.send_message(
+        f"🪤 {channel.mention} is now set as the trap channel — anyone posting there (except staff) gets instantly softbanned.\n"
+        f"**Make sure regular members can't normally see/post in it** (it only works if nobody legit ever has a reason to post there). "
+        f"Enable with `/feature enable trap_channel`.",
+        ephemeral=True,
+    )
+
+
 @config_group.command(name="quarantine", description="Configure the quarantine hold for new accounts — admin only. Enable via /feature.")
 @app_commands.describe(
     role="Role to apply while a member is held for review",
@@ -3005,6 +3020,7 @@ FEATURE_TOGGLES = {
     "auto_translate": {"config_key": "auto_translate_enabled", "label": "Translate a message via 🌐 reaction (DMs the translation)"},
     "remindme": {"config_key": "remindme_enabled", "label": "Enable the /remindme command"},
     "serverinfo_visual": {"config_key": "serverinfo_visual_enabled", "label": "Attach a 7-day activity chart to /serverinfo"},
+    "trap_channel": {"config_key": "trap_channel_enabled", "label": "Any message in the trap channel = instant softban (no content check)"},
 }
 FEATURE_CHOICES = [app_commands.Choice(name=v["label"], value=k) for k, v in FEATURE_TOGGLES.items()]
 
@@ -4539,6 +4555,26 @@ async def on_message(message):
     cfg = get_config(message.guild.id)
 
     if not is_automod_exempt(message.author, cfg):
+        # Salon piège : AUCUNE analyse de contenu -- si ce salon est configuré et
+        # qu'un non-staff y poste quoi que ce soit, c'est un softban instantané.
+        # Ne marche que si les membres normaux n'ont aucune raison légitime d'y
+        # poster (salon cosmétique/caché pour la plupart, vu seulement par les
+        # bots qui scrapent tous les salons -- voir /config trapchannel).
+        if cfg.get("trap_channel_enabled") and cfg.get("trap_channel_id") and message.channel.id == int(cfg["trap_channel_id"]):
+            try:
+                await message.delete()
+            except discord.HTTPException:
+                pass
+            try:
+                await message.author.ban(reason="Posted in trap channel (auto-softban)", delete_message_seconds=60)
+                await message.guild.unban(message.author, reason="Trap channel — automatic unban (softban)")
+                log_sanction(message.guild.id, str(message.author.id), "softban", "Posted in trap channel", "automod")
+                await message.channel.send(f"🪤 {message.author} softbanned for posting in the trap channel.")
+                log_json("info", "trap_channel_catch", guild_id=message.guild.id, user_id=message.author.id)
+            except discord.Forbidden:
+                log_json("warning", "trap_channel_softban_failed_permissions", guild_id=message.guild.id, user_id=message.author.id)
+            return
+
         if check_invite_link(message.content):
             await apply_automod_action(message, "automod_link", "posting an invite link")
             return
@@ -5937,9 +5973,6 @@ MODERATION_COMMANDS = [
 ]
 
 BASE_STYLE = """
-<link rel="icon" type="image/png" href="https://github.com/digravinaloris/Nexus/blob/main/Nexus.png?raw=true">
-<script>document.documentElement.dataset.theme = "{{ theme() }}";</script>
-<style>
 <script>document.documentElement.dataset.theme = "{{ theme() }}";</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
