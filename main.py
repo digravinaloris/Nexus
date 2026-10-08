@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import os
-from flask import Flask, request, jsonify, g, session, redirect, url_for, render_template_string, flash, get_flashed_messages
+from flask import Flask, request, jsonify, g, session, redirect, url_for, render_template_string, flash, get_flashed_messages, send_from_directory
 import requests
 import yaml
 import pyotp
@@ -5248,6 +5248,13 @@ def home():
         "guild_count": len(bot.guilds) if bot.is_ready() else 0,
     })
 
+@api.route('/favicon.ico')
+def favicon():
+    # Nexus.png vit à la racine du repo (à côté de main.py), pas dans un
+    # dossier static/ -- send_from_directory pointe dessus directement.
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "Nexus.png", mimetype="image/png")
+
+
 @api.route('/api/health', methods=['GET'])
 @require_api_key
 def health():
@@ -5973,6 +5980,7 @@ MODERATION_COMMANDS = [
 ]
 
 BASE_STYLE = """
+<link rel="icon" type="image/png" href="/favicon.ico">
 <script>document.documentElement.dataset.theme = "{{ theme() }}";</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
