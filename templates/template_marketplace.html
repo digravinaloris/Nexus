@@ -1,0 +1,34 @@
+{% extends "_dashboard.html" %}
+{% block page %}
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <div class="eyebrow">Marketplace</div>
+  <h1>Config Templates</h1>
+  <p class="lead">Import another server's automod/feature setup into <strong>{{ guild.name }}</strong>. Role-based command permissions get mapped to your own roles before anything is applied.</p>
+
+  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  {% if templates %}
+  <div class="panel">
+    {% for tpl in templates %}
+    <div class="audit-entry">
+      <div class="audit-meta"><strong>{{ tpl.name }}</strong> · from {{ tpl.created_guild_name }} · {{ tpl.created_at.strftime('%Y-%m-%d') }}</div>
+      <div class="audit-action">
+        {{ tpl.snapshot.feature_toggles|length }} toggles, {{ tpl.snapshot.command_roles_by_name|length }} role permission(s)
+        <a class="btn ghost" style="margin-left:10px;" href="{{ url_for('dash_template_import', guild_id=guild.id, code=tpl.code) }}">Import</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="no-perms">No public templates yet. Create one with <code>/template create name:"..." public:True</code> on any of your servers.</div>
+  {% endif %}
+
+  <div style="height:20px;"></div>
+  <p class="lead">Got a code directly instead?</p>
+  <form method="GET" action="{{ url_for('dash_template_import', guild_id=guild.id, code='_') }}" onsubmit="this.action = this.action.replace('_', document.getElementById('code-input').value.trim()); return true;">
+    <input id="code-input" type="text" placeholder="Template code" style="width:200px;">
+    <button type="submit">Import by code</button>
+  </form>
+</div>
+{% endblock %}
