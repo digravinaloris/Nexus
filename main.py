@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import os
-from flask import Flask, request, jsonify, g, session, redirect, url_for, render_template_string, flash, get_flashed_messages, send_from_directory
+from flask import Flask, request, jsonify, g, session, redirect, url_for, render_template, flash, get_flashed_messages, send_from_directory
 import requests
 import yaml
 import pyotp
@@ -5077,7 +5077,10 @@ if _SENTRY_DSN:
 # Si SENTRY_DSN n'est pas défini sur Render, sentry_sdk.init() n'est jamais
 # appelé -- aucun comportement différent, complètement silencieux/opt-in.
 
-api = Flask('')
+# template_folder explicite : avec Flask('') (nom vide), Flask retombe sur le
+# dossier courant (cwd) pour chercher templates/ -- ça marchait sur Render (lancé
+# depuis la racine du repo) mais cassait dès qu'on lance main.py depuis ailleurs.
+api = Flask('', template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"))
 
 def require_api_key(f):
     """Décorateur : vérifie le header X-API-Key sur chaque requête protégée.
@@ -5979,205 +5982,6 @@ MODERATION_COMMANDS = [
     "slowmode", "nickname", "softban", "purgeuser", "tempban", "broadcast",
 ]
 
-BASE_STYLE = """
-<link rel="icon" type="image/png" href="/favicon.ico">
-<script>document.documentElement.dataset.theme = "{{ theme() }}";</script>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
-
-  :root {
-    --ink: #0b0c12;
-    --surface: #171a24;
-    --surface-2: #1e2230;
-    --surface-3: #262b3d;
-    --line: #2a2f42;
-    --text: #eceef5;
-    --muted: #8b90a8;
-    --raspberry: #ff5f8f;
-    --raspberry-dim: #3a2230;
-    --lime: #c3f24a;
-    --lime-dim: #26301a;
-    --amber: #ffb84d;
-    --amber-dim: #3a2c14;
-  }
-  /* Thème clair : mêmes accents (raspberry/lime/amber), juste les neutres inversés. */
-  html[data-theme="light"] {
-    --ink: #f4f5fa;
-    --surface: #ffffff;
-    --surface-2: #f1f1f6;
-    --surface-3: #e6e7f0;
-    --line: #dcdde8;
-    --text: #15161e;
-    --muted: #5c6079;
-    --raspberry-dim: #ffe0ea;
-    --lime-dim: #eaf7cf;
-    --amber-dim: #fff0d9;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background:
-      radial-gradient(900px 500px at 15% -10%, rgba(255,95,143,.08), transparent 60%),
-      radial-gradient(700px 500px at 100% 0%, rgba(195,242,74,.06), transparent 55%),
-      var(--ink);
-    color: var(--text);
-    font-family: 'Inter', sans-serif;
-    min-height: 100vh;
-  }
-  a { color: inherit; text-decoration: none; }
-  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 600; margin: 0; }
-  code, .mono { font-family: 'JetBrains Mono', monospace; }
-
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes jiggle {
-    0%, 100% { transform: translateY(-3px) rotate(-0.3deg); }
-    50% { transform: translateY(-5px) rotate(0.4deg); }
-  }
-  @keyframes popIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
-  @keyframes pulseDot { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,95,143,.5); } 50% { box-shadow: 0 0 0 6px rgba(255,95,143,0); } }
-  @keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
-
-  .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 20px 32px; border-bottom: 1px solid var(--line);
-    position: sticky; top: 0; background: rgba(11,12,18,.85); backdrop-filter: blur(10px);
-    z-index: 10; animation: fadeUp .4s ease both;
-  }
-  .brand { display: flex; align-items: center; gap: 10px; font-family: 'Fraunces', serif; font-size: 20px; font-weight: 700; }
-  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--raspberry); animation: pulseDot 2.4s infinite; }
-  .user-chip { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
-  .user-chip img { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); }
-  .logout { color: var(--muted); font-size: 13px; border: 1px solid var(--line); padding: 6px 12px; border-radius: 8px; transition: all .15s; }
-  .logout:hover { color: var(--text); border-color: var(--raspberry); }
-
-  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
-  .eyebrow { color: var(--raspberry); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600; animation: fadeUp .4s ease .05s both; }
-  h1 { animation: fadeUp .45s ease .08s both; }
-  .lead { color: var(--muted); font-size: 15px; margin-top: 10px; max-width: 56ch; animation: fadeUp .45s ease .12s both; }
-
-  .flash { background: var(--lime-dim); border: 1px solid var(--lime); color: var(--lime); padding: 10px 16px; border-radius: 12px 4px 12px 4px; font-size: 14px; margin: 20px 0; animation: popIn .25s ease both; }
-  .flash.error { background: var(--raspberry-dim); border-color: var(--raspberry); color: var(--raspberry); }
-
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-top: 28px; }
-  .card {
-    background: var(--surface); border: 1px solid var(--line);
-    border-radius: 26px 8px 26px 8px;
-    padding: 22px; transition: transform .18s ease, border-color .18s, box-shadow .18s;
-    animation: fadeUp .4s ease both;
-  }
-  a.card:hover { animation: jiggle .5s ease; border-color: var(--raspberry); box-shadow: 0 10px 30px -12px rgba(255,95,143,.35); }
-  .card-icon {
-    width: 44px; height: 44px; border-radius: 14px 4px 14px 4px;
-    background: var(--surface-2); display: flex; align-items: center; justify-content: center;
-    font-family: 'Fraunces', serif; font-weight: 700; font-size: 18px; color: var(--raspberry);
-    margin-bottom: 14px; transition: transform .2s;
-  }
-  a.card:hover .card-icon { transform: rotate(-6deg) scale(1.05); }
-  .card h3 { font-size: 17px; }
-  .card .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
-  .owner-tag { display: inline-block; margin-top: 12px; font-size: 11px; color: var(--lime); background: var(--lime-dim); padding: 3px 9px; border-radius: 999px; }
-
-  .empty { color: var(--muted); font-size: 14px; margin-top: 28px; padding: 24px; border: 1px dashed var(--line); border-radius: 16px; animation: fadeUp .4s ease both; }
-
-  .status-strip { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; animation: fadeUp .4s ease .1s both; }
-  .pill { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); padding: 7px 13px; border-radius: 999px; }
-  .pill .pip { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); }
-  .pill.locked .pip { background: var(--raspberry); }
-
-  .panel {
-    background: var(--surface); border: 1px solid var(--line); border-radius: 20px 6px 20px 6px;
-    padding: 26px; margin-top: 20px; animation: fadeUp .4s ease both;
-  }
-  .panel.danger { border-color: rgba(255,95,143,.35); }
-  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
-  .panel h2 { font-size: 16px; }
-  .panel .desc { color: var(--muted); font-size: 13px; margin: 6px 0 18px; }
-  .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; padding: 3px 8px; border-radius: 999px; font-weight: 600; }
-  .badge.owner { color: var(--amber); background: var(--amber-dim); }
-  .badge.admin { color: var(--muted); background: var(--surface-3); }
-
-  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-  select, input[type=text], textarea {
-    width: 100%; background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
-    padding: 10px 12px; border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 14px;
-    margin-bottom: 18px; transition: border-color .15s, box-shadow .15s;
-  }
-  textarea { resize: vertical; min-height: 110px; }
-  select[multiple] { min-height: 110px; }
-  select:focus, input:focus, textarea:focus { outline: none; border-color: var(--raspberry); box-shadow: 0 0 0 3px rgba(255,95,143,.12); }
-  .hint { color: var(--muted); font-size: 11px; margin-top: -12px; margin-bottom: 18px; }
-  .risky-warning { background: var(--amber-dim); border: 1px solid var(--amber); color: var(--amber); padding: 10px 14px; border-radius: 12px 4px 12px 4px; font-size: 12.5px; margin: -6px 0 18px; animation: popIn .2s ease both; }
-  .cmd-toggle-row { display: flex; gap: 8px; margin-bottom: 10px; }
-  button.ghost.small { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
-  .cmd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 18px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
-  .cmd-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); cursor: pointer; }
-  .cmd-check input { width: auto; margin: 0; accent-color: var(--raspberry); }
-
-  button, .btn {
-    background: var(--raspberry); color: #1a0a10; border: none; font-weight: 600;
-    padding: 11px 20px; border-radius: 12px 4px 12px 4px; font-size: 14px; cursor: pointer;
-    transition: filter .15s, transform .1s; display: inline-flex; align-items: center; gap: 6px;
-  }
-  button:hover, .btn:hover { filter: brightness(1.1); }
-  button:active, .btn:active { transform: scale(.97); }
-  button.ghost, a.ghost.btn { background: transparent; border: 1px solid var(--line); color: var(--text); }
-  button.ghost:hover, a.ghost.btn:hover { border-color: var(--raspberry); }
-  button.warn { background: var(--amber); }
-  button.stop { background: var(--surface-3); color: var(--raspberry); border: 1px solid rgba(255,95,143,.4); }
-
-  .back { color: var(--muted); font-size: 13px; display: inline-block; margin-bottom: 18px; transition: color .15s; }
-  .back:hover { color: var(--text); }
-
-  .row { display: flex; gap: 14px; flex-wrap: wrap; }
-  .row > * { flex: 1; min-width: 180px; }
-
-  .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-  .chip {
-    display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--line);
-    padding: 6px 8px 6px 12px; border-radius: 999px; font-size: 12px; animation: popIn .2s ease both;
-  }
-  .chip form { margin: 0; }
-  .chip button.x {
-    background: var(--surface-3); color: var(--muted); border: none; width: 18px; height: 18px; border-radius: 50%;
-    font-size: 11px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;
-  }
-  .chip button.x:hover { background: var(--raspberry-dim); color: var(--raspberry); }
-  .no-perms { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
-
-  .key-box { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
-  .key-box code { flex: 1; color: var(--muted); letter-spacing: .04em; }
-  .key-box.revealed code { color: var(--lime); filter: none; }
-  .key-box code.masked { filter: blur(5px); user-select: none; }
-  .reveal-btn { background: var(--surface-3); border: none; color: var(--text); font-size: 11px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
-
-  .divider { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
-  .lang-switch { display: flex; gap: 4px; margin-right: 4px; }
-  .lang-switch a { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 4px 8px; border-radius: 7px; transition: all .15s; }
-  .lang-switch a.active { color: var(--text); border-color: var(--raspberry); background: var(--surface-2); }
-  .lang-switch a:hover { color: var(--text); }
-  .audit-list { display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow-y: auto; }
-  .audit-entry { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; animation: popIn .2s ease both; }
-  .audit-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-  .audit-action { font-size: 13px; color: var(--text); }
-  .onboarding-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
-  .onboarding-list li { font-size: 13px; color: var(--muted); background: var(--surface-2); border-radius: 8px; padding: 8px 12px; }
-  .chart-wrap { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-  .chart-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 6px; }
-  .open-tickets-list { display: flex; flex-direction: column; gap: 8px; }
-  .open-ticket-row { display: flex; justify-content: space-between; align-items: center; background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
-  .open-ticket-row a { color: var(--raspberry); }
-</style>
-<script>
-  function toggleKey(btn) {
-    const box = btn.closest('.key-box');
-    box.classList.toggle('revealed');
-    const code = box.querySelector('code');
-    code.classList.toggle('masked');
-    btn.textContent = code.classList.contains('masked') ? btn.dataset.show : btn.dataset.hide;
-  }
-</script>
-"""
-
 # ---------- i18n ----------
 
 TRANSLATIONS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -6245,349 +6049,6 @@ COMMAND_TEMPLATES = {
 
 # ---------- Templates HTML ----------
 
-TOPBAR = """
-<div class="topbar">
-  <div class="brand"><span class="dot"></span> Nexus</div>
-  <div class="user-chip">
-    <div class="lang-switch">
-      <a href="{{ url_for('dash_set_lang', lang_code='en', next=request.path) }}" class="{{ 'active' if lang()=='en' else '' }}">EN</a>
-      <a href="{{ url_for('dash_set_lang', lang_code='fr', next=request.path) }}" class="{{ 'active' if lang()=='fr' else '' }}">FR</a>
-    </div>
-    <div class="lang-switch">
-      <a href="{{ url_for('dash_set_theme', theme_name='dark', next=request.path) }}" class="{{ 'active' if theme()=='dark' else '' }}">🌙</a>
-      <a href="{{ url_for('dash_set_theme', theme_name='light', next=request.path) }}" class="{{ 'active' if theme()=='light' else '' }}">☀️</a>
-    </div>
-    {% if user and user.avatar %}
-      <img src="https://cdn.discordapp.com/avatars/{{ user.id }}/{{ user.avatar }}.png" alt="">
-    {% endif %}
-    {{ user.global_name or user.username }}
-    <a class="logout" href="{{ url_for('dash_logout') }}">{{ t('logout') }}</a>
-  </div>
-</div>
-"""
-
-DASH_LIST_TEMPLATE = BASE_STYLE + TOPBAR + """
-<div class="wrap">
-  <div class="eyebrow">{{ t('dash_eyebrow') }}</div>
-  <h1>{{ t('dash_title') }}</h1>
-  <p class="lead">{{ t('dash_lead') }}</p>
-
-  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
-
-  {% if guilds %}
-  <div class="grid">
-    {% for g in guilds %}
-    <a class="card" style="animation-delay: {{ loop.index0 * 0.05 }}s" href="{{ url_for('dash_guild_page', guild_id=g.id) }}">
-      <div class="card-icon">{{ g.name[0]|upper }}</div>
-      <h3>{{ g.name }}</h3>
-      <div class="sub mono">{{ g.id }}</div>
-      {% if g.owner %}<span class="owner-tag">{{ t('owner_tag') }}</span>{% endif %}
-    </a>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="empty">{{ t('empty_state') }}</div>
-  {% endif %}
-</div>
-"""
-
-GUILD_PAGE_TEMPLATE = BASE_STYLE + TOPBAR + """
-<div class="wrap">
-  <a class="back" href="{{ url_for('dash_home') }}">{{ t('back_all_servers')|safe }}</a>
-  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
-  <h1>{{ guild.name }}</h1>
-  <p class="lead mono">{{ guild.id }}</p>
-
-  <div class="status-strip">
-    <span class="pill {{ 'locked' if is_locked else '' }}"><span class="pip"></span> Bot {{ t('status_locked') if is_locked else t('status_active') }}</span>
-    <span class="pill"><span class="pip"></span> {{ channels|length }} {{ t('status_text_channels') }}</span>
-    <span class="pill"><span class="pip"></span> {{ roles|length }} {{ t('status_roles') }}</span>
-    {% if is_owner %}<span class="pill"><span class="pip" style="background: var(--amber);"></span> {{ t('status_owner') }}</span>{% endif %}
-    <span class="pill" id="presence-widget" style="display:none;"><span class="pip" style="background: var(--lime);"></span> <span id="presence-names"></span></span>
-  </div>
-
-  <div class="row" style="margin-top:16px;">
-    <a class="btn ghost" href="{{ url_for('dash_cases_page', guild_id=guild.id) }}">{{ t('nav_cases') }}</a>
-    <a class="btn ghost" href="{{ url_for('dash_appeals_page', guild_id=guild.id) }}">{{ t('nav_appeals') }}</a>
-    <a class="btn ghost" href="{{ url_for('dash_template_marketplace', guild_id=guild.id) }}">Templates</a>
-  </div>
-
-  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
-
-  {% if onboarding_missing %}
-  <div class="panel" style="animation-delay:.01s">
-    <div class="panel-head"><h2>{{ t('panel_onboarding_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
-    <div class="desc">{{ t('panel_onboarding_desc') }}</div>
-    <ul class="onboarding-list">
-      {% for item in onboarding_missing %}
-      <li>⚪ {{ item }}</li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
-
-  <form method="POST" action="{{ url_for('dash_guild_page', guild_id=guild.id) }}">
-    <div class="panel" style="animation-delay:.02s">
-      <div class="panel-head"><h2>{{ t('panel_logs_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
-      <div class="desc">{{ t('panel_logs_desc') }}</div>
-      <label for="logs_channel">{{ t('label_channel') }}</label>
-      <select name="logs_channel" id="logs_channel">
-        {% for c in channels %}
-        <option value="{{ c.id }}" {% if c.name == cfg.logs_channel %}selected{% endif %}>#{{ c.name }}</option>
-        {% endfor %}
-      </select>
-
-      <label for="autorole">{{ t('label_autorole') }}</label>
-      <select name="autorole" id="autorole" onchange="checkRiskyRole(this)">
-        <option value="none" data-risky="0" {% if not cfg.autorole %}selected{% endif %}>{{ t('option_none') }}</option>
-        {% for r in roles %}
-        <option value="{{ r.id }}" data-risky="{{ '1' if r.permissions.administrator or r.permissions.manage_guild or r.permissions.ban_members or r.permissions.kick_members or r.permissions.manage_roles else '0' }}" {% if cfg.autorole == r.id %}selected{% endif %}>{{ r.name }}</option>
-        {% endfor %}
-      </select>
-      <div id="autorole-warning" class="risky-warning" style="display:none;">
-        {{ t('risky_warning')|safe }}
-      </div>
-
-      <label class="cmd-check" style="margin-top:4px;">
-        <input type="checkbox" name="log_dashboard_actions" {% if cfg.log_dashboard_actions %}checked{% endif %}>
-        {{ t('label_log_dashboard') }}
-      </label>
-      <div style="height:14px;"></div>
-
-      <button type="submit">{{ t('btn_save') }}</button>
-    </div>
-  </form>
-  <script>
-    function checkRiskyRole(select) {
-      var opt = select.options[select.selectedIndex];
-      var warn = document.getElementById('autorole-warning');
-      warn.style.display = (opt.dataset.risky === '1') ? 'block' : 'none';
-    }
-    document.addEventListener('DOMContentLoaded', function() {
-      checkRiskyRole(document.getElementById('autorole'));
-    });
-
-    // Présence live : ping toutes les 10s pour signaler "je regarde cette page",
-    // et récupère la liste de qui d'autre est dessus. Polling simple plutôt que
-    // websocket -- le service Render tourne avec un seul worker, un dict en
-    // mémoire suffit, pas besoin d'une dépendance type flask-socketio.
-    function pollPresence() {
-      fetch("{{ url_for('dash_presence_ping', guild_id=guild.id) }}", { method: "POST" });
-      fetch("{{ url_for('dash_presence_who', guild_id=guild.id) }}")
-        .then(r => r.json())
-        .then(data => {
-          var widget = document.getElementById('presence-widget');
-          var names = document.getElementById('presence-names');
-          var others = data.viewers.filter(function(n) { return n !== "{{ user.global_name or user.username }}"; });
-          if (others.length > 0) {
-            names.textContent = others.join(', ') + '{{ " also viewing" if lang()=="en" else " regarde aussi" }}';
-            widget.style.display = 'inline-flex';
-          } else {
-            widget.style.display = 'none';
-          }
-        })
-        .catch(function() {});
-    }
-    pollPresence();
-    setInterval(pollPresence, 10000);
-  </script>
-
-  <form method="POST" action="{{ url_for('dash_automod', guild_id=guild.id) }}">
-    <div class="panel" style="animation-delay:.06s">
-      <div class="panel-head"><h2>{{ t('panel_automod_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
-      <div class="desc">{{ t('panel_automod_desc') }}</div>
-      <label for="allowed_roles">{{ t('label_exempt_roles') }}</label>
-      <select name="allowed_roles" id="allowed_roles" multiple>
-        {% for r in roles %}
-        <option value="{{ r.id }}" {% if r.id in (cfg.allowed_roles or []) %}selected{% endif %}>{{ r.name }}</option>
-        {% endfor %}
-      </select>
-      <div class="hint">{{ t('hint_multiselect') }}</div>
-      <button type="submit">{{ t('btn_save') }}</button>
-    </div>
-  </form>
-
-  {% if is_owner %}
-  <div class="panel" style="animation-delay:.1s">
-    <div class="panel-head"><h2>{{ t('panel_perms_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
-    <div class="desc">{{ t('panel_perms_desc') }}</div>
-
-    {% if cfg.command_roles %}
-    {% for cmd, role_ids in cfg.command_roles.items() %}
-      {% if role_ids %}
-      <label>/{{ cmd }}</label>
-      <div class="chip-list">
-        {% for rid in role_ids %}
-        <div class="chip">
-          {{ role_names.get(rid, rid) }}
-          <form method="POST" action="{{ url_for('dash_permission_remove', guild_id=guild.id) }}">
-            <input type="hidden" name="command" value="{{ cmd }}">
-            <input type="hidden" name="role_id" value="{{ rid }}">
-            <button type="submit" class="x" title="{{ t('remove_title') }}">&times;</button>
-          </form>
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
-    {% endfor %}
-    {% else %}
-    <div class="no-perms">{{ t('no_perms_yet') }}</div>
-    {% endif %}
-
-    <hr class="divider">
-    <form method="POST" action="{{ url_for('dash_permission_add', guild_id=guild.id) }}">
-      <label>{{ t('label_commands') }}</label>
-      <div class="cmd-toggle-row">
-        <button type="button" class="ghost small" onclick="toggleAllCmds(true)">{{ t('btn_select_all') }}</button>
-        <button type="button" class="ghost small" onclick="toggleAllCmds(false)">{{ t('btn_clear') }}</button>
-      </div>
-      <div class="cmd-grid">
-        {% for cmd in moderation_commands %}
-        <label class="cmd-check">
-          <input type="checkbox" name="commands" value="{{ cmd }}" class="cmd-checkbox">
-          /{{ cmd }}
-        </label>
-        {% endfor %}
-      </div>
-      <label for="role_id">{{ t('label_allowed_role') }}</label>
-      <select name="role_id" id="role_id">
-        {% for r in roles %}
-        <option value="{{ r.id }}">{{ r.name }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit">{{ t('btn_add_permissions') }}</button>
-    </form>
-    <script>
-      function toggleAllCmds(state) {
-        document.querySelectorAll('.cmd-checkbox').forEach(function(cb) { cb.checked = state; });
-      }
-    </script>
-
-    <hr class="divider">
-    <form method="POST" action="{{ url_for('dash_permission_template', guild_id=guild.id) }}">
-      <label for="template_id">{{ t('tmpl_quick_label') }}</label>
-      <div class="row">
-        <div>
-          <label for="template_id">{{ t('tmpl_select_label') }}</label>
-          <select name="template_id" id="template_id">
-            <optgroup label="{{ t('tmpl_builtin_group') }}">
-              {% for tid, tpl in templates.items() %}
-              <option value="builtin:{{ tid }}">{{ t(tpl.label_key) }} (/{{ tpl.commands|join(', /') }})</option>
-              {% endfor %}
-            </optgroup>
-            {% if custom_templates %}
-            <optgroup label="{{ t('tmpl_custom_group') }}">
-              {% for name, cmds in custom_templates.items() %}
-              {% if cmds %}
-              <option value="custom:{{ name }}">{{ name }} (/{{ cmds|join(', /') }})</option>
-              {% endif %}
-              {% endfor %}
-            </optgroup>
-            {% endif %}
-          </select>
-        </div>
-        <div>
-          <label for="template_role_id">{{ t('tmpl_role_label') }}</label>
-          <select name="role_id" id="template_role_id">
-            {% for r in roles %}
-            <option value="{{ r.id }}">{{ r.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-      <button type="submit" class="ghost">{{ t('btn_apply_template') }}</button>
-    </form>
-  </div>
-
-  <div class="panel" style="animation-delay:.14s">
-    <div class="panel-head"><h2>{{ t('panel_apikey_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
-    <div class="desc">{{ t('panel_apikey_desc') }}</div>
-    {% if cfg.api_key %}
-    <div class="key-box">
-      <code class="masked mono">{{ cfg.api_key }}</code>
-      <button type="button" class="reveal-btn" data-show="{{ t('btn_show') }}" data-hide="{{ t('btn_hide') }}" onclick="toggleKey(this)">{{ t('btn_show') }}</button>
-    </div>
-    {% else %}
-    <div class="no-perms">{{ t('no_key_yet') }}</div>
-    {% endif %}
-    <form method="POST" action="{{ url_for('dash_apikey_regen', guild_id=guild.id) }}" onsubmit="return confirm('{{ t('confirm_regen') }}');">
-      <button type="submit" class="ghost">{{ t('btn_regenerate') }}</button>
-    </form>
-  </div>
-
-  <div class="panel danger" style="animation-delay:.18s">
-    <div class="panel-head"><h2>{{ t('panel_lockdown_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
-    <div class="desc">
-      {% if is_locked %}{{ t('lockdown_desc_locked') }}
-      {% else %}{{ t('lockdown_desc_unlocked') }}{% endif %}
-    </div>
-    <form method="POST" action="{{ url_for('dash_toggle_lock', guild_id=guild.id) }}">
-      {% if is_locked %}
-      <button type="submit" class="warn">{{ t('btn_unlock') }}</button>
-      {% else %}
-      <button type="submit" class="stop">{{ t('btn_lock') }}</button>
-      {% endif %}
-    </form>
-  </div>
-
-  <div class="panel" style="animation-delay:.205s">
-    <div class="panel-head"><h2>{{ t('panel_stats_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
-    <div class="desc">{{ t('panel_stats_desc') }}</div>
-    {% if sanction_chart %}
-    <div class="chart-wrap">{{ sanction_chart|safe }}</div>
-    <div class="chart-labels"><span>{{ chart_start }}</span><span>{{ chart_end }}</span></div>
-    {% else %}
-    <div class="no-perms">{{ t('stats_empty') }}</div>
-    {% endif %}
-  </div>
-
-  <div class="panel" style="animation-delay:.21s">
-    <div class="panel-head"><h2>{{ t('panel_tickets_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
-    <div class="desc">{{ t('panel_tickets_desc') }}</div>
-    {% if open_tickets %}
-    <div class="open-tickets-list">
-      {% for ch in open_tickets %}
-      <div class="open-ticket-row">
-        <span>#{{ ch.name }}</span>
-        <a href="https://discord.com/channels/{{ guild.id }}/{{ ch.id }}" target="_blank">{{ t('btn_open_link') }} →</a>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="no-perms">{{ t('no_open_tickets') }}</div>
-    {% endif %}
-  </div>
-
-  <div class="panel" style="animation-delay:.22s">
-    <div class="panel-head">
-      <h2>{{ t('panel_audit_title') }}</h2>
-      <span class="badge owner">{{ t('badge_owner') }}</span>
-      {% if audit_entries %}
-      <span style="margin-left:auto;font-size:13px;">
-        <a href="/dashboard/{{ guild.id }}/audit/export.csv">CSV</a> ·
-        <a href="/dashboard/{{ guild.id }}/audit/export.pdf">PDF</a>
-      </span>
-      {% endif %}
-    </div>
-    <div class="desc">{{ t('panel_audit_desc') }}</div>
-    {% if audit_entries %}
-    <div class="audit-list">
-      {% for entry in audit_entries %}
-      <div class="audit-entry">
-        <div class="audit-meta"><strong>{{ entry.actor_name }}</strong> · {{ entry.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}</div>
-        <div class="audit-action">{{ entry.action }}{% if entry.details %} — {{ entry.details }}{% endif %}</div>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="no-perms">{{ t('audit_empty') }}</div>
-    {% endif %}
-  </div>
-  {% endif %}
-</div>
-"""
-
-
 # ---------- Routes dashboard (HTML) ----------
 
 @api.route("/dashboard/lang/<lang_code>")
@@ -6622,80 +6083,13 @@ def dash_presence_who(guild_id):
     return jsonify({"viewers": active})
 
 
-TEMPLATE_MARKETPLACE_TEMPLATE = BASE_STYLE + TOPBAR + """
-<div class="wrap">
-  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
-  <div class="eyebrow">Marketplace</div>
-  <h1>Config Templates</h1>
-  <p class="lead">Import another server's automod/feature setup into <strong>{{ guild.name }}</strong>. Role-based command permissions get mapped to your own roles before anything is applied.</p>
-
-  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
-
-  {% if templates %}
-  <div class="panel">
-    {% for tpl in templates %}
-    <div class="audit-entry">
-      <div class="audit-meta"><strong>{{ tpl.name }}</strong> · from {{ tpl.created_guild_name }} · {{ tpl.created_at.strftime('%Y-%m-%d') }}</div>
-      <div class="audit-action">
-        {{ tpl.snapshot.feature_toggles|length }} toggles, {{ tpl.snapshot.command_roles_by_name|length }} role permission(s)
-        <a class="btn ghost" style="margin-left:10px;" href="{{ url_for('dash_template_import', guild_id=guild.id, code=tpl.code) }}">Import</a>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="no-perms">No public templates yet. Create one with <code>/template create name:"..." public:True</code> on any of your servers.</div>
-  {% endif %}
-
-  <div style="height:20px;"></div>
-  <p class="lead">Got a code directly instead?</p>
-  <form method="GET" action="{{ url_for('dash_template_import', guild_id=guild.id, code='_') }}" onsubmit="this.action = this.action.replace('_', document.getElementById('code-input').value.trim()); return true;">
-    <input id="code-input" type="text" placeholder="Template code" style="width:200px;">
-    <button type="submit">Import by code</button>
-  </form>
-</div>
-"""
-
-TEMPLATE_IMPORT_TEMPLATE = BASE_STYLE + TOPBAR + """
-<div class="wrap">
-  <a class="back" href="{{ url_for('dash_template_marketplace', guild_id=guild.id) }}">&larr; Marketplace</a>
-  <div class="eyebrow">Import Template</div>
-  <h1>{{ tpl.name }}</h1>
-  <p class="lead">From <strong>{{ tpl.created_guild_name }}</strong>. The base config (feature toggles, automod, warn escalation) applies automatically. Map any role-based command permissions below before confirming.</p>
-
-  <form method="POST">
-    {% if distinct_names %}
-    <div class="panel">
-      <h2>Map roles</h2>
-      {% for name in distinct_names %}
-      <div class="field">
-        <label>Old role: <strong>{{ name }}</strong></label>
-        <select name="map__{{ loop.index0 }}">
-          <option value="">— skip this role —</option>
-          {% for role in roles %}
-          <option value="{{ role.id }}">{{ role.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="no-perms">No role-based command permissions in this template — nothing to map.</div>
-    {% endif %}
-    <div style="height:14px;"></div>
-    <button type="submit">Apply Template</button>
-  </form>
-</div>
-"""
-
-
 @api.route("/dashboard/<guild_id>/templates", methods=["GET"])
 @dash_login_required
 @dash_guild_admin_required
 def dash_template_marketplace(guild_id):
     guild = bot.get_guild(int(guild_id))
     templates = list(templates_col.find({"public": True}).sort("created_at", -1).limit(50))
-    return render_template_string(TEMPLATE_MARKETPLACE_TEMPLATE, guild=guild, templates=templates, user=session.get("dash_user"))
+    return render_template("template_marketplace.html", guild=guild, templates=templates, user=session.get("dash_user"))
 
 
 @api.route("/dashboard/<guild_id>/templates/import/<code>", methods=["GET", "POST"])
@@ -6729,8 +6123,7 @@ def dash_template_import(guild_id, code):
         flash("Template applied." if current_lang() == "en" else "Template appliqué.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
-    return render_template_string(
-        TEMPLATE_IMPORT_TEMPLATE, guild=guild, tpl=doc, distinct_names=distinct_names,
+    return render_template("template_import.html", guild=guild, tpl=doc, distinct_names=distinct_names,
         roles=[r for r in guild.roles if not r.is_default()], user=session.get("dash_user"),
     )
 
@@ -6788,8 +6181,7 @@ def dash_home():
     # ne montre que les serveurs où l'utilisateur est admin ET où le bot est présent
     bot_guild_ids = {str(g_.id) for g_ in bot.guilds} if bot.is_ready() else set()
     manageable = [g_ for g_ in admin_guilds if g_["id"] in bot_guild_ids]
-    return render_template_string(
-        DASH_LIST_TEMPLATE, guilds=manageable, user=session.get("dash_user")
+    return render_template("dashboard_list.html", guilds=manageable, user=session.get("dash_user")
     )
 
 
@@ -6872,8 +6264,7 @@ def dash_guild_page(guild_id):
     has_any_activity = any(v for _, v in stats_series)
     sanction_chart = build_sparkline_svg(stats_series) if has_any_activity else ""
 
-    return render_template_string(
-        GUILD_PAGE_TEMPLATE,
+    return render_template("dashboard_guild.html",
         guild=guild,
         cfg=cfg,
         channels=guild.text_channels,
@@ -7065,37 +6456,6 @@ def dash_toggle_lock(guild_id):
 # les scanners anti-spam qui pré-visitent les liens des emails) ;
 # seul le POST, avec un code correct, change l'état du bot.
 
-KILLSWITCH_CONFIRM_TEMPLATE = BASE_STYLE + """
-<div class="wrap" style="max-width:420px; margin:80px auto;">
-  <div class="eyebrow">Nexus — Owner Control</div>
-  <h1>{{ 'Unlock the bot?' if locked else 'Lock the bot down?' }}</h1>
-  <p class="lead">The bot is currently {{ 'LOCKED across every server' if locked else 'active normally' }}. Enter your authenticator code to {{ 'unlock it' if locked else 'lock it down everywhere' }}.</p>
-  {% if error %}<div class="flash error">❌ Incorrect code, or the link expired. {{ attempts_left }} attempt(s) left.</div>{% endif %}
-  <form method="POST">
-    <label for="code">6-digit authenticator code</label>
-    <input type="text" name="code" id="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" autofocus>
-    <button type="submit" class="{{ 'warn' if locked else 'stop' }}">{{ 'Confirm unlock' if locked else 'Confirm lockdown' }}</button>
-  </form>
-</div>
-"""
-
-KILLSWITCH_DONE_TEMPLATE = BASE_STYLE + """
-<div class="wrap" style="max-width:420px; margin:80px auto;">
-  <div class="eyebrow">Nexus — Owner Control</div>
-  <h1>{{ '🔒 Bot locked down' if locked else '🔓 Bot unlocked' }}</h1>
-  <p class="lead">{{ 'All commands are now restricted to you across every server the bot is in.' if locked else 'The bot is back to normal across every server.' }}</p>
-</div>
-"""
-
-KILLSWITCH_INVALID_TEMPLATE = BASE_STYLE + """
-<div class="wrap" style="max-width:420px; margin:80px auto;">
-  <div class="eyebrow">Nexus — Owner Control</div>
-  <h1>Link expired or invalid</h1>
-  <p class="lead">This link is invalid, already used, expired, or had too many wrong codes entered. Use <code>/admin killswitch resend</code> in Discord to get a fresh one, or wait for tomorrow's email.</p>
-</div>
-"""
-
-
 def _killswitch_token_doc(token):
     doc = killswitch_tokens_col.find_one({"token": token})
     if not doc:
@@ -7142,9 +6502,9 @@ def killswitch_confirm_page(token):
     ip = get_client_ip()
     if _killswitch_token_doc(token) is None:
         record_audit("global", None, f"Unknown (IP {ip})", "Viewed an invalid/expired kill-switch link")
-        return render_template_string(KILLSWITCH_INVALID_TEMPLATE), 410
+        return render_template("killswitch_invalid.html"), 410
     record_audit("global", None, f"Unknown (IP {ip})", "Opened the kill-switch confirmation page")
-    return render_template_string(KILLSWITCH_CONFIRM_TEMPLATE, locked=get_global_lock(), error=False)
+    return render_template("killswitch_confirm.html", locked=get_global_lock(), error=False)
 
 
 @api.route("/admin/kill-switch/<token>", methods=["POST"])
@@ -7152,7 +6512,7 @@ def killswitch_submit(token):
     ip = get_client_ip()
     doc = _killswitch_token_doc(token)
     if doc is None:
-        return render_template_string(KILLSWITCH_INVALID_TEMPLATE), 410
+        return render_template("killswitch_invalid.html"), 410
 
     code = request.form.get("code", "").strip()
     totp_secret = os.getenv("TOTP_SECRET")
@@ -7168,8 +6528,7 @@ def killswitch_submit(token):
                 run_coroutine(notify_owner_bruteforce(ip))
             except Exception as e:
                 print(f"[KILLSWITCH] Failed to DM owner about brute-force: {e}", flush=True)
-        return render_template_string(
-            KILLSWITCH_CONFIRM_TEMPLATE, locked=get_global_lock(), error=True, attempts_left=attempts_left
+        return render_template("killswitch_confirm.html", locked=get_global_lock(), error=True, attempts_left=attempts_left
         )
 
     # Code correct : le token est consommé immédiatement (usage unique),
@@ -7183,7 +6542,7 @@ def killswitch_submit(token):
     except Exception as e:
         print(f"[KILLSWITCH] Failed to DM owner: {e}", flush=True)
 
-    return render_template_string(KILLSWITCH_DONE_TEMPLATE, locked=new_state)
+    return render_template("killswitch_done.html", locked=new_state)
 
 
 # ============================================================
@@ -7191,43 +6550,6 @@ def killswitch_submit(token):
 # ============================================================
 # Formulaire public (pas de login) : la sécurité vient du token à usage
 # unique envoyé uniquement dans le DM de ban, pas d'un compte Discord.
-
-APPEAL_FORM_TEMPLATE = BASE_STYLE + """
-<div class="wrap" style="max-width:480px; margin:60px auto;">
-  <div class="eyebrow">Ban Appeal</div>
-  <h1>{{ guild_name }}</h1>
-  <p class="lead">You were banned from this server. Case #{{ case_id }}.<br>Reason given: {{ ban_reason }}</p>
-  <form method="POST">
-    <label for="appeal_text">Why should this ban be reconsidered?</label>
-    <textarea name="appeal_text" id="appeal_text" maxlength="1000" required placeholder="Explain your side..."></textarea>
-    <button type="submit">Submit appeal</button>
-  </form>
-</div>
-"""
-
-APPEAL_DONE_TEMPLATE = BASE_STYLE + """
-<div class="wrap" style="max-width:480px; margin:60px auto;">
-  <div class="eyebrow">Ban Appeal</div>
-  <h1>Appeal submitted</h1>
-  <p class="lead">Your appeal for case #{{ case_id }} has been sent to the server's staff team. You'll get a DM once it's reviewed.</p>
-</div>
-"""
-
-APPEAL_STATUS_TEMPLATE = BASE_STYLE + """
-<div class="wrap" style="max-width:480px; margin:60px auto;">
-  <div class="eyebrow">Ban Appeal</div>
-  <h1>{{ title }}</h1>
-  <p class="lead">{{ message }}</p>
-</div>
-"""
-
-APPEAL_INVALID_TEMPLATE = BASE_STYLE + """
-<div class="wrap" style="max-width:480px; margin:60px auto;">
-  <div class="eyebrow">Ban Appeal</div>
-  <h1>Link not found</h1>
-  <p class="lead">This appeal link is invalid.</p>
-</div>
-"""
 
 APPEAL_STATUS_COPY = {
     "submitted": ("Already submitted", "Your appeal has already been submitted and is awaiting review."),
@@ -7240,13 +6562,12 @@ APPEAL_STATUS_COPY = {
 def appeal_form_page(token):
     appeal = get_ban_appeal(token)
     if not appeal:
-        return render_template_string(APPEAL_INVALID_TEMPLATE), 404
+        return render_template("appeal_invalid.html"), 404
     if appeal["status"] != "pending":
         title, message = APPEAL_STATUS_COPY.get(appeal["status"], ("Status", "This appeal has already been processed."))
-        return render_template_string(APPEAL_STATUS_TEMPLATE, title=title, message=message)
+        return render_template("appeal_status.html", title=title, message=message)
     guild = bot.get_guild(int(appeal["guild_id"]))
-    return render_template_string(
-        APPEAL_FORM_TEMPLATE,
+    return render_template("appeal_form.html",
         guild_name=guild.name if guild else "the server",
         case_id=appeal["case_id"],
         ban_reason=appeal["ban_reason"] or "No reason provided",
@@ -7257,13 +6578,12 @@ def appeal_form_page(token):
 def appeal_form_submit(token):
     appeal = get_ban_appeal(token)
     if not appeal or appeal["status"] != "pending":
-        return render_template_string(APPEAL_INVALID_TEMPLATE), 404
+        return render_template("appeal_invalid.html"), 404
 
     appeal_text = request.form.get("appeal_text", "").strip()[:1000]
     guild = bot.get_guild(int(appeal["guild_id"]))
     if not appeal_text:
-        return render_template_string(
-            APPEAL_FORM_TEMPLATE,
+        return render_template("appeal_form.html",
             guild_name=guild.name if guild else "the server",
             case_id=appeal["case_id"],
             ban_reason=appeal["ban_reason"] or "No reason provided",
@@ -7284,28 +6604,12 @@ def appeal_form_submit(token):
         except Exception as e:
             print(f"[APPEAL] Failed to post appeal for review: {e}", flush=True)
 
-    return render_template_string(APPEAL_DONE_TEMPLATE, case_id=appeal["case_id"])
+    return render_template("appeal_done.html", case_id=appeal["case_id"])
 
 
 # ============================================================
 # =================== PUBLIC STATUS PAGE =====================
 # ============================================================
-
-STATUS_PAGE_TEMPLATE = BASE_STYLE + """
-<div class="wrap" style="max-width:480px; margin:60px auto;">
-  <div class="eyebrow">Nexus</div>
-  <h1>{{ '🟢 All systems operational' if online else '🔴 Bot is offline' }}</h1>
-  {% if online %}
-  <div class="status-strip" style="margin-top:20px;">
-    <span class="pill"><span class="pip"></span> {{ guild_count }} servers</span>
-    <span class="pill"><span class="pip"></span> {{ latency_ms }}ms latency</span>
-    <span class="pill"><span class="pip"></span> Up {{ uptime }}</span>
-  </div>
-  {% else %}
-  <p class="lead">The bot's Discord connection isn't ready yet. If this persists, check the hosting dashboard.</p>
-  {% endif %}
-</div>
-"""
 
 _format_uptime = utils.format_uptime
 
@@ -7314,10 +6618,9 @@ _format_uptime = utils.format_uptime
 def public_status_page():
     online = bot.is_ready()
     if not online:
-        return render_template_string(STATUS_PAGE_TEMPLATE, online=False), 503
+        return render_template("status_page.html", online=False), 503
     uptime = _format_uptime(time.time() - bot.start_time) if hasattr(bot, "start_time") else "unknown"
-    return render_template_string(
-        STATUS_PAGE_TEMPLATE,
+    return render_template("status_page.html",
         online=True,
         guild_count=len(bot.guilds),
         latency_ms=round(bot.latency * 1000) if bot.latency == bot.latency else "—",  # NaN check avant le premier heartbeat
@@ -7328,40 +6631,6 @@ def public_status_page():
 # ============================================================
 # =============== CASES BROWSER (dashboard) ===================
 # ============================================================
-
-CASES_TEMPLATE = BASE_STYLE + TOPBAR + """
-<div class="wrap">
-  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
-  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
-  <h1>{{ t('cases_title') }}</h1>
-
-  <form method="GET" class="row" style="margin-top:20px;">
-    <div>
-      <label for="type">{{ t('cases_filter_type') }}</label>
-      <select name="type" id="type" onchange="this.form.submit()">
-        <option value="">{{ t('option_none') }}</option>
-        {% for tp in all_types %}
-        <option value="{{ tp }}" {% if tp == filter_type %}selected{% endif %}>{{ tp.replace('_',' ')|title }}</option>
-        {% endfor %}
-      </select>
-    </div>
-  </form>
-
-  {% if cases %}
-  <div class="audit-list" style="max-height:none;">
-    {% for c in cases %}
-    <div class="audit-entry">
-      <div class="audit-meta">#{{ c.case_id }} · {{ c.type.replace('_',' ')|title }} · {{ c.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}</div>
-      <div class="audit-action">User: {{ c.user_id }} — {{ c.reason }}</div>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="no-perms">{{ t('cases_empty') }}</div>
-  {% endif %}
-</div>
-"""
-
 
 @api.route("/dashboard/<guild_id>/cases", methods=["GET"])
 @dash_login_required
@@ -7374,8 +6643,7 @@ def dash_cases_page(guild_id):
         query["type"] = filter_type
     cases = list(sanctions_col.find(query).sort("timestamp", -1).limit(200))
     all_types = sanctions_col.distinct("type", {"guild_id": str(guild_id)})
-    return render_template_string(
-        CASES_TEMPLATE, guild=guild, cases=cases, all_types=all_types, filter_type=filter_type,
+    return render_template("cases.html", guild=guild, cases=cases, all_types=all_types, filter_type=filter_type,
         user=session.get("dash_user"),
     )
 
@@ -7384,45 +6652,13 @@ def dash_cases_page(guild_id):
 # ============== APPEALS REVIEW (dashboard) ====================
 # ============================================================
 
-APPEALS_REVIEW_TEMPLATE = BASE_STYLE + TOPBAR + """
-<div class="wrap">
-  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
-  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
-  <h1>{{ t('appeals_title') }}</h1>
-
-  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
-
-  {% if appeals %}
-  {% for a in appeals %}
-  <div class="panel">
-    <div class="panel-head"><h2>Case #{{ a.case_id }} — {{ a.sanction_type|default('ban') }}</h2></div>
-    <div class="desc">{{ a.user_name }} ({{ a.user_id }})</div>
-    <p class="lead" style="margin-top:10px;"><strong>{{ t('appeals_original_reason') }}:</strong> {{ a.ban_reason }}</p>
-    <p class="lead"><strong>{{ t('appeals_appeal_text') }}:</strong> {{ a.appeal_text }}</p>
-    <div class="row" style="margin-top:16px;">
-      <form method="POST" action="{{ url_for('dash_appeal_accept', guild_id=guild.id, token=a.token) }}">
-        <button type="submit">{{ t('btn_accept') }}</button>
-      </form>
-      <form method="POST" action="{{ url_for('dash_appeal_deny', guild_id=guild.id, token=a.token) }}">
-        <button type="submit" class="stop">{{ t('btn_deny') }}</button>
-      </form>
-    </div>
-  </div>
-  {% endfor %}
-  {% else %}
-  <div class="no-perms">{{ t('appeals_empty') }}</div>
-  {% endif %}
-</div>
-"""
-
-
 @api.route("/dashboard/<guild_id>/appeals", methods=["GET"])
 @dash_login_required
 @dash_guild_admin_required
 def dash_appeals_page(guild_id):
     guild = bot.get_guild(int(guild_id))
     appeals = list(ban_appeals_col.find({"guild_id": str(guild_id), "status": "submitted"}).sort("submitted_at", -1))
-    return render_template_string(APPEALS_REVIEW_TEMPLATE, guild=guild, appeals=appeals, user=session.get("dash_user"))
+    return render_template("appeals_review.html", guild=guild, appeals=appeals, user=session.get("dash_user"))
 
 
 @api.route("/dashboard/<guild_id>/appeals/<token>/accept", methods=["POST"])
