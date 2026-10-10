@@ -1,0 +1,25 @@
+{% extends "_dashboard.html" %}
+{% block page %}
+<div class="wrap">
+  <div class="eyebrow">{{ t('dash_eyebrow') }}</div>
+  <h1>{{ t('dash_title') }}</h1>
+  <p class="lead">{{ t('dash_lead') }}</p>
+
+  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  {% if guilds %}
+  <div class="grid">
+    {% for g in guilds %}
+    <a class="card" style="animation-delay: {{ loop.index0 * 0.05 }}s" href="{{ url_for('dash_guild_page', guild_id=g.id) }}">
+      <div class="card-icon">{{ g.name[0]|upper }}</div>
+      <h3>{{ g.name }}</h3>
+      <div class="sub mono">{{ g.id }}</div>
+      {% if g.owner %}<span class="owner-tag">{{ t('owner_tag') }}</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">{{ t('empty_state') }}</div>
+  {% endif %}
+</div>
+{% endblock %}

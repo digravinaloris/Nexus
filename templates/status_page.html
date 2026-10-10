@@ -1,0 +1,16 @@
+{% extends "_layout.html" %}
+{% block content %}
+<div class="wrap" style="max-width:480px; margin:60px auto;">
+  <div class="eyebrow">Nexus</div>
+  <h1>{{ '🟢 All systems operational' if online else '🔴 Bot is offline' }}</h1>
+  {% if online %}
+  <div class="status-strip" style="margin-top:20px;">
+    <span class="pill"><span class="pip"></span> {{ guild_count }} servers</span>
+    <span class="pill"><span class="pip"></span> {{ latency_ms }}ms latency</span>
+    <span class="pill"><span class="pip"></span> Up {{ uptime }}</span>
+  </div>
+  {% else %}
+  <p class="lead">The bot's Discord connection isn't ready yet. If this persists, check the hosting dashboard.</p>
+  {% endif %}
+</div>
+{% endblock %}

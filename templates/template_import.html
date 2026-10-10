@@ -1,0 +1,32 @@
+{% extends "_dashboard.html" %}
+{% block page %}
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_template_marketplace', guild_id=guild.id) }}">&larr; Marketplace</a>
+  <div class="eyebrow">Import Template</div>
+  <h1>{{ tpl.name }}</h1>
+  <p class="lead">From <strong>{{ tpl.created_guild_name }}</strong>. The base config (feature toggles, automod, warn escalation) applies automatically. Map any role-based command permissions below before confirming.</p>
+
+  <form method="POST">
+    {% if distinct_names %}
+    <div class="panel">
+      <h2>Map roles</h2>
+      {% for name in distinct_names %}
+      <div class="field">
+        <label>Old role: <strong>{{ name }}</strong></label>
+        <select name="map__{{ loop.index0 }}">
+          <option value="">— skip this role —</option>
+          {% for role in roles %}
+          <option value="{{ role.id }}">{{ role.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-perms">No role-based command permissions in this template — nothing to map.</div>
+    {% endif %}
+    <div style="height:14px;"></div>
+    <button type="submit">Apply Template</button>
+  </form>
+</div>
+{% endblock %}

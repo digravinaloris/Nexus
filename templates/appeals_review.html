@@ -1,0 +1,31 @@
+{% extends "_dashboard.html" %}
+{% block page %}
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
+  <h1>{{ t('appeals_title') }}</h1>
+
+  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  {% if appeals %}
+  {% for a in appeals %}
+  <div class="panel">
+    <div class="panel-head"><h2>Case #{{ a.case_id }} — {{ a.sanction_type|default('ban') }}</h2></div>
+    <div class="desc">{{ a.user_name }} ({{ a.user_id }})</div>
+    <p class="lead" style="margin-top:10px;"><strong>{{ t('appeals_original_reason') }}:</strong> {{ a.ban_reason }}</p>
+    <p class="lead"><strong>{{ t('appeals_appeal_text') }}:</strong> {{ a.appeal_text }}</p>
+    <div class="row" style="margin-top:16px;">
+      <form method="POST" action="{{ url_for('dash_appeal_accept', guild_id=guild.id, token=a.token) }}">
+        <button type="submit">{{ t('btn_accept') }}</button>
+      </form>
+      <form method="POST" action="{{ url_for('dash_appeal_deny', guild_id=guild.id, token=a.token) }}">
+        <button type="submit" class="stop">{{ t('btn_deny') }}</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="no-perms">{{ t('appeals_empty') }}</div>
+  {% endif %}
+</div>
+{% endblock %}

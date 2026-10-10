@@ -1,0 +1,296 @@
+{% extends "_dashboard.html" %}
+{% block page %}
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_home') }}">{{ t('back_all_servers')|safe }}</a>
+  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
+  <h1>{{ guild.name }}</h1>
+  <p class="lead mono">{{ guild.id }}</p>
+
+  <div class="status-strip">
+    <span class="pill {{ 'locked' if is_locked else '' }}"><span class="pip"></span> Bot {{ t('status_locked') if is_locked else t('status_active') }}</span>
+    <span class="pill"><span class="pip"></span> {{ channels|length }} {{ t('status_text_channels') }}</span>
+    <span class="pill"><span class="pip"></span> {{ roles|length }} {{ t('status_roles') }}</span>
+    {% if is_owner %}<span class="pill"><span class="pip" style="background: var(--amber);"></span> {{ t('status_owner') }}</span>{% endif %}
+    <span class="pill" id="presence-widget" style="display:none;"><span class="pip" style="background: var(--lime);"></span> <span id="presence-names"></span></span>
+  </div>
+
+  <div class="row" style="margin-top:16px;">
+    <a class="btn ghost" href="{{ url_for('dash_cases_page', guild_id=guild.id) }}">{{ t('nav_cases') }}</a>
+    <a class="btn ghost" href="{{ url_for('dash_appeals_page', guild_id=guild.id) }}">{{ t('nav_appeals') }}</a>
+    <a class="btn ghost" href="{{ url_for('dash_template_marketplace', guild_id=guild.id) }}">Templates</a>
+  </div>
+
+  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  {% if onboarding_missing %}
+  <div class="panel" style="animation-delay:.01s">
+    <div class="panel-head"><h2>{{ t('panel_onboarding_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('panel_onboarding_desc') }}</div>
+    <ul class="onboarding-list">
+      {% for item in onboarding_missing %}
+      <li>⚪ {{ item }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('dash_guild_page', guild_id=guild.id) }}">
+    <div class="panel" style="animation-delay:.02s">
+      <div class="panel-head"><h2>{{ t('panel_logs_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+      <div class="desc">{{ t('panel_logs_desc') }}</div>
+      <label for="logs_channel">{{ t('label_channel') }}</label>
+      <select name="logs_channel" id="logs_channel">
+        {% for c in channels %}
+        <option value="{{ c.id }}" {% if c.name == cfg.logs_channel %}selected{% endif %}>#{{ c.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="autorole">{{ t('label_autorole') }}</label>
+      <select name="autorole" id="autorole" onchange="checkRiskyRole(this)">
+        <option value="none" data-risky="0" {% if not cfg.autorole %}selected{% endif %}>{{ t('option_none') }}</option>
+        {% for r in roles %}
+        <option value="{{ r.id }}" data-risky="{{ '1' if r.permissions.administrator or r.permissions.manage_guild or r.permissions.ban_members or r.permissions.kick_members or r.permissions.manage_roles else '0' }}" {% if cfg.autorole == r.id %}selected{% endif %}>{{ r.name }}</option>
+        {% endfor %}
+      </select>
+      <div id="autorole-warning" class="risky-warning" style="display:none;">
+        {{ t('risky_warning')|safe }}
+      </div>
+
+      <label class="cmd-check" style="margin-top:4px;">
+        <input type="checkbox" name="log_dashboard_actions" {% if cfg.log_dashboard_actions %}checked{% endif %}>
+        {{ t('label_log_dashboard') }}
+      </label>
+      <div style="height:14px;"></div>
+
+      <button type="submit">{{ t('btn_save') }}</button>
+    </div>
+  </form>
+  <script>
+    function checkRiskyRole(select) {
+      var opt = select.options[select.selectedIndex];
+      var warn = document.getElementById('autorole-warning');
+      warn.style.display = (opt.dataset.risky === '1') ? 'block' : 'none';
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      checkRiskyRole(document.getElementById('autorole'));
+    });
+
+    // Présence live : ping toutes les 10s pour signaler "je regarde cette page",
+    // et récupère la liste de qui d'autre est dessus. Polling simple plutôt que
+    // websocket -- le service Render tourne avec un seul worker, un dict en
+    // mémoire suffit, pas besoin d'une dépendance type flask-socketio.
+    function pollPresence() {
+      fetch("{{ url_for('dash_presence_ping', guild_id=guild.id) }}", { method: "POST" });
+      fetch("{{ url_for('dash_presence_who', guild_id=guild.id) }}")
+        .then(r => r.json())
+        .then(data => {
+          var widget = document.getElementById('presence-widget');
+          var names = document.getElementById('presence-names');
+          var others = data.viewers.filter(function(n) { return n !== "{{ user.global_name or user.username }}"; });
+          if (others.length > 0) {
+            names.textContent = others.join(', ') + '{{ " also viewing" if lang()=="en" else " regarde aussi" }}';
+            widget.style.display = 'inline-flex';
+          } else {
+            widget.style.display = 'none';
+          }
+        })
+        .catch(function() {});
+    }
+    pollPresence();
+    setInterval(pollPresence, 10000);
+  </script>
+
+  <form method="POST" action="{{ url_for('dash_automod', guild_id=guild.id) }}">
+    <div class="panel" style="animation-delay:.06s">
+      <div class="panel-head"><h2>{{ t('panel_automod_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+      <div class="desc">{{ t('panel_automod_desc') }}</div>
+      <label for="allowed_roles">{{ t('label_exempt_roles') }}</label>
+      <select name="allowed_roles" id="allowed_roles" multiple>
+        {% for r in roles %}
+        <option value="{{ r.id }}" {% if r.id in (cfg.allowed_roles or []) %}selected{% endif %}>{{ r.name }}</option>
+        {% endfor %}
+      </select>
+      <div class="hint">{{ t('hint_multiselect') }}</div>
+      <button type="submit">{{ t('btn_save') }}</button>
+    </div>
+  </form>
+
+  {% if is_owner %}
+  <div class="panel" style="animation-delay:.1s">
+    <div class="panel-head"><h2>{{ t('panel_perms_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
+    <div class="desc">{{ t('panel_perms_desc') }}</div>
+
+    {% if cfg.command_roles %}
+    {% for cmd, role_ids in cfg.command_roles.items() %}
+      {% if role_ids %}
+      <label>/{{ cmd }}</label>
+      <div class="chip-list">
+        {% for rid in role_ids %}
+        <div class="chip">
+          {{ role_names.get(rid, rid) }}
+          <form method="POST" action="{{ url_for('dash_permission_remove', guild_id=guild.id) }}">
+            <input type="hidden" name="command" value="{{ cmd }}">
+            <input type="hidden" name="role_id" value="{{ rid }}">
+            <button type="submit" class="x" title="{{ t('remove_title') }}">&times;</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% else %}
+    <div class="no-perms">{{ t('no_perms_yet') }}</div>
+    {% endif %}
+
+    <hr class="divider">
+    <form method="POST" action="{{ url_for('dash_permission_add', guild_id=guild.id) }}">
+      <label>{{ t('label_commands') }}</label>
+      <div class="cmd-toggle-row">
+        <button type="button" class="ghost small" onclick="toggleAllCmds(true)">{{ t('btn_select_all') }}</button>
+        <button type="button" class="ghost small" onclick="toggleAllCmds(false)">{{ t('btn_clear') }}</button>
+      </div>
+      <div class="cmd-grid">
+        {% for cmd in moderation_commands %}
+        <label class="cmd-check">
+          <input type="checkbox" name="commands" value="{{ cmd }}" class="cmd-checkbox">
+          /{{ cmd }}
+        </label>
+        {% endfor %}
+      </div>
+      <label for="role_id">{{ t('label_allowed_role') }}</label>
+      <select name="role_id" id="role_id">
+        {% for r in roles %}
+        <option value="{{ r.id }}">{{ r.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">{{ t('btn_add_permissions') }}</button>
+    </form>
+    <script>
+      function toggleAllCmds(state) {
+        document.querySelectorAll('.cmd-checkbox').forEach(function(cb) { cb.checked = state; });
+      }
+    </script>
+
+    <hr class="divider">
+    <form method="POST" action="{{ url_for('dash_permission_template', guild_id=guild.id) }}">
+      <label for="template_id">{{ t('tmpl_quick_label') }}</label>
+      <div class="row">
+        <div>
+          <label for="template_id">{{ t('tmpl_select_label') }}</label>
+          <select name="template_id" id="template_id">
+            <optgroup label="{{ t('tmpl_builtin_group') }}">
+              {% for tid, tpl in templates.items() %}
+              <option value="builtin:{{ tid }}">{{ t(tpl.label_key) }} (/{{ tpl.commands|join(', /') }})</option>
+              {% endfor %}
+            </optgroup>
+            {% if custom_templates %}
+            <optgroup label="{{ t('tmpl_custom_group') }}">
+              {% for name, cmds in custom_templates.items() %}
+              {% if cmds %}
+              <option value="custom:{{ name }}">{{ name }} (/{{ cmds|join(', /') }})</option>
+              {% endif %}
+              {% endfor %}
+            </optgroup>
+            {% endif %}
+          </select>
+        </div>
+        <div>
+          <label for="template_role_id">{{ t('tmpl_role_label') }}</label>
+          <select name="role_id" id="template_role_id">
+            {% for r in roles %}
+            <option value="{{ r.id }}">{{ r.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="ghost">{{ t('btn_apply_template') }}</button>
+    </form>
+  </div>
+
+  <div class="panel" style="animation-delay:.14s">
+    <div class="panel-head"><h2>{{ t('panel_apikey_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
+    <div class="desc">{{ t('panel_apikey_desc') }}</div>
+    {% if cfg.api_key %}
+    <div class="key-box">
+      <code class="masked mono">{{ cfg.api_key }}</code>
+      <button type="button" class="reveal-btn" data-show="{{ t('btn_show') }}" data-hide="{{ t('btn_hide') }}" onclick="toggleKey(this)">{{ t('btn_show') }}</button>
+    </div>
+    {% else %}
+    <div class="no-perms">{{ t('no_key_yet') }}</div>
+    {% endif %}
+    <form method="POST" action="{{ url_for('dash_apikey_regen', guild_id=guild.id) }}" onsubmit="return confirm('{{ t('confirm_regen') }}');">
+      <button type="submit" class="ghost">{{ t('btn_regenerate') }}</button>
+    </form>
+  </div>
+
+  <div class="panel danger" style="animation-delay:.18s">
+    <div class="panel-head"><h2>{{ t('panel_lockdown_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
+    <div class="desc">
+      {% if is_locked %}{{ t('lockdown_desc_locked') }}
+      {% else %}{{ t('lockdown_desc_unlocked') }}{% endif %}
+    </div>
+    <form method="POST" action="{{ url_for('dash_toggle_lock', guild_id=guild.id) }}">
+      {% if is_locked %}
+      <button type="submit" class="warn">{{ t('btn_unlock') }}</button>
+      {% else %}
+      <button type="submit" class="stop">{{ t('btn_lock') }}</button>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="panel" style="animation-delay:.205s">
+    <div class="panel-head"><h2>{{ t('panel_stats_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('panel_stats_desc') }}</div>
+    {% if sanction_chart %}
+    <div class="chart-wrap">{{ sanction_chart|safe }}</div>
+    <div class="chart-labels"><span>{{ chart_start }}</span><span>{{ chart_end }}</span></div>
+    {% else %}
+    <div class="no-perms">{{ t('stats_empty') }}</div>
+    {% endif %}
+  </div>
+
+  <div class="panel" style="animation-delay:.21s">
+    <div class="panel-head"><h2>{{ t('panel_tickets_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('panel_tickets_desc') }}</div>
+    {% if open_tickets %}
+    <div class="open-tickets-list">
+      {% for ch in open_tickets %}
+      <div class="open-ticket-row">
+        <span>#{{ ch.name }}</span>
+        <a href="https://discord.com/channels/{{ guild.id }}/{{ ch.id }}" target="_blank">{{ t('btn_open_link') }} →</a>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-perms">{{ t('no_open_tickets') }}</div>
+    {% endif %}
+  </div>
+
+  <div class="panel" style="animation-delay:.22s">
+    <div class="panel-head">
+      <h2>{{ t('panel_audit_title') }}</h2>
+      <span class="badge owner">{{ t('badge_owner') }}</span>
+      {% if audit_entries %}
+      <span style="margin-left:auto;font-size:13px;">
+        <a href="/dashboard/{{ guild.id }}/audit/export.csv">CSV</a> ·
+        <a href="/dashboard/{{ guild.id }}/audit/export.pdf">PDF</a>
+      </span>
+      {% endif %}
+    </div>
+    <div class="desc">{{ t('panel_audit_desc') }}</div>
+    {% if audit_entries %}
+    <div class="audit-list">
+      {% for entry in audit_entries %}
+      <div class="audit-entry">
+        <div class="audit-meta"><strong>{{ entry.actor_name }}</strong> · {{ entry.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}</div>
+        <div class="audit-action">{{ entry.action }}{% if entry.details %} — {{ entry.details }}{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-perms">{{ t('audit_empty') }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

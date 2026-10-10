@@ -1,0 +1,14 @@
+{% extends "_layout.html" %}
+{% block content %}
+<div class="wrap" style="max-width:420px; margin:80px auto;">
+  <div class="eyebrow">Nexus — Owner Control</div>
+  <h1>{{ 'Unlock the bot?' if locked else 'Lock the bot down?' }}</h1>
+  <p class="lead">The bot is currently {{ 'LOCKED across every server' if locked else 'active normally' }}. Enter your authenticator code to {{ 'unlock it' if locked else 'lock it down everywhere' }}.</p>
+  {% if error %}<div class="flash error">❌ Incorrect code, or the link expired. {{ attempts_left }} attempt(s) left.</div>{% endif %}
+  <form method="POST">
+    <label for="code">6-digit authenticator code</label>
+    <input type="text" name="code" id="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" autofocus>
+    <button type="submit" class="{{ 'warn' if locked else 'stop' }}">{{ 'Confirm unlock' if locked else 'Confirm lockdown' }}</button>
+  </form>
+</div>
+{% endblock %}

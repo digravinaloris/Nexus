@@ -1,0 +1,8 @@
+{% extends "_layout.html" %}
+{% block content %}
+<div class="wrap" style="max-width:420px; margin:80px auto;">
+  <div class="eyebrow">Nexus — Owner Control</div>
+  <h1>{{ '🔒 Bot locked down' if locked else '🔓 Bot unlocked' }}</h1>
+  <p class="lead">{{ 'All commands are now restricted to you across every server the bot is in.' if locked else 'The bot is back to normal across every server.' }}</p>
+</div>
+{% endblock %}

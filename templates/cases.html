@@ -1,0 +1,33 @@
+{% extends "_dashboard.html" %}
+{% block page %}
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
+  <h1>{{ t('cases_title') }}</h1>
+
+  <form method="GET" class="row" style="margin-top:20px;">
+    <div>
+      <label for="type">{{ t('cases_filter_type') }}</label>
+      <select name="type" id="type" onchange="this.form.submit()">
+        <option value="">{{ t('option_none') }}</option>
+        {% for tp in all_types %}
+        <option value="{{ tp }}" {% if tp == filter_type %}selected{% endif %}>{{ tp.replace('_',' ')|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+
+  {% if cases %}
+  <div class="audit-list" style="max-height:none;">
+    {% for c in cases %}
+    <div class="audit-entry">
+      <div class="audit-meta">#{{ c.case_id }} · {{ c.type.replace('_',' ')|title }} · {{ c.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}</div>
+      <div class="audit-action">User: {{ c.user_id }} — {{ c.reason }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="no-perms">{{ t('cases_empty') }}</div>
+  {% endif %}
+</div>
+{% endblock %}

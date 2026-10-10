@@ -1,0 +1,13 @@
+{% extends "_layout.html" %}
+{% block content %}
+<div class="wrap" style="max-width:480px; margin:60px auto;">
+  <div class="eyebrow">Ban Appeal</div>
+  <h1>{{ guild_name }}</h1>
+  <p class="lead">You were banned from this server. Case #{{ case_id }}.<br>Reason given: {{ ban_reason }}</p>
+  <form method="POST">
+    <label for="appeal_text">Why should this ban be reconsidered?</label>
+    <textarea name="appeal_text" id="appeal_text" maxlength="1000" required placeholder="Explain your side..."></textarea>
+    <button type="submit">Submit appeal</button>
+  </form>
+</div>
+{% endblock %}
