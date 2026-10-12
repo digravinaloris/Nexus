@@ -1,0 +1,182 @@
+{% extends "_dashboard.html" %}
+{% block page %}
+{% macro section_flashes(flashes, section) %}
+  {% for cat, msg in flashes %}
+    {% if cat == section or cat == 'error-' ~ section %}
+    <div class="flash {{ 'error' if cat.startswith('error-') else '' }}">{{ msg }}</div>
+    {% endif %}
+  {% endfor %}
+{% endmacro %}
+
+{% macro number_field(name, label_key, value, lo, hi, step='1') %}
+<div class="field">
+  <label for="{{ name }}">{{ t(label_key) }}</label>
+  <input type="number" name="{{ name }}" id="{{ name }}" value="{{ value }}" min="{{ lo }}" max="{{ hi }}" step="{{ step }}">
+</div>
+{% endmacro %}
+
+{% macro channel_select(name, label_key, channels, current, prefix) %}
+<div class="field">
+  <label for="{{ name }}">{{ t(label_key) }}</label>
+  <select name="{{ name }}" id="{{ name }}">
+    <option value="none">{{ t('opt_not_set') }}</option>
+    {% for c in channels %}
+    <option value="{{ c.id }}" {% if current|string == c.id|string %}selected{% endif %}>{{ prefix }}{{ c.name }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}
+
+{% macro role_select(name, label_key, roles, current) %}
+<div class="field">
+  <label for="{{ name }}">{{ t(label_key) }}</label>
+  <select name="{{ name }}" id="{{ name }}">
+    <option value="none">{{ t('opt_not_set') }}</option>
+    {% for r in roles %}
+    <option value="{{ r.id }}" {% if current|string == r.id|string %}selected{% endif %}>{{ r.name }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}
+
+{% set flashes = get_flashed_messages(with_categories=true) %}
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
+  <h1>{{ t('settings_title') }}</h1>
+  <p class="lead">{{ t('settings_lead') }}</p>
+
+  <div class="row" style="margin-top:16px;">
+    <a class="btn ghost" href="{{ url_for('dash_features_page', guild_id=guild.id) }}">{{ t('nav_features') }}</a>
+  </div>
+
+  <div class="panel" id="sec-automod">
+    <div class="panel-head"><h2>{{ t('sec_automod_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('sec_automod_desc') }}</div>
+    {{ section_flashes(flashes, 'automod') }}
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='automod') }}">
+      <div class="row">
+        {{ number_field('automod_spam_count', 'lbl_spam_count', values.automod_spam_count, 1, 1000) }}
+        {{ number_field('automod_spam_window', 'lbl_spam_window', values.automod_spam_window, 1, 3600) }}
+        {{ number_field('automod_caps_ratio', 'lbl_caps_ratio', values.automod_caps_ratio, 0.1, 1, '0.05') }}
+        {{ number_field('automod_raid_count', 'lbl_raid_count', values.automod_raid_count, 2, 1000) }}
+        {{ number_field('automod_raid_window', 'lbl_raid_window', values.automod_raid_window, 2, 3600) }}
+        {{ number_field('mention_spam_threshold', 'lbl_mention_threshold', values.mention_spam_threshold, 2, 100) }}
+        {{ number_field('media_flood_count', 'lbl_media_count', values.media_flood_count, 2, 100) }}
+        {{ number_field('media_flood_window', 'lbl_media_window', values.media_flood_window, 2, 3600) }}
+        {{ number_field('auto_slowmode_threshold', 'lbl_slow_threshold', values.auto_slowmode_threshold, 3, 1000) }}
+        {{ number_field('auto_slowmode_window', 'lbl_slow_window', values.auto_slowmode_window, 2, 3600) }}
+        {{ number_field('auto_slowmode_seconds', 'lbl_slow_seconds', values.auto_slowmode_seconds, 1, 21600) }}
+        {{ number_field('auto_slowmode_duration_minutes', 'lbl_slow_duration', values.auto_slowmode_duration_minutes, 1, 10080) }}
+      </div>
+      <div style="height:6px;"></div>
+      <button type="submit">{{ t('btn_save') }}</button>
+    </form>
+  </div>
+
+  <div class="panel" id="sec-protection">
+    <div class="panel-head"><h2>{{ t('sec_protect_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('sec_protect_desc') }}</div>
+    {{ section_flashes(flashes, 'protection') }}
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='protection') }}">
+      <label class="cmd-check" style="margin-bottom:16px;">
+        <input type="checkbox" name="warn_escalation_enabled" {% if values.warn_escalation_enabled %}checked{% endif %}>
+        {{ t('lbl_warn_enabled') }}
+      </label>
+      <div class="row">
+        {{ number_field('warn_mute_threshold', 'lbl_mute_at', values.warn_mute_threshold, 1, 100) }}
+        {{ number_field('warn_mute_minutes', 'lbl_mute_minutes', values.warn_mute_minutes, 1, 40320) }}
+        {{ number_field('warn_kick_threshold', 'lbl_kick_at', values.warn_kick_threshold, 2, 200) }}
+        {{ number_field('min_account_age_days', 'lbl_account_age', values.min_account_age_days, 0, 365) }}
+        {{ number_field('antinuke_threshold', 'lbl_antinuke', values.antinuke_threshold, 2, 20) }}
+      </div>
+      <div style="height:6px;"></div>
+      <button type="submit">{{ t('btn_save') }}</button>
+    </form>
+  </div>
+
+  <div class="panel" id="sec-channels">
+    <div class="panel-head"><h2>{{ t('sec_channels_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('sec_channels_desc') }}</div>
+    {{ section_flashes(flashes, 'channels') }}
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='channels') }}">
+      <div class="row">
+        {{ channel_select('welcome_channel_id', 'lbl_welcome_channel', text_channels, cfg.get('welcome_channel_id'), '#') }}
+        {{ channel_select('appeal_channel_id', 'lbl_appeal_channel', text_channels, cfg.get('appeal_channel_id'), '#') }}
+        {{ channel_select('boost_channel_id', 'lbl_boost_channel', text_channels, cfg.get('boost_channel_id'), '#') }}
+        {{ channel_select('member_count_channel_id', 'lbl_membercount_channel', voice_channels, cfg.get('member_count_channel_id'), '🔊 ') }}
+        {{ channel_select('jtc_channel_id', 'lbl_jtc_channel', voice_channels, cfg.get('jtc_channel_id'), '🔊 ') }}
+        {{ channel_select('trap_channel_id', 'lbl_trap_channel', text_channels, cfg.get('trap_channel_id'), '#') }}
+      </div>
+      <div class="risky-warning">{{ t('trap_warning') }}</div>
+      <button type="submit">{{ t('btn_save') }}</button>
+    </form>
+  </div>
+
+  <div class="panel" id="sec-quarantine">
+    <div class="panel-head"><h2>{{ t('sec_quarantine_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('sec_quarantine_desc') }}</div>
+    {{ section_flashes(flashes, 'quarantine') }}
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='quarantine') }}">
+      <div class="row">
+        {{ role_select('quarantine_role_id', 'lbl_q_role', roles, cfg.get('quarantine_role_id')) }}
+        {{ channel_select('quarantine_channel_id', 'lbl_q_channel', text_channels, cfg.get('quarantine_channel_id'), '#') }}
+        {{ number_field('quarantine_suspicion_days', 'lbl_q_days', values.quarantine_suspicion_days, 1, 365) }}
+        {{ number_field('quarantine_hold_minutes', 'lbl_q_minutes', values.quarantine_hold_minutes, 1, 1440) }}
+      </div>
+      <div style="height:6px;"></div>
+      <button type="submit">{{ t('btn_save') }}</button>
+    </form>
+  </div>
+
+  <div class="panel" id="sec-verification">
+    <div class="panel-head"><h2>{{ t('sec_verification_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('sec_verification_desc') }}</div>
+    {{ section_flashes(flashes, 'verification') }}
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='verification') }}">
+      <div class="row">
+        {{ role_select('verified_role_id', 'lbl_verified_role', roles, cfg.get('verified_role_id')) }}
+        {{ role_select('unverified_role_id', 'lbl_unverified_role', roles, cfg.get('unverified_role_id')) }}
+      </div>
+      <div class="hint" style="margin-top:0;">{{ t('verification_hint') }}</div>
+      <button type="submit">{{ t('btn_save') }}</button>
+    </form>
+  </div>
+
+  <div class="panel" id="sec-lists">
+    <div class="panel-head"><h2>{{ t('sec_lists_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+    <div class="desc">{{ t('sec_lists_desc') }}</div>
+    {{ section_flashes(flashes, 'lists') }}
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='lists') }}">
+      <div class="row">
+        <div class="field">
+          <label for="banned_words">{{ t('lbl_banned_words') }}</label>
+          <textarea name="banned_words" id="banned_words" spellcheck="false">{{ banned_words_text }}</textarea>
+        </div>
+        <div class="field">
+          <label for="banned_domains">{{ t('lbl_banned_domains') }}</label>
+          <textarea name="banned_domains" id="banned_domains" spellcheck="false">{{ banned_domains_text }}</textarea>
+        </div>
+      </div>
+      <button type="submit">{{ t('btn_save') }}</button>
+    </form>
+  </div>
+
+  {% if is_owner %}
+  <div class="panel" id="sec-language">
+    <div class="panel-head"><h2>{{ t('sec_language_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
+    <div class="desc">{{ t('sec_language_desc') }}</div>
+    {{ section_flashes(flashes, 'language') }}
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='language') }}">
+      <label for="language">{{ t('lbl_language') }}</label>
+      <select name="language" id="language">
+        {% for code in languages %}
+        <option value="{{ code }}" {% if cfg.get('language') == code %}selected{% endif %}>{{ 'English' if code == 'en' else ('Français' if code == 'fr' else code) }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">{{ t('btn_save') }}</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

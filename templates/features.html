@@ -1,0 +1,33 @@
+{% extends "_dashboard.html" %}
+{% block page %}
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <div class="eyebrow">{{ t('config_eyebrow') }}</div>
+  <h1>{{ t('features_title') }}</h1>
+  <p class="lead">{{ t('features_lead') }}</p>
+
+  {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
+
+  <form method="POST" action="{{ url_for('dash_features_page', guild_id=guild.id) }}">
+    <div class="panel">
+      <div class="panel-head"><h2>{{ t('features_panel_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
+      <div class="desc">{{ t('features_panel_desc') }}</div>
+      {% for row in rows %}
+      <div class="feature-row">
+        <div>
+          <div class="feature-name">{{ row.label }}</div>
+          <div class="feature-key mono">{{ row.key }}</div>
+          {% if row.needs %}<div class="feature-warn">⚠️ {{ row.needs }}</div>{% endif %}
+        </div>
+        <label class="switch">
+          <input type="checkbox" name="feat__{{ row.key }}" {% if row.enabled %}checked{% endif %}>
+          <span class="slider"></span>
+        </label>
+      </div>
+      {% endfor %}
+      <div style="height:14px;"></div>
+      <button type="submit">{{ t('btn_save') }}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
