@@ -19,6 +19,10 @@ from utils import (
     detect_phone_number,
     detect_address_hint,
     detect_raid_username_pattern,
+    parse_bounded_number,
+    normalize_banned_word,
+    normalize_domain,
+    parse_lines_list,
     format_uptime,
 )
 
@@ -236,6 +240,89 @@ class TestDetectRaidUsernamePattern:
 
     def test_too_few_to_judge(self):
         assert detect_raid_username_pattern(["RaidBot001", "RaidBot002"]) is False
+
+
+class TestParseBoundedNumber:
+    def test_int_in_range(self):
+        assert parse_bounded_number("5", int, 1, 10) == 5
+
+    def test_int_clamped_high(self):
+        assert parse_bounded_number("500", int, 1, 10) == 10
+
+    def test_int_clamped_low(self):
+        assert parse_bounded_number("-3", int, 1, 10) == 1
+
+    def test_int_truncates_decimal(self):
+        assert parse_bounded_number("5.9", int, 1, 10) == 5
+
+    def test_float_with_french_comma(self):
+        assert parse_bounded_number("0,5", float, 0.1, 1.0) == 0.5
+
+    def test_float_clamped(self):
+        assert parse_bounded_number("2.0", float, 0.1, 1.0) == 1.0
+
+    def test_whitespace_trimmed(self):
+        assert parse_bounded_number("  7 ", int, 1, 10) == 7
+
+    def test_garbage_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            parse_bounded_number("abc", int, 1, 10)
+
+    def test_empty_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            parse_bounded_number("", int, 1, 10)
+
+    def test_infinity_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            parse_bounded_number("inf", int, 1, 10)
+
+    def test_nan_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            parse_bounded_number("nan", float, 0.1, 1.0)
+
+
+class TestNormalizers:
+    def test_banned_word_lowercased_and_trimmed(self):
+        assert normalize_banned_word("  BadWord ") == "badword"
+
+    def test_domain_strips_scheme_www_path(self):
+        assert normalize_domain("https://www.Scam-Site.com/path?x=1") == "scam-site.com"
+
+    def test_domain_plain(self):
+        assert normalize_domain("  EXAMPLE.org ") == "example.org"
+
+    def test_domain_keeps_subdomain(self):
+        assert normalize_domain("http://sub.example.com") == "sub.example.com"
+
+
+class TestParseLinesList:
+    def test_dedupes_sorts_and_normalizes(self):
+        raw = "Zeta\nalpha\nALPHA\n\n  beta  \n"
+        assert parse_lines_list(raw, normalize_banned_word, 100, 100) == ["alpha", "beta", "zeta"]
+
+    def test_handles_crlf(self):
+        assert parse_lines_list("a\r\nb\r\n", normalize_banned_word, 100, 100) == ["a", "b"]
+
+    def test_empty_input(self):
+        assert parse_lines_list("", normalize_banned_word, 100, 100) == []
+
+    def test_too_many_entries_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            parse_lines_list("a\nb\nc", normalize_banned_word, 2, 100)
+
+    def test_entry_too_long_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            parse_lines_list("x" * 11, normalize_banned_word, 100, 10)
+
+    def test_domains_normalized_per_line(self):
+        raw = "https://www.A.com/x\nb.com"
+        assert parse_lines_list(raw, normalize_domain, 100, 253) == ["a.com", "b.com"]
 
 
 class TestFormatUptime:
