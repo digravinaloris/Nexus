@@ -3,6 +3,7 @@ Fonctions utilitaires pures (aucune dépendance à discord.py, Flask, ou
 MongoDB) -- séparées de main.py pour pouvoir être testées sans avoir à
 démarrer le bot ou se connecter à une base de données.
 """
+import math
 import re
 
 URL_RE = re.compile(r"https?://([a-zA-Z0-9_\-\.]+)", re.IGNORECASE)
@@ -162,6 +163,51 @@ def detect_raid_username_pattern(usernames):
     # tous se terminent par 4+ chiffres (ex: "User8291", "Member4471"...)
     digit_suffix_count = sum(1 for u in lowered if re.search(r"\d{4,}$", u))
     return digit_suffix_count >= max(3, len(lowered) // 2 + 1)
+
+
+def parse_bounded_number(raw, kind, lo, hi):
+    """Parse une valeur de formulaire en int/float borné à [lo, hi].
+    Accepte la virgule comme séparateur décimal ("0,7" -- clavier français).
+    Lève ValueError si vide, pas un nombre, ou non fini (nan/inf)."""
+    text = str(raw).strip().replace(",", ".")
+    if not text:
+        raise ValueError("empty")
+    try:
+        number = float(text)
+    except ValueError:
+        raise ValueError("not a number")
+    if not math.isfinite(number):
+        raise ValueError("not finite")
+    value = int(number) if kind is int else number
+    return max(lo, min(value, hi))
+
+
+def normalize_banned_word(raw):
+    """Même normalisation que /config badwords add."""
+    return raw.strip().lower()
+
+
+def normalize_domain(raw):
+    """Même normalisation que /config domains add : retire http(s):// et
+    www., coupe au premier '/', met en minuscules."""
+    return raw.strip().lower().removeprefix("http://").removeprefix("https://").removeprefix("www.").split("/")[0]
+
+
+def parse_lines_list(raw, normalizer, max_items, max_length):
+    """Textarea 'une entrée par ligne' -> liste triée, sans doublons ni vides.
+    Lève ValueError si trop d'entrées ou si une entrée dépasse max_length
+    (plutôt que de la tronquer/ignorer en silence)."""
+    seen = set()
+    for line in raw.replace("\r", "").split("\n"):
+        entry = normalizer(line)
+        if not entry:
+            continue
+        if len(entry) > max_length:
+            raise ValueError("entry too long")
+        seen.add(entry)
+    if len(seen) > max_items:
+        raise ValueError("too many entries")
+    return sorted(seen)
 
 
 def format_uptime(total_seconds):

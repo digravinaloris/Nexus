@@ -32,6 +32,7 @@ import utils
 from utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
     is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
+    parse_bounded_number, normalize_banned_word, normalize_domain, parse_lines_list,
 )
 import csv
 import io
@@ -6081,6 +6082,245 @@ def dash_presence_who(guild_id):
     entries = _dashboard_presence.get(guild_id, {})
     active = [name for name, last_seen in entries.values() if now - last_seen < _PRESENCE_TTL_SECONDS]
     return jsonify({"viewers": active})
+
+
+# ---------- Features (/feature) et Settings (/config) sur le dashboard web ----------
+
+# Valeurs par défaut utilisées à l'AFFICHAGE : get_config() ne remplit les
+# défauts qu'à la création d'un doc, donc un vieux serveur peut ne pas avoir
+# certaines clés (ex: remindme_enabled est actif par défaut dans le code).
+SETTINGS_DEFAULTS = {
+    "automod_spam_count": 10, "automod_spam_window": 5, "automod_caps_ratio": 0.7,
+    "automod_raid_count": 5, "automod_raid_window": 10,
+    "mention_spam_threshold": 5, "media_flood_count": 5, "media_flood_window": 10,
+    "auto_slowmode_threshold": 10, "auto_slowmode_window": 10,
+    "auto_slowmode_seconds": 10, "auto_slowmode_duration_minutes": 5,
+    "warn_escalation_enabled": False, "warn_mute_threshold": 3,
+    "warn_mute_minutes": 10, "warn_kick_threshold": 5,
+    "min_account_age_days": 0, "antinuke_threshold": 5,
+    "quarantine_suspicion_days": 7, "quarantine_hold_minutes": 30,
+}
+FEATURE_DEFAULT_ENABLED = {"remindme_enabled": True}
+# Sentinelle "clé absente de la config stockée" (None est une valeur valide : salon non défini).
+_UNSET = object()
+
+# (clé de config = nom du champ de formulaire, type, min, max). Les minimums
+# sont ceux des commandes /config ; les maximums sont des garde-fous de bon
+# sens que les commandes Discord n'ont pas.
+AUTOMOD_NUMBER_FIELDS = [
+    ("automod_spam_count", int, 1, 1000), ("automod_spam_window", int, 1, 3600),
+    ("automod_caps_ratio", float, 0.1, 1.0),
+    ("automod_raid_count", int, 2, 1000), ("automod_raid_window", int, 2, 3600),
+    ("mention_spam_threshold", int, 2, 100),
+    ("media_flood_count", int, 2, 100), ("media_flood_window", int, 2, 3600),
+    ("auto_slowmode_threshold", int, 3, 1000), ("auto_slowmode_window", int, 2, 3600),
+    ("auto_slowmode_seconds", int, 1, 21600), ("auto_slowmode_duration_minutes", int, 1, 10080),
+]
+PROTECTION_NUMBER_FIELDS = [
+    ("warn_mute_threshold", int, 1, 100), ("warn_mute_minutes", int, 1, 40320),
+    ("warn_kick_threshold", int, 2, 200),
+    ("min_account_age_days", int, 0, 365), ("antinuke_threshold", int, 2, 20),
+]
+QUARANTINE_NUMBER_FIELDS = [
+    ("quarantine_suspicion_days", int, 1, 365), ("quarantine_hold_minutes", int, 1, 1440),
+]
+TEXT_CHANNEL_SETTINGS = ["welcome_channel_id", "appeal_channel_id", "boost_channel_id", "trap_channel_id"]
+VOICE_CHANNEL_SETTINGS = ["member_count_channel_id", "jtc_channel_id"]
+
+# Features qui ne font rien tant qu'un réglage n'est pas fait : la page
+# Features affiche un avertissement (même piège que sur Discord, où activer
+# sans configurer ne dit rien).
+FEATURE_REQUIREMENTS = {
+    "welcome_banner": (("welcome_channel_id",), "req_welcome_channel"),
+    "verification": (("verified_role_id", "unverified_role_id"), "req_verification_roles"),
+    "quarantine": (("quarantine_role_id", "quarantine_channel_id"), "req_quarantine"),
+    "trap_channel": (("trap_channel_id",), "req_trap_channel"),
+}
+
+
+def _t_or(key, default):
+    """Traduction si elle existe, sinon le texte par défaut (t() renverrait la clé brute)."""
+    translations = TRANSLATIONS.get(session.get("lang", "en"), TRANSLATIONS["en"])
+    return translations.get(key) or TRANSLATIONS["en"].get(key) or default
+
+
+def _read_numbers(fields):
+    """Champs numériques du formulaire ; un champ vide est ignoré (valeur
+    inchangée). ValueError(<nom du champ>) si une valeur est invalide."""
+    out = {}
+    for key, kind, lo, hi in fields:
+        raw = request.form.get(key, "")
+        if not raw.strip():
+            continue
+        try:
+            out[key] = parse_bounded_number(raw, kind, lo, hi)
+        except ValueError:
+            raise ValueError(key)
+    return out
+
+
+def _read_channel(key, channels):
+    """ID de salon du formulaire, validé contre les salons RÉELS de ce serveur."""
+    raw = request.form.get(key, "").strip()
+    if not raw or raw == "none":
+        return None
+    if raw.isdigit() and int(raw) in {c.id for c in channels}:
+        return int(raw)
+    raise ValueError(key)
+
+
+def _read_role(key, guild):
+    """ID de rôle du formulaire, validé contre les rôles réels (pas @everyone)."""
+    raw = request.form.get(key, "").strip()
+    if not raw or raw == "none":
+        return None
+    if raw.isdigit():
+        role = guild.get_role(int(raw))
+        if role is not None and not role.is_default():
+            return role.id
+    raise ValueError(key)
+
+
+def _describe_change(key, old, new):
+    if isinstance(new, list):
+        return f"{key}: {len(old or [])} -> {len(new)} entries"
+    return f"{key}: {old} -> {new}"
+
+
+@api.route("/dashboard/<guild_id>/features", methods=["GET", "POST"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_features_page(guild_id):
+    """Équivalent web de /feature enable|disable|list -- construit depuis
+    FEATURE_TOGGLES, donc tout nouveau toggle côté Discord apparaît ici tout seul."""
+    guild = bot.get_guild(int(guild_id))
+    cfg = get_config(guild_id)
+
+    def is_enabled(meta):
+        return bool(cfg.get(meta["config_key"], FEATURE_DEFAULT_ENABLED.get(meta["config_key"], False)))
+
+    if request.method == "POST":
+        enabled_now, disabled_now = [], []
+        for key, meta in FEATURE_TOGGLES.items():
+            config_key = meta["config_key"]
+            new_value = f"feat__{key}" in request.form
+            stored = cfg.get(config_key, _UNSET)
+            if stored is not _UNSET and bool(stored) == new_value:
+                continue
+            # On écrit dès que la valeur STOCKÉE diffère (ou manque) : le résultat ne
+            # dépend jamais de la parité avec les défauts du code. L'audit, lui, ne
+            # note que les changements EFFECTIFS (défaut implicite compris).
+            effective_old = bool(FEATURE_DEFAULT_ENABLED.get(config_key, False)) if stored is _UNSET else bool(stored)
+            update_config(guild_id, config_key, new_value)
+            if effective_old != new_value:
+                (enabled_now if new_value else disabled_now).append(key)
+        if enabled_now or disabled_now:
+            parts = []
+            if enabled_now:
+                parts.append("enabled: " + ", ".join(enabled_now))
+            if disabled_now:
+                parts.append("disabled: " + ", ".join(disabled_now))
+            dash_log_action(guild, guild_id, "Updated feature toggles", " | ".join(parts))
+        flash(t("flash_features_saved"))
+        return redirect(url_for("dash_features_page", guild_id=guild_id))
+
+    rows = []
+    for key, meta in FEATURE_TOGGLES.items():
+        requirement = FEATURE_REQUIREMENTS.get(key)
+        needs = t(requirement[1]) if requirement and not all(cfg.get(k) for k in requirement[0]) else None
+        rows.append({"key": key, "label": _t_or(f"feat_{key}", meta["label"]), "enabled": is_enabled(meta), "needs": needs})
+    return render_template("features.html", guild=guild, rows=rows, user=session.get("dash_user"))
+
+
+@api.route("/dashboard/<guild_id>/settings", methods=["GET"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_settings_page(guild_id):
+    guild = bot.get_guild(int(guild_id))
+    cfg = get_config(guild_id)
+    values = {key: cfg.get(key, default) for key, default in SETTINGS_DEFAULTS.items()}
+    return render_template(
+        "settings.html", guild=guild, cfg=cfg, values=values,
+        text_channels=guild.text_channels, voice_channels=guild.voice_channels,
+        roles=[r for r in guild.roles if not r.is_default()],
+        banned_words_text="\n".join(cfg.get("banned_words", [])),
+        banned_domains_text="\n".join(cfg.get("banned_domains", [])),
+        languages=sorted(TRANSLATIONS.keys()),
+        is_owner=dash_is_owner(guild), user=session.get("dash_user"),
+    )
+
+
+@api.route("/dashboard/<guild_id>/settings/<section>", methods=["POST"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_settings_save(guild_id, section):
+    """Une section = un formulaire = une sauvegarde indépendante (sauvegarder
+    l'automod n'écrase jamais les champs d'une autre section)."""
+    guild = bot.get_guild(int(guild_id))
+    cfg = get_config(guild_id)
+    updates = {}
+    try:
+        if section == "automod":
+            updates = _read_numbers(AUTOMOD_NUMBER_FIELDS)
+        elif section == "protection":
+            updates = _read_numbers(PROTECTION_NUMBER_FIELDS)
+            updates["warn_escalation_enabled"] = "warn_escalation_enabled" in request.form
+            mute_at = updates.get("warn_mute_threshold", cfg.get("warn_mute_threshold", 3))
+            kick_at = updates.get("warn_kick_threshold", cfg.get("warn_kick_threshold", 5))
+            # même règle que /config warnescalation : le kick vient toujours après le mute
+            updates["warn_kick_threshold"] = max(mute_at + 1, kick_at)
+        elif section == "channels":
+            for key in TEXT_CHANNEL_SETTINGS:
+                updates[key] = _read_channel(key, guild.text_channels)
+            for key in VOICE_CHANNEL_SETTINGS:
+                updates[key] = _read_channel(key, guild.voice_channels)
+        elif section == "quarantine":
+            updates = _read_numbers(QUARANTINE_NUMBER_FIELDS)
+            updates["quarantine_role_id"] = _read_role("quarantine_role_id", guild)
+            updates["quarantine_channel_id"] = _read_channel("quarantine_channel_id", guild.text_channels)
+        elif section == "verification":
+            verified = _read_role("verified_role_id", guild)
+            unverified = _read_role("unverified_role_id", guild)
+            if verified is not None and verified == unverified:
+                raise ValueError("verified_role_id")
+            updates = {"verified_role_id": verified, "unverified_role_id": unverified}
+        elif section == "lists":
+            try:
+                updates["banned_words"] = parse_lines_list(request.form.get("banned_words", ""), normalize_banned_word, 1000, 100)
+            except ValueError:
+                raise ValueError("banned_words")
+            try:
+                updates["banned_domains"] = parse_lines_list(request.form.get("banned_domains", ""), normalize_domain, 500, 253)
+            except ValueError:
+                raise ValueError("banned_domains")
+        elif section == "language":
+            if not dash_is_owner(guild):
+                return jsonify({"error": "Server owner required"}), 403
+            language = request.form.get("language", "")
+            if language not in TRANSLATIONS:
+                raise ValueError("language")
+            updates["language"] = language
+        else:
+            return jsonify({"error": "Unknown settings section"}), 404
+    except ValueError as e:
+        flash(f"{t('flash_settings_invalid')} ({e})", f"error-{section}")
+        return redirect(url_for("dash_settings_page", guild_id=guild_id) + f"#sec-{section}")
+
+    changes = []
+    for key, value in updates.items():
+        stored = cfg.get(key, _UNSET)
+        if stored == value or (stored is _UNSET and value is None):
+            continue
+        # Même principe que les features : on écrit dès que la valeur stockée
+        # diffère ou manque, mais on n'audite que ce qui change réellement.
+        effective_old = SETTINGS_DEFAULTS.get(key) if stored is _UNSET else stored
+        update_config(guild_id, key, value)
+        if effective_old != value:
+            changes.append(_describe_change(key, effective_old, value))
+    if changes:
+        dash_log_action(guild, guild_id, f"Updated settings ({section})", "; ".join(changes)[:900])
+    flash(t("flash_settings_saved"), section)
+    return redirect(url_for("dash_settings_page", guild_id=guild_id) + f"#sec-{section}")
 
 
 @api.route("/dashboard/<guild_id>/templates", methods=["GET"])

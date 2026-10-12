@@ -85,3 +85,87 @@ btn_deny: Refuser
 panel_stats_title: Activité de modération
 panel_stats_desc: Sanctions prises par jour sur les 30 derniers jours.
 stats_empty: Aucune activité de modération sur les 30 derniers jours.
+
+# Pages Fonctionnalités et Réglages
+nav_features: Fonctionnalités
+nav_settings: Réglages
+features_title: Fonctionnalités
+features_lead: Active ou coupe les protections optionnelles, comme /feature enable et /feature disable.
+features_panel_title: Fonctionnalités optionnelles
+features_panel_desc: Les changements s'appliquent dès que tu enregistres.
+req_welcome_channel: Nécessite un salon de bienvenue (Réglages, Salons).
+req_verification_roles: Nécessite les rôles Verified et Unverified (Réglages, Vérification).
+req_quarantine: Nécessite un rôle et un salon de quarantaine (Réglages, Quarantaine).
+req_trap_channel: Nécessite un salon piège (Réglages, Salons).
+flash_features_saved: Fonctionnalités mises à jour.
+flash_settings_saved: Réglages enregistrés.
+flash_settings_invalid: Valeur invalide, rien n'a été enregistré
+settings_title: Réglages
+settings_lead: Tout ce que fait /config, depuis le navigateur. Chaque section s'enregistre séparément.
+sec_automod_title: Seuils d'automod
+sec_automod_desc: Sensibilité de la détection du spam, des majuscules, des raids, des mentions, des médias et du slowmode.
+lbl_spam_count: Spam (messages)
+lbl_spam_window: Spam (fenêtre, secondes)
+lbl_caps_ratio: Ratio de majuscules, 0,1 à 1
+lbl_raid_count: Raid (arrivées)
+lbl_raid_window: Raid (fenêtre, secondes)
+lbl_mention_threshold: Mentions avant qu'un message compte comme spam
+lbl_media_count: Flood de médias (pièces jointes)
+lbl_media_window: Flood de médias (fenêtre, secondes)
+lbl_slow_threshold: Auto-slowmode (messages)
+lbl_slow_window: Auto-slowmode (fenêtre, secondes)
+lbl_slow_seconds: Auto-slowmode (délai, secondes)
+lbl_slow_duration: Auto-slowmode (durée, minutes)
+sec_protect_title: Protections
+sec_protect_desc: Escalade des warns, âge minimum des comptes et sensibilité de l'anti-nuke.
+lbl_warn_enabled: Activer l'escalade des warns
+lbl_mute_at: Warns avant mute auto
+lbl_mute_minutes: Durée du mute auto (minutes)
+lbl_kick_at: Warns avant kick auto
+lbl_account_age: Âge minimum du compte en jours (0 = désactivé)
+lbl_antinuke: Seuil anti-nuke (2 à 20)
+sec_channels_title: Salons
+sec_channels_desc: Où le bot poste ses messages. Laisse sur Non défini pour désactiver.
+opt_not_set: Non défini
+lbl_welcome_channel: Salon des bannières de bienvenue
+lbl_appeal_channel: Salon de revue des appels
+lbl_boost_channel: Salon des remerciements de boost
+lbl_trap_channel: Salon piège
+lbl_membercount_channel: Salon vocal du compteur de membres
+lbl_jtc_channel: Salon vocal Join-to-Create
+trap_warning: ⚠️ Toute personne sans permission staff qui poste dans le salon piège est softbannie instantanément. Choisis un salon que les membres n'utilisent jamais.
+sec_quarantine_title: Quarantaine
+sec_quarantine_desc: Garde les comptes récents en attente de revue avant de leur donner accès.
+lbl_q_role: Rôle de quarantaine
+lbl_q_channel: Salon de revue
+lbl_q_days: Mettre en quarantaine les comptes de moins de (jours)
+lbl_q_minutes: Rappel après (minutes)
+sec_verification_title: Vérification
+sec_verification_desc: Rôles utilisés par le bouton Verify. Les permissions des salons restent à configurer toi-même dans Discord.
+lbl_verified_role: Rôle Verified
+lbl_unverified_role: Rôle Unverified
+verification_hint: Pour créer les rôles ou poster le bouton, utilise /config verification setup et /config verification post dans Discord.
+sec_lists_title: Mots et domaines bloqués
+sec_lists_desc: Une entrée par ligne. Les mots matchent uniquement des mots entiers, les domaines matchent aussi leurs sous-domaines.
+lbl_banned_words: Mots interdits
+lbl_banned_domains: Domaines bloqués
+sec_language_title: Langue par défaut du dashboard
+sec_language_desc: Langue affichée par défaut aux admins de ce serveur.
+lbl_language: Langue
+feat_detailed_logs: Logs d'activité détaillés (vocal, pseudos, rôles)
+feat_antinuke: Protection anti-nuke
+feat_weekly_digest: Résumé hebdomadaire en DM
+feat_dashboard_logging: Logger les actions du dashboard dans le salon de logs
+feat_anti_link_global: Bloquer TOUS les liens, pas seulement les invitations Discord
+feat_welcome_banner: Générer une bannière de bienvenue à l'arrivée d'un membre
+feat_verification: Donner le rôle Unverified à l'arrivée jusqu'à vérification
+feat_quarantine: Mettre en attente de revue les comptes récents suspects
+feat_anti_mention_spam: Supprimer les messages avec trop de mentions ou abus de @everyone
+feat_anti_media_flood: Supprimer le spam d'images et de pièces jointes en rafale
+feat_auto_slowmode: Activer temporairement le slowmode quand un salon s'emballe
+feat_anti_doxx: Détecter les numéros de téléphone et adresses, et agir
+feat_raid_pattern_alert: Alerter sur les arrivées qui ressemblent à un raid coordonné (pseudos similaires)
+feat_auto_translate: Traduire un message via la réaction 🌐 (traduction envoyée en DM)
+feat_remindme: Activer la commande /remindme
+feat_serverinfo_visual: Joindre un graphique d'activité sur 7 jours à /serverinfo
+feat_trap_channel: Tout message dans le salon piège donne un softban instantané (aucune analyse du contenu)

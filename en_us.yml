@@ -85,3 +85,70 @@ btn_deny: Deny
 panel_stats_title: Moderation activity
 panel_stats_desc: Sanctions issued per day over the last 30 days.
 stats_empty: No moderation activity in the last 30 days.
+
+# Features and Settings pages
+nav_features: Features
+nav_settings: Settings
+features_title: Features
+features_lead: Turn optional protections on or off, same as /feature enable and /feature disable.
+features_panel_title: Optional features
+features_panel_desc: Changes apply as soon as you save.
+req_welcome_channel: Needs a welcome channel (Settings, Channels).
+req_verification_roles: Needs the Verified and Unverified roles (Settings, Verification).
+req_quarantine: Needs a quarantine role and channel (Settings, Quarantine).
+req_trap_channel: Needs a trap channel (Settings, Channels).
+flash_features_saved: Features updated.
+flash_settings_saved: Settings saved.
+flash_settings_invalid: Invalid value, nothing was saved
+settings_title: Settings
+settings_lead: Everything /config does, from the browser. Each section saves on its own.
+sec_automod_title: Automod thresholds
+sec_automod_desc: How sensitive spam, caps, raid, mention, media and slowmode detection are.
+lbl_spam_count: Spam (messages)
+lbl_spam_window: Spam (window, seconds)
+lbl_caps_ratio: Caps ratio, 0.1 to 1
+lbl_raid_count: Raid (joins)
+lbl_raid_window: Raid (window, seconds)
+lbl_mention_threshold: Mentions before a message counts as spam
+lbl_media_count: Media flood (attachments)
+lbl_media_window: Media flood (window, seconds)
+lbl_slow_threshold: Auto-slowmode (messages)
+lbl_slow_window: Auto-slowmode (window, seconds)
+lbl_slow_seconds: Auto-slowmode (delay, seconds)
+lbl_slow_duration: Auto-slowmode (duration, minutes)
+sec_protect_title: Protections
+sec_protect_desc: Warn escalation, account age check and anti-nuke sensitivity.
+lbl_warn_enabled: Enable warn escalation
+lbl_mute_at: Warnings before auto-mute
+lbl_mute_minutes: Auto-mute duration (minutes)
+lbl_kick_at: Warnings before auto-kick
+lbl_account_age: Minimum account age in days (0 = off)
+lbl_antinuke: Anti-nuke threshold (2 to 20)
+sec_channels_title: Channels
+sec_channels_desc: Where the bot posts things. Leave on Not set to disable.
+opt_not_set: Not set
+lbl_welcome_channel: Welcome banner channel
+lbl_appeal_channel: Appeals review channel
+lbl_boost_channel: Boost thank-you channel
+lbl_trap_channel: Trap channel
+lbl_membercount_channel: Member count voice channel
+lbl_jtc_channel: Join-to-Create voice channel
+trap_warning: ⚠️ Anyone without staff permissions who posts in the trap channel gets softbanned instantly. Pick a channel regular members never use.
+sec_quarantine_title: Quarantine
+sec_quarantine_desc: Hold young accounts for review before they get access.
+lbl_q_role: Quarantine role
+lbl_q_channel: Review channel
+lbl_q_days: Quarantine accounts younger than (days)
+lbl_q_minutes: Reminder after (minutes)
+sec_verification_title: Verification
+sec_verification_desc: Roles used by the Verify button. Channel permissions stay yours to configure in Discord.
+lbl_verified_role: Verified role
+lbl_unverified_role: Unverified role
+verification_hint: To create the roles or post the button, use /config verification setup and /config verification post in Discord.
+sec_lists_title: Blocked words and domains
+sec_lists_desc: One entry per line. Words match whole words only, domains also match their subdomains.
+lbl_banned_words: Banned words
+lbl_banned_domains: Blocked domains
+sec_language_title: Default dashboard language
+sec_language_desc: Language shown to admins of this server by default.
+lbl_language: Language
