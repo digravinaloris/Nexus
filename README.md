@@ -5,6 +5,7 @@ A full-featured Discord moderation & utility bot with a web dashboard — auto-m
 Built with Python (discord.py) + Flask, backed by MongoDB Atlas, hosted on Render.
 
 **[➕ Invite Nexus to your server](https://discord.com/oauth2/authorize?client_id=1510263826455466004)**
+
 **[Dashboard](https://nexus-1qqu.onrender.com/dashboard)**
 
 ---
