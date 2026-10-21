@@ -1,12 +1,13 @@
 name: Release
 
-# Se déclenche uniquement sur un tag de version (ex: v1.4.0), jamais sur un
-# simple push vers main -- évite tout risque de boucle (pas de commit auto
-# vers main, juste la création d'une Release GitHub).
+# Se déclenche UNIQUEMENT quand tu pousses un tag de version (v1.6.0 ou 1.6.0).
+# Un push normal sur main ne fait rien ici (c'est le workflow "Tests" qui tourne).
+# Aucun commit automatique vers main : pas de boucle, pas de redéploiement Render.
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "v[0-9]*.[0-9]*.[0-9]*"   # v1.2.3
+      - "[0-9]*.[0-9]*.[0-9]*"    # 1.2.3 (sans le v)
 
 jobs:
   release:
@@ -16,8 +17,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - name: Create GitHub Release with auto-generated notes
+          fetch-depth: 0   # historique complet : nécessaire pour comparer avec le tag précédent
+
+      - name: Build release notes from commits
+        run: |
+          # checkout peut transformer un tag annoté en tag léger : on re-télécharge les vrais tags
+          git fetch --tags --force origin
+
+          TAG="$GITHUB_REF_NAME"
+          # Tag de version précédent (le plus proche avant celui-ci). Vide pour la toute première release.
+          PREV="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --match '[0-9]*.[0-9]*.[0-9]*' --exclude "$TAG" "refs/tags/${TAG}^{commit}" 2>/dev/null || true)"
+
+          # Message du tag, uniquement si c'est un tag ANNOTÉ (git tag -a v1.6.0 -m "...").
+          # Pour un tag léger, git renverrait le message du commit : on l'ignore.
+          ANNOTATION=""
+          if [ "$(git cat-file -t "refs/tags/$TAG")" = "tag" ]; then
+            ANNOTATION="$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$TAG")"
+          fi
+
+          if [ -n "$PREV" ]; then
+            HEADER="Changes since $PREV"
+            COMMITS="$(git log -n 100 --no-merges --pretty=format:'- %s (%h)' "${PREV}..${TAG}")"
+          else
+            HEADER="Changes"
+            COMMITS="$(git log -n 100 --no-merges --pretty=format:'- %s (%h)' "$TAG")"
+          fi
+
+          {
+            if [ -n "$ANNOTATION" ]; then
+              printf '%s\n\n' "$ANNOTATION"
+            fi
+            printf '## %s\n\n' "$HEADER"
+            if [ -n "$COMMITS" ]; then
+              printf '%s\n' "$COMMITS"
+            else
+              printf '_No code changes since %s._\n' "$PREV"
+            fi
+          } > release_notes.md
+
+          echo "----- release_notes.md -----"
+          cat release_notes.md
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: release_notes.md
+          # Notre texte passe AVANT les notes auto de GitHub (PRs mergées, contributeurs, lien "Full Changelog").
           generate_release_notes: true
