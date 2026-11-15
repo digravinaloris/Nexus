@@ -3,7 +3,6 @@
 No local downloads, FFmpeg process, yt-dlp, or YouTube provider is used here.
 Text searches are routed explicitly to a selected non-YouTube provider.
 """
-import os
 import asyncio
 import discord
 from discord import app_commands
@@ -11,6 +10,7 @@ from discord.ext import commands
 import wavelink
 
 _bot = None
+_queue_locks = {}
 DEFAULT_VOLUME = 50
 MAX_QUEUE_DISPLAY = 10
 
@@ -122,9 +122,11 @@ async def _enqueue(player, tracks):
     for track in items:
         player.queue.put(track)
 
-    if player.current is None:
-        next_track = await player.queue.get_wait()
-        await player.play(next_track)
+    lock = _queue_locks.setdefault(player.guild.id, asyncio.Lock())
+    async with lock:
+        if player.current is None:
+            next_track = await player.queue.get_wait()
+            await player.play(next_track)
 
     return len(items)
 
@@ -135,7 +137,7 @@ class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="play", description="Play music from SoundCloud, Deezer, Bandcamp or a supported link")
+    @app_commands.command(name="play", description="Play music from SoundCloud, Bandcamp or a supported link")
     @app_commands.describe(query="Song name or a supported music link", source="Search provider for text queries")
     @app_commands.choices(source=SOURCE_CHOICES)
     async def play(
@@ -326,11 +328,13 @@ class Music(commands.Cog):
         player = payload.player
         if player is None or str(payload.reason).lower() != "finished":
             return
-        if player.queue:
-            try:
-                await player.play(await player.queue.get_wait())
-            except Exception as exc:
-                print(f"[MUSIC] Failed to start next queued track: {exc}", flush=True)
+        lock = _queue_locks.setdefault(player.guild.id, asyncio.Lock())
+        async with lock:
+            if player.current is None and player.queue:
+                try:
+                    await player.play(await player.queue.get_wait())
+                except Exception as exc:
+                    print(f"[MUSIC] Failed to start next queued track: {exc}", flush=True)
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
