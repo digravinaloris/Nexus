@@ -89,3 +89,65 @@ def test_dashboard_redirects_when_logged_out(nexus):
     client = nexus.api.test_client()
     resp = client.get("/dashboard")
     assert resp.status_code in (301, 302, 303, 307, 308, 401, 403)
+
+
+def test_core_stays_in_sync_with_main_collections(nexus, monkeypatch):
+    """Anti-dérive : core.col et les variables xxx_col de main.py doivent
+    pointer vers les MÊMES collections. Si quelqu'un ajoute une collection dans
+    init_mongo() sans la déclarer dans core.COLLECTION_NAMES (ou l'inverse),
+    ce test échoue."""
+    import core
+
+    class FakeCollection:
+        def __init__(self, name):
+            self.name = name
+
+    class FakeDB:
+        def __init__(self):
+            self._cols = {}
+
+        def __getitem__(self, name):
+            return self._cols.setdefault(name, FakeCollection(name))
+
+    class FakeMongo:
+        def __init__(self, *a, **kw):
+            self._dbs = {}
+
+        def __getitem__(self, name):
+            return self._dbs.setdefault(name, FakeDB())
+
+        def close(self):
+            pass
+
+    # monkeypatch.setattr(x, valeur_actuelle) = on mémorise pour tout restaurer après.
+    col_globals = [n for n in vars(nexus) if n.endswith("_col")]
+    for name in col_globals + ["mongo", "db"]:
+        monkeypatch.setattr(nexus, name, getattr(nexus, name))
+    monkeypatch.setattr(nexus, "MongoClient", FakeMongo)
+    monkeypatch.setattr(nexus.bot, "db", None, raising=False)
+
+    core.reset()
+    try:
+        nexus.init_mongo()
+
+        assert core.is_ready()
+        assert core.db is nexus.db
+
+        # core -> main : chaque collection de core a sa variable xxx_col identique.
+        # (faq n'a pas de variable dans main : elle passe par bot.db["faq"].)
+        main_only_in_core = {"faq"}
+        for attr in core.COLLECTION_NAMES:
+            if attr in main_only_in_core:
+                continue
+            main_var = getattr(nexus, f"{attr}_col", None)
+            assert main_var is not None, f"main.{attr}_col manquante"
+            assert main_var is getattr(core.col, attr), f"core.col.{attr} != main.{attr}_col"
+
+        # main -> core : toute variable xxx_col de main est déclarée dans core.
+        declared = {f"{a}_col" for a in core.COLLECTION_NAMES}
+        for name in col_globals:
+            assert name in declared, f"{name} (main.py) absente de core.COLLECTION_NAMES"
+
+        assert core.col.faq is nexus.db["faq"]
+    finally:
+        core.reset()
