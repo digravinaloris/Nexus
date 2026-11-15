@@ -210,6 +210,59 @@ def parse_lines_list(raw, normalizer, max_items, max_length):
     return sorted(seen)
 
 
+class AllStrategiesFailed(Exception):
+    """Toutes les stratégies d'extraction ont échoué. .errors = [(stratégie, message), ...]"""
+    def __init__(self, errors):
+        self.errors = errors
+        super().__init__("; ".join(f"{name}: {message}" for name, message in errors) or "no extraction strategy available")
+
+
+def build_extraction_strategies(has_cookies, has_js_runtime, can_use_soundcloud):
+    """Ordre de secours pour extraire une piste quand YouTube change ses règles :
+    1. default    : le choix de yt-dlp lui-même (visionos sans runtime JS ; tv_samsung +
+                    visionos + web avec). On ne force JAMAIS player_client ici.
+    2. embedded   : client web_embedded -- nécessite un runtime JS, et ne marche que pour
+                    les vidéos "embeddables".
+    3. cookies    : compte connecté, seulement si des cookies sont configurés (en dernier
+                    recours côté YouTube : un compte utilisé depuis un serveur peut être
+                    suspendu, donc on évite de s'en servir tant que d'autres voies marchent).
+    4. soundcloud : hors YouTube, uniquement pour une recherche texte (pas un lien direct)."""
+    strategies = ["default"]
+    if has_js_runtime:
+        strategies.append("embedded")
+    if has_cookies:
+        strategies.append("cookies")
+    if can_use_soundcloud:
+        strategies.append("soundcloud")
+    return strategies
+
+
+def to_soundcloud_search(query):
+    """'ytsearch:foo' -> 'scsearch1:foo'. None si ce n'est pas une recherche texte
+    (lien direct, ou requête vide) : on ne sait alors pas quoi chercher ailleurs."""
+    prefix = "ytsearch:"
+    if query.startswith(prefix) and query[len(prefix):].strip():
+        return "scsearch1:" + query[len(prefix):].strip()
+    return None
+
+
+def run_extraction_strategies(strategies, attempt, is_retryable):
+    """Essaie chaque stratégie dans l'ordre. attempt(nom) retourne un résultat ou lève.
+    Si l'exception vérifie is_retryable(exc), on passe à la suivante ; sinon on la
+    relance telle quelle (bug réel, pas un échec d'extraction).
+    Retourne (résultat, stratégie_gagnante, erreurs_des_stratégies_précédentes).
+    Lève AllStrategiesFailed si toutes échouent."""
+    errors = []
+    for name in strategies:
+        try:
+            return attempt(name), name, errors
+        except Exception as exc:
+            if not is_retryable(exc):
+                raise
+            errors.append((name, str(exc)))
+    raise AllStrategiesFailed(errors)
+
+
 def format_uptime(total_seconds):
     """Formate un nombre de secondes en chaîne lisible ('2d 5h', '14m')."""
     total_seconds = int(total_seconds)
