@@ -90,7 +90,7 @@ async def _get_player(interaction):
         return player
 
     try:
-        player = await channel.connect(cls=wavelink.Player, self_deaf=True)
+        player = await channel.connect(cls=wavelink.Player, self_deaf=False)
         await player.set_volume(DEFAULT_VOLUME)
         return player
     except Exception as exc:
