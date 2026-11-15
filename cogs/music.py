@@ -9,6 +9,9 @@ quelques dépendances partagées via l'objet `bot` lui-même
 (voir `setup()` en bas de fichier).
 """
 import os
+import sys
+import json
+import shutil
 import re
 import time
 import asyncio
@@ -18,6 +21,7 @@ from discord import app_commands
 from discord.ext import commands
 import yt_dlp
 import requests
+from utils import AllStrategiesFailed, build_extraction_strategies, run_extraction_strategies, to_soundcloud_search
 
 # Référence au bot, renseignée par setup() au chargement de l'extension.
 # Utilisée par les fonctions module-level qui ont besoin de la boucle
@@ -83,29 +87,63 @@ YTDL_BASE_OPTIONS = {
     }],
 }
 
-# YouTube change régulièrement quel "client" d'extraction fonctionne, et ça casse
-# souvent en quelques jours (chat du mainteneur yt-dlp). Situation constatée en
-# sept. 2026 : le client "tv_downgraded" -- choisi automatiquement dès qu'un
-# cookiefile est fourni -- est actuellement cassé côté YouTube et renvoie
-# "The page needs to be reloaded." (github.com/yt-dlp/yt-dlp/issues/17389).
-# Donc : on essaie D'ABORD sans cookies (web_embedded/tv, jamais concernés
-# par ce bug précis), et on ne se rabat sur les cookies que si ça échoue --
-# utile seulement pour du contenu réservé aux comptes connectés.
-YTDL_OPTIONS_NO_COOKIES = {
-    **YTDL_BASE_OPTIONS,
-    "extractor_args": {"youtube": {"player_client": ["web_embedded", "tv"]}},
-}
+# --- Extraction YouTube : chaîne de secours ---------------------------------------------
+#
+# YouTube change quels "clients" d'extraction marchent presque chaque semaine, et yt-dlp
+# met à jour SES clients par défaut à chaque release. On NE FORCE donc PLUS `player_client` :
+# l'ancien réglage ['web_embedded', 'tv'] désactivait les bons clients par défaut et
+# dépendait de `tv`, cassé depuis août 2026 ("The page needs to be reloaded." --
+# github.com/yt-dlp/yt-dlp/issues/17389).
+#
+# Ce qu'utilise yt-dlp par défaut (lu dans le code de yt-dlp 2026.10.26) :
+#   - sans runtime JS : `visionos` (aucun JS ni PO token requis)
+#   - avec runtime JS : `tv_samsung`, `visionos`, `web`
+# Le runtime JS vient du paquet pip `deno` (voir requirements.txt) -- `yt-dlp[default]`
+# installe les scripts solveurs mais PAS de runtime.
+#
+# Ordre de secours (voir utils.build_extraction_strategies) :
+#   default -> embedded -> cookies (si configurés) -> soundcloud (recherche texte seulement)
 
-YTDL_OPTIONS_WITH_COOKIES = {
-    **YTDL_BASE_OPTIONS,
-    "extractor_args": {"youtube": {"player_client": ["default", "web_embedded"]}},
-}
-if YOUTUBE_COOKIES_CONTENT:
-    YTDL_OPTIONS_WITH_COOKIES["cookiefile"] = YOUTUBE_COOKIES_PATH
 
-# Conservé pour la recherche (extract_flat, ne télécharge rien -- beaucoup
-# moins exposé à ce bug précis puisqu'il ne résout pas les formats jouables).
-YTDL_OPTIONS = YTDL_OPTIONS_NO_COOKIES
+def _log(event, level="info", **fields):
+    """Une ligne JSON par événement (même format que log_json de main.py : les cogs ne
+    peuvent pas importer main.py) -- filtrable dans les logs Render."""
+    payload = {"level": level, "event": event, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), **fields}
+    print(json.dumps(payload, default=str), flush=True)
+
+
+def _find_js_runtime():
+    """Config `js_runtimes` de yt-dlp, ou {} si aucun runtime trouvé (yt-dlp retombe alors
+    sur `visionos`, qui n'en a pas besoin). On cherche d'abord à côté de l'interpréteur
+    Python, là où pip installe `deno` : le PATH de Render n'inclut pas forcément le venv."""
+    candidates = [
+        ("deno", os.path.join(sys.prefix, "bin", "deno")),
+        ("deno", os.path.join(sys.prefix, "Scripts", "deno.exe")),  # dev local sous Windows
+        ("deno", shutil.which("deno")),
+        ("node", shutil.which("node")),
+    ]
+    for name, path in candidates:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return {name: {"path": path}}
+    return {}
+
+
+JS_RUNTIMES = _find_js_runtime()
+HAS_COOKIES = bool(YOUTUBE_COOKIES_CONTENT)
+_log("music_engine_ready", yt_dlp=yt_dlp.version.__version__,
+     js_runtime=(list(JS_RUNTIMES.items())[0] if JS_RUNTIMES else None), cookies=HAS_COOKIES)
+
+
+def _ytdl_options(strategy):
+    options = dict(YTDL_BASE_OPTIONS)
+    if JS_RUNTIMES:
+        options["js_runtimes"] = JS_RUNTIMES
+    if strategy == "embedded":
+        options["extractor_args"] = {"youtube": {"player_client": ["web_embedded"]}}
+    elif strategy == "cookies":
+        options["cookiefile"] = YOUTUBE_COOKIES_PATH
+    # "default" et "soundcloud" : options de base, AUCUN client forcé
+    return options
 
 # Fichier local mp3 déjà téléchargé : pas besoin de -reconnect (plus de réseau pendant la lecture).
 FFMPEG_OPTIONS_TEMPLATE = {
@@ -115,8 +153,16 @@ FFMPEG_OPTIONS_TEMPLATE = {
 
 DEFAULT_VOLUME = 0.5  # 50%, ajustable par /volume (0.0 à 2.0)
 
-ytdl_no_cookies = yt_dlp.YoutubeDL(YTDL_OPTIONS_NO_COOKIES)
-ytdl_with_cookies = yt_dlp.YoutubeDL(YTDL_OPTIONS_WITH_COOKIES) if YOUTUBE_COOKIES_CONTENT else None
+_ytdl_instances = {}
+
+
+def _get_ytdl(strategy):
+    """Une instance yt-dlp par stratégie, créée à la demande puis réutilisée (comme avant :
+    elle garde en cache le player JS et les données de session entre les appels)."""
+    key = "default" if strategy == "soundcloud" else strategy
+    if key not in _ytdl_instances:
+        _ytdl_instances[key] = yt_dlp.YoutubeDL(_ytdl_options(key))
+    return _ytdl_instances[key]
 
 SPOTIFY_TRACK_RE = re.compile(r"open\.spotify\.com/track/([A-Za-z0-9]+)")
 SPOTIFY_PLAYLIST_RE = re.compile(r"open\.spotify\.com/(playlist|album)/([A-Za-z0-9]+)")
@@ -179,22 +225,44 @@ async def resolve_query(query, requester):
     else:
         query = f"ytsearch:{query}"
 
-    def extract():
+    # Une recherche texte peut se rabattre sur SoundCloud si YouTube bloque tout ; un lien
+    # direct non (on ne sait pas quoi chercher ailleurs).
+    soundcloud_query = to_soundcloud_search(query)
+    strategies = build_extraction_strategies(
+        has_cookies=HAS_COOKIES,
+        has_js_runtime=bool(JS_RUNTIMES),
+        can_use_soundcloud=soundcloud_query is not None,
+    )
+
+    def extract_with(strategy):
         # download=True : on télécharge réellement le fichier, le post-processeur le convertit en mp3.
-        # On essaie d'abord SANS cookies (évite le bug tv_downgraded actuel), et on ne se
-        # rabat sur les cookies que si ça échoue vraiment (contenu réservé aux comptes connectés).
-        try:
-            info = ytdl_no_cookies.extract_info(query, download=True)
-        except yt_dlp.utils.DownloadError as e:
-            if ytdl_with_cookies is None:
-                raise
-            print(f"[MUSIC] No-cookies extraction failed ({e}), retrying with cookies...", flush=True)
-            info = ytdl_with_cookies.extract_info(query, download=True)
+        target = soundcloud_query if strategy == "soundcloud" else query
+        info = _get_ytdl(strategy).extract_info(target, download=True)
         if "entries" in info:
             info = info["entries"][0]
         return info
 
-    info = await loop.run_in_executor(None, extract)
+    def extract():
+        return run_extraction_strategies(
+            strategies, extract_with, lambda exc: isinstance(exc, yt_dlp.utils.DownloadError),
+        )
+
+    try:
+        info, used_strategy, failed_before = await loop.run_in_executor(None, extract)
+    except AllStrategiesFailed as exc:
+        _log("music_extraction_failed", level="error", query=query, tried=[name for name, _ in exc.errors],
+             errors={name: message[:300] for name, message in exc.errors})
+        # Le message de la PREMIÈRE stratégie (YouTube par défaut) est presque toujours la vraie
+        # cause ; les suivantes (SoundCloud...) ne font que répéter "introuvable".
+        first_name, first_message = exc.errors[0]
+        others = [name for name, _ in exc.errors[1:]]
+        suffix = f"\n(also tried: {', '.join(others)})" if others else ""
+        raise yt_dlp.utils.DownloadError(first_message + suffix) from exc
+
+    if failed_before:
+        _log("music_extraction_fallback", query=query, used=used_strategy,
+             failed=[name for name, _ in failed_before],
+             errors={name: message[:300] for name, message in failed_before})
 
     video_id = info.get("id")
     expected_mp3_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
@@ -202,8 +270,12 @@ async def resolve_query(query, requester):
     if not os.path.isfile(expected_mp3_path):
         raise FileNotFoundError(f"Downloaded file not found at expected path: {expected_mp3_path}")
 
+    title = info.get("title", "Unknown title")
+    if used_strategy == "soundcloud":
+        title = f"{title} (SoundCloud)"  # l'utilisateur voit que ce n'est pas la version YouTube
+
     return Track(
-        title=info.get("title", "Unknown title"),
+        title=title,
         filepath=expected_mp3_path,
         webpage_url=info.get("webpage_url"),
         duration=info.get("duration"),
