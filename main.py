@@ -28,6 +28,7 @@ from sentry_sdk.integrations.flask import FlaskIntegration
 import json as _json
 import zipfile
 import utils
+import core
 from utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
     is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
@@ -83,6 +84,9 @@ def init_mongo():
     quarantine_col = db["quarantine"]
     reminders_col = db["reminders"]
     templates_col = db["templates"]
+    # Même collections, exposées via l'objet stable `core.col` (cf. core.py) :
+    # les futurs modules extraits de main.py s'appuient dessus, pas sur ces globals.
+    core.init_db(mongo, db)
     # Exposé sur l'objet bot (pas avant : init_mongo() tourne dans on_ready(),
     # après setup_hook()/le chargement des cogs) -- un cog qui a besoin de Mongo
     # (ex: cogs/faq.py) lit bot.db au moment de la commande/l'event, jamais à
