@@ -101,6 +101,9 @@ async def _resolve(query, source_name):
     # URLs are resolved by Lavalink's registered source managers/plugins.
     # Plain text is always sent to an explicit non-YouTube search prefix.
     if query.startswith(("https://", "http://")):
+        lowered = query.lower()
+        if any(host in lowered for host in ("youtube.com", "youtu.be", "youtube-nocookie.com")):
+            raise ValueError("YouTube links are disabled on Nexus music.")
         return await wavelink.Playable.search(query)
 
     prefix = SOURCES.get(source_name, SOURCES["SoundCloud"])
@@ -149,6 +152,7 @@ class Music(commands.Cog):
         if player is None:
             return
 
+        was_playing = player.playing or player.paused
         try:
             tracks = await _resolve(query, source.value if source else "SoundCloud")
             count = await _enqueue(player, tracks)
@@ -164,8 +168,9 @@ class Music(commands.Cog):
             return
 
         current = player.current
-        if current and count == 1 and current.title == getattr(tracks[0] if not isinstance(tracks, wavelink.Playlist) else tracks.tracks[0], "title", None):
-            message = f"🎵 **Now playing:** [{current.title}]({current.uri})"
+        if not was_playing and current:
+            link = f"({current.uri})" if current.uri else ""
+            message = f"🎵 **Now playing:** [{current.title}]{link}"
         else:
             message = f"➕ Added **{count}** track(s) to the queue."
         await interaction.followup.send(message)
@@ -320,7 +325,7 @@ class Music(commands.Cog):
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
         # Only advance on natural completion. /skip and /stop handle their own transitions.
         player = payload.player
-        if player is None or payload.reason != "finished":
+        if player is None or str(payload.reason).lower() != "finished":
             return
         if player.queue:
             try:
