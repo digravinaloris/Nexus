@@ -119,11 +119,10 @@ async def _enqueue(player, tracks):
     if not items:
         return 0
 
-    for track in items:
-        player.queue.put(track)
-
     lock = _queue_locks.setdefault(player.guild.id, asyncio.Lock())
     async with lock:
+        for track in items:
+            player.queue.put(track)
         if player.current is None:
             next_track = await player.queue.get_wait()
             await player.play(next_track)
@@ -241,11 +240,13 @@ class Music(commands.Cog):
         if not isinstance(player, wavelink.Player) or player.current is None:
             await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
             return
-        if player.queue:
-            next_track = await player.queue.get_wait()
-            await player.play(next_track)
-        else:
-            await player.stop()
+        lock = _queue_locks.setdefault(player.guild.id, asyncio.Lock())
+        async with lock:
+            if player.queue:
+                next_track = await player.queue.get_wait()
+                await player.play(next_track)
+            else:
+                await player.stop()
         await interaction.response.send_message("⏭️ Skipped.")
 
     @app_commands.command(name="volume", description="Set music volume (0 to 200%)")
