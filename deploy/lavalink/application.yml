@@ -1,0 +1,51 @@
+# Nexus Lavalink configuration
+# Explicit providers only: no ytsearch, ytmsearch or YouTube fallback.
+plugins:
+  lavasrc:
+    providers:
+      - "scsearch:%QUERY%"
+      - "bcsearch:%QUERY%"
+    sources:
+      spotify: false
+      applemusic: false
+      deezer: false
+      yandexmusic: false
+      youtube: false
+      vkmusic: false
+      tidal: false
+      qobuz: false
+      jiosaavn: false
+      ytdlp: false
+    lyrics-sources:
+      spotify: false
+      deezer: false
+      youtube: false
+      yandexmusic: false
+      vkmusic: false
+      lrcLib: true
+
+lavalink:
+  plugins:
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+      repository: "https://maven.lavalink.dev/releases"
+
+server:
+  address: 0.0.0.0
+  # Render provides PORT (normally 10000). Locally, fall back to 2333.
+  port: "${PORT:2333}"
+  password: "${LAVALINK_PASSWORD}"
+  sources:
+    youtube: false
+    soundcloud: true
+    bandcamp: true
+    http: false
+    local: false
+    twitch: false
+    vimeo: false
+    nico: false
+  bufferDurationMs: 400
+  frameBufferDurationMs: 5000
+  playerUpdateInterval: 5
+  youtubeSearchEnabled: false
+  soundcloudSearchEnabled: true
+  gc-warnings: true
