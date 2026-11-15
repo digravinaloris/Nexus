@@ -21,7 +21,7 @@ Do not expose port 2333 publicly unless necessary. Prefer a private network betw
 
 ## Sources and YouTube policy
 
-The LavaSrc provider list is explicit and contains Deezer, SoundCloud and Bandcamp only. YouTube, YouTube Music and yt-dlp are disabled; there is no YouTube search fallback.
+The LavaSrc provider list is explicit and contains SoundCloud and Bandcamp only. YouTube, YouTube Music and yt-dlp are disabled; there is no YouTube search fallback.
 
 Spotify and Apple Music can be enabled later as metadata/mirror sources after adding the credentials required by LavaSrc. They do not provide direct audio playback through this integration. Any mirror fallback must remain restricted to the non-YouTube providers listed above.
 
