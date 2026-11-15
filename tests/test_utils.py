@@ -23,6 +23,10 @@ from utils import (
     normalize_banned_word,
     normalize_domain,
     parse_lines_list,
+    AllStrategiesFailed,
+    build_extraction_strategies,
+    to_soundcloud_search,
+    run_extraction_strategies,
     format_uptime,
 )
 
@@ -323,6 +327,96 @@ class TestParseLinesList:
     def test_domains_normalized_per_line(self):
         raw = "https://www.A.com/x\nb.com"
         assert parse_lines_list(raw, normalize_domain, 100, 253) == ["a.com", "b.com"]
+
+
+class TestBuildExtractionStrategies:
+    def test_minimal_is_default_only(self):
+        assert build_extraction_strategies(False, False, False) == ["default"]
+
+    def test_embedded_only_with_js_runtime(self):
+        assert "embedded" not in build_extraction_strategies(False, False, False)
+        assert "embedded" in build_extraction_strategies(False, True, False)
+
+    def test_cookies_only_if_configured(self):
+        assert "cookies" not in build_extraction_strategies(False, True, True)
+        assert "cookies" in build_extraction_strategies(True, True, True)
+
+    def test_soundcloud_only_if_allowed(self):
+        assert "soundcloud" not in build_extraction_strategies(True, True, False)
+        assert "soundcloud" in build_extraction_strategies(True, True, True)
+
+    def test_full_order_cookies_after_embedded_and_soundcloud_last(self):
+        assert build_extraction_strategies(True, True, True) == ["default", "embedded", "cookies", "soundcloud"]
+
+    def test_default_always_first(self):
+        for cookies in (False, True):
+            for js in (False, True):
+                for sc in (False, True):
+                    assert build_extraction_strategies(cookies, js, sc)[0] == "default"
+
+
+class TestToSoundcloudSearch:
+    def test_text_search_converted(self):
+        assert to_soundcloud_search("ytsearch:daft punk one more time") == "scsearch1:daft punk one more time"
+
+    def test_whitespace_trimmed(self):
+        assert to_soundcloud_search("ytsearch:   hello  ") == "scsearch1:hello"
+
+    def test_direct_url_not_converted(self):
+        assert to_soundcloud_search("https://www.youtube.com/watch?v=abc") is None
+
+    def test_empty_search_not_converted(self):
+        assert to_soundcloud_search("ytsearch:   ") is None
+
+    def test_other_prefix_not_converted(self):
+        assert to_soundcloud_search("scsearch1:foo") is None
+
+
+class _Retryable(Exception):
+    pass
+
+
+class TestRunExtractionStrategies:
+    def test_first_success_wins_and_stops(self):
+        calls = []
+        def attempt(name):
+            calls.append(name)
+            return f"ok-{name}"
+        result, used, errors = run_extraction_strategies(["a", "b"], attempt, lambda e: True)
+        assert (result, used, errors, calls) == ("ok-a", "a", [], ["a"])
+
+    def test_falls_through_retryable_errors_and_reports_them(self):
+        def attempt(name):
+            if name in ("a", "b"):
+                raise _Retryable(f"{name} broke")
+            return "finally"
+        result, used, errors = run_extraction_strategies(["a", "b", "c"], attempt, lambda e: isinstance(e, _Retryable))
+        assert result == "finally" and used == "c"
+        assert errors == [("a", "a broke"), ("b", "b broke")]
+
+    def test_non_retryable_error_is_raised_immediately(self):
+        calls = []
+        def attempt(name):
+            calls.append(name)
+            raise ValueError("real bug")
+        import pytest
+        with pytest.raises(ValueError):
+            run_extraction_strategies(["a", "b"], attempt, lambda e: isinstance(e, _Retryable))
+        assert calls == ["a"]  # la 2e stratégie n'est jamais tentée
+
+    def test_all_fail_raises_with_every_error(self):
+        def attempt(name):
+            raise _Retryable(f"{name} failed")
+        import pytest
+        with pytest.raises(AllStrategiesFailed) as info:
+            run_extraction_strategies(["a", "b"], attempt, lambda e: True)
+        assert info.value.errors == [("a", "a failed"), ("b", "b failed")]
+        assert "a: a failed" in str(info.value) and "b: b failed" in str(info.value)
+
+    def test_empty_strategy_list_raises(self):
+        import pytest
+        with pytest.raises(AllStrategiesFailed):
+            run_extraction_strategies([], lambda n: "x", lambda e: True)
 
 
 class TestFormatUptime:
