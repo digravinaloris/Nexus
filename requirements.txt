@@ -1,11 +1,9 @@
 discord.py[voice]
+wavelink>=3.5,<4
 flask
 pymongo
 dnspython
-yt-dlp[default]
-deno
 PyNaCl
-imageio-ffmpeg
 requests
 pyyaml
 pyotp
