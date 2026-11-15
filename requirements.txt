@@ -2,7 +2,8 @@ discord.py[voice]
 flask
 pymongo
 dnspython
-yt-dlp
+yt-dlp[default]
+deno
 PyNaCl
 imageio-ffmpeg
 requests
