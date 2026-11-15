@@ -919,19 +919,24 @@ async def setup_hook():
     lavalink_uri = os.getenv("LAVALINK_URI")
     lavalink_password = os.getenv("LAVALINK_PASSWORD")
     if lavalink_uri and lavalink_password:
-        try:
-            import wavelink
-            node = wavelink.Node(
-                identifier="nexus-audio",
-                uri=lavalink_uri,
-                password=lavalink_password,
-                client=bot,
-                resume_timeout=60,
-            )
-            await wavelink.Pool.connect(nodes=[node], client=bot)
-            print("[MUSIC] Lavalink connection initialised", flush=True)
-        except Exception as e:
-            print(f"[MUSIC] Lavalink unavailable; music commands will stay offline: {e}", flush=True)
+        async def connect_lavalink():
+            try:
+                import wavelink
+                node = wavelink.Node(
+                    identifier="nexus-audio",
+                    uri=lavalink_uri,
+                    password=lavalink_password,
+                    client=bot,
+                    resume_timeout=60,
+                )
+                await wavelink.Pool.connect(nodes=[node], client=bot)
+                print("[MUSIC] Lavalink connection established", flush=True)
+            except Exception as e:
+                print(f"[MUSIC] Lavalink unavailable; music commands will stay offline: {e}", flush=True)
+
+        # Do not let an unavailable audio server delay startup of moderation,
+        # dashboard, tickets or the other independent Nexus features.
+        asyncio.create_task(connect_lavalink(), name="nexus-lavalink-connect")
     else:
         print("[MUSIC] LAVALINK_URI/LAVALINK_PASSWORD not configured; music disabled", flush=True)
 
