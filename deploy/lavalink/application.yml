@@ -1,5 +1,7 @@
+
 # Nexus Lavalink configuration
-# Explicit providers only: no ytsearch, ytmsearch or YouTube fallback.
+# Multi-source playback: SoundCloud and Bandcamp only.
+
 plugins:
   lavasrc:
     providers:
@@ -24,28 +26,29 @@ plugins:
       vkmusic: false
       lrcLib: true
 
+server:
+  address: 0.0.0.0
+  port: "${PORT:2333}"
+
 lavalink:
   plugins:
     - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
       repository: "https://maven.lavalink.dev/releases"
 
-server:
-  address: 0.0.0.0
-  # Render provides PORT (normally 10000). Locally, fall back to 2333.
-  port: "${PORT:2333}"
-  password: "${LAVALINK_PASSWORD}"
-  sources:
-    youtube: false
-    soundcloud: true
-    bandcamp: true
-    http: false
-    local: false
-    twitch: false
-    vimeo: false
-    nico: false
-  bufferDurationMs: 400
-  frameBufferDurationMs: 5000
-  playerUpdateInterval: 5
-  youtubeSearchEnabled: false
-  soundcloudSearchEnabled: true
-  gc-warnings: true
+  server:
+    password: "${LAVALINK_PASSWORD}"
+    sources:
+      youtube: false
+      soundcloud: true
+      bandcamp: true
+      http: false
+      local: false
+      twitch: false
+      vimeo: false
+      nico: false
+    bufferDurationMs: 400
+    frameBufferDurationMs: 5000
+    playerUpdateInterval: 5
+    youtubeSearchEnabled: false
+    soundcloudSearchEnabled: true
+    gc-warnings: true
