@@ -1,41 +1,14 @@
 # Nexus Lavalink configuration
-# Explicit providers only: deliberately no ytsearch/ytmsearch fallback.
-server:
-  address: 0.0.0.0
-  port: 2333
-  password: "${LAVALINK_PASSWORD}"
-
-lavalink:
-  plugins:
-    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
-      repository: "https://maven.lavalink.dev/releases"
-  server:
-    password: "${LAVALINK_PASSWORD}"
-    sources:
-      youtube: false
-      soundcloud: true
-      bandcamp: true
-      http: false
-      local: false
-      twitch: false
-      vimeo: false
-      nico: false
-    bufferDurationMs: 400
-    frameBufferDurationMs: 5000
-    playerUpdateInterval: 5
-    gc-warnings: true
-
+# Explicit providers only: no ytsearch, ytmsearch or YouTube fallback.
 plugins:
   lavasrc:
     providers:
-      - "dzisrc:%ISRC%"
-      - "dzsearch:%QUERY%"
       - "scsearch:%QUERY%"
       - "bcsearch:%QUERY%"
     sources:
       spotify: false
       applemusic: false
-      deezer: true
+      deezer: false
       yandexmusic: false
       youtube: false
       vkmusic: false
@@ -45,8 +18,33 @@ plugins:
       ytdlp: false
     lyrics-sources:
       spotify: false
-      deezer: true
+      deezer: false
       youtube: false
       yandexmusic: false
       vkmusic: false
       lrcLib: true
+
+lavalink:
+  plugins:
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+      repository: "https://maven.lavalink.dev/releases"
+
+server:
+  address: 0.0.0.0
+  port: 2333
+  password: "${LAVALINK_PASSWORD}"
+  sources:
+    youtube: false
+    soundcloud: true
+    bandcamp: true
+    http: false
+    local: false
+    twitch: false
+    vimeo: false
+    nico: false
+  bufferDurationMs: 400
+  frameBufferDurationMs: 5000
+  playerUpdateInterval: 5
+  youtubeSearchEnabled: false
+  soundcloudSearchEnabled: true
+  gc-warnings: true
