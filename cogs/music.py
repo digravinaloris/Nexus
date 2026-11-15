@@ -1,7 +1,7 @@
 """Nexus music commands powered by Lavalink + Wavelink.
 
-No local downloads, FFmpeg process, yt-dlp, or YouTube provider is used here.
-Text searches are routed explicitly to a selected non-YouTube provider.
+Playback is handled by a separate Lavalink node. Supported providers are
+YouTube (youtube-source plugin), SoundCloud and Bandcamp.
 """
 import asyncio
 import discord
@@ -15,6 +15,7 @@ DEFAULT_VOLUME = 50
 MAX_QUEUE_DISPLAY = 10
 
 SOURCES = {
+    "YouTube": "ytsearch",
     "SoundCloud": "scsearch",
     "Bandcamp": "bcsearch",
 }
@@ -27,6 +28,8 @@ SOURCE_CHOICES = [
 def _source_name(track):
     uri = getattr(track, "uri", None) or ""
     source = (getattr(track, "source", None) or "").lower()
+    if "youtube.com" in uri.lower() or "youtu.be" in uri.lower() or source == "youtube":
+        return "YouTube"
     if "soundcloud" in uri.lower() or source == "soundcloud":
         return "SoundCloud"
     if "bandcamp" in uri.lower() or source == "bandcamp":
@@ -99,15 +102,13 @@ async def _get_player(interaction):
 
 
 async def _resolve(query, source_name):
-    # URLs are resolved by Lavalink's registered source managers/plugins.
-    # Plain text is always sent to an explicit non-YouTube search prefix.
+    """Resolve direct URLs or search the selected provider."""
     if query.startswith(("https://", "http://")):
-        lowered = query.lower()
-        if any(host in lowered for host in ("youtube.com", "youtu.be", "youtube-nocookie.com")):
-            raise ValueError("YouTube links are disabled on Nexus music.")
+        # Let Lavalink's registered source managers resolve supported URLs,
+        # including YouTube video and playlist links.
         return await wavelink.Playable.search(query)
 
-    prefix = SOURCES.get(source_name, SOURCES["SoundCloud"])
+    prefix = SOURCES.get(source_name, SOURCES["YouTube"])
     return await wavelink.Playable.search(query, source=prefix)
 
 
@@ -138,7 +139,7 @@ class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="play", description="Play music from SoundCloud, Bandcamp or a supported link")
+    @app_commands.command(name="play", description="Play music from YouTube, SoundCloud, Bandcamp or a supported link")
     @app_commands.describe(query="Song name or a supported music link", source="Search provider for text queries")
     @app_commands.choices(source=SOURCE_CHOICES)
     async def play(
@@ -156,7 +157,7 @@ class Music(commands.Cog):
 
         was_playing = player.playing or player.paused
         try:
-            tracks = await _resolve(query, source.value if source else "SoundCloud")
+            tracks = await _resolve(query, source.value if source else "YouTube")
             count = await _enqueue(player, tracks)
         except Exception as exc:
             await interaction.followup.send(
@@ -177,7 +178,7 @@ class Music(commands.Cog):
             message = f"➕ Added **{count}** track(s) to the queue."
         await interaction.followup.send(message)
 
-    @app_commands.command(name="search", description="Search a music provider and show the top results")
+    @app_commands.command(name="search", description="Search YouTube, SoundCloud or Bandcamp")
     @app_commands.describe(query="Song, artist or album", source="Provider to search")
     @app_commands.choices(source=SOURCE_CHOICES)
     async def search(
@@ -193,7 +194,7 @@ class Music(commands.Cog):
             await interaction.followup.send("⚠️ Music service unavailable.", ephemeral=True)
             return
         try:
-            tracks = await _resolve(query, source.value if source else "SoundCloud")
+            tracks = await _resolve(query, source.value if source else "YouTube")
         except Exception as exc:
             await interaction.followup.send(
                 f"❌ Search failed: `{str(exc)[:160]}`", ephemeral=True

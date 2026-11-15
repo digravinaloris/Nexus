@@ -82,7 +82,7 @@ Every sanction (ban, kick, mute, warn, tempban, softban) DMs the person a case n
 | `/lock` `/unlock` | Lock / unlock a text channel |
 | `/vlock` `/vunlock` | Lock / unlock a voice channel |
 | `/lockedchannels` | List currently locked channels |
-| `/slowmode <channel> <seconds>` | Set or disable slowmode on a channel |
+| `/slowmode <channel> <seconds>` | Set or disable slowmode on a text channel |
 | `/roleadd` `/roleremove` | Add / remove a role from a member |
 | `/reactionrole` | Create a reaction-role message |
 | `/nickname <member>` | Change a member's nickname |
@@ -148,7 +148,9 @@ Clicking the panel button opens a short form, then creates a private channel wit
 ### Music
 | Command | Description |
 |---|---|
-| `/play` `/search` `/pause` `/resume` `/skip` `/stop` `/queue` `/volume` `/musicstatus` | Multi-source playback through Lavalink (SoundCloud and Bandcamp search; supported direct links) |
+| `/play` | Play a track or playlist from a supported link, or search YouTube, SoundCloud or Bandcamp |
+| `/search` | Search YouTube, SoundCloud or Bandcamp and show the top results |
+| `/pause` `/resume` `/skip` `/stop` `/queue` `/volume` `/musicstatus` | Music playback controls and Lavalink status |
 
 ### Bot Owner Only
 | Command | Description |
@@ -189,7 +191,7 @@ Every server only shows up for users who are genuinely an Administrator there, r
 - **Python** + [discord.py](https://discordpy.readthedocs.io/)
 - **Flask** — the web dashboard and the REST API powering the Android companion app
 - **MongoDB Atlas** — cases, config, tickets, backups, appeals, and everything else
-- **Wavelink** + **Lavalink** + **LavaSrc** — separate multi-source music engine (YouTube and yt-dlp disabled)
+- **Wavelink** + **Lavalink** + **youtube-source** + **LavaSearch** + **LavaSrc** — separate multi-source music engine
 - **pyotp** — the kill-switch's authenticator-app verification
 - **Resend** — transactional email for the kill-switch (Render blocks outbound SMTP)
 - **PyYAML** — dashboard translations (`en_us.yml`, `fr_fr.yml`)
@@ -206,6 +208,7 @@ Built with Kotlin + Jetpack Compose, connecting to the bot's REST API to let ser
 ## Known Issues
 
 - **Music requires Lavalink** — configure `LAVALINK_URI` and `LAVALINK_PASSWORD` on the bot, and run the separate Lavalink service described in [deploy/lavalink](deploy/lavalink/README.md). Music stays offline if Lavalink is unavailable; the rest of Nexus continues to run.
+- **YouTube reliability** — YouTube can change its anti-bot protections. If playback starts failing, check the Lavalink logs and the [youtube-source releases](https://github.com/lavalink-devs/youtube-source/releases).
 
 ---
 

@@ -1,10 +1,22 @@
-
 # Nexus Lavalink configuration
-# Multi-source playback: SoundCloud and Bandcamp only.
+# Multi-source playback: YouTube, SoundCloud and Bandcamp.
 
 plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+    # Try clients in order; YouTube may change or restrict individual clients.
+    clients:
+      - ANDROID_VR
+      - WEB
+      - MWEB
+      - WEBEMBEDDED
+
   lavasrc:
     providers:
+      - "ytsearch:%QUERY%"
       - "scsearch:%QUERY%"
       - "bcsearch:%QUERY%"
     sources:
@@ -32,12 +44,20 @@ server:
 
 lavalink:
   plugins:
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+    - dependency: "com.github.topi314.lavasearch:lavasearch-plugin:1.0.0"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
     - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
       repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
 
   server:
     password: "${LAVALINK_PASSWORD}"
     sources:
+      # The legacy built-in source must stay disabled; youtube-source replaces it.
       youtube: false
       soundcloud: true
       bandcamp: true

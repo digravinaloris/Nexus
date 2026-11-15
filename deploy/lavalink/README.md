@@ -6,7 +6,7 @@ Nexus runs Lavalink as a separate service from the Discord bot.
 
 Create a new **Web Service** from this repository and use these settings:
 
-- **Branch:** `feature/music-lavalink`
+- **Branch:** `main` after this pull request is merged (or this feature branch while testing)
 - **Runtime:** Docker
 - **Root Directory:** leave empty
 - **Dockerfile Path:** `deploy/lavalink/Dockerfile`
@@ -31,6 +31,22 @@ Set these on the existing Nexus service:
 
 Keep the password secret. Do not put it in GitHub or in a public issue.
 
+## Included Lavalink plugins
+
+The service downloads these plugins at startup:
+
+- **youtube-source 1.18.2** — YouTube search, video links and playlist links.
+- **LavaSearch 1.0.0** — Lavalink's advanced search endpoint for tracks, albums, artists and playlists.
+- **LavaSrc 4.8.3** — provider/mirroring framework; Spotify credentials are not enabled in this configuration.
+
+The legacy built-in YouTube source is disabled as required by youtube-source. The separate YouTube plugin is enabled and configured with multiple clients. Nexus text searches default to YouTube; the `/play` and `/search` commands also let you choose SoundCloud or Bandcamp. Direct supported URLs are resolved by Lavalink.
+
+### YouTube reliability notes
+
+YouTube can change its anti-bot checks and playback clients without notice. The plugin currently supports optional PoToken/visitorData and OAuth configuration, but neither is configured by default. If Render logs show bot-check, 403, or playback-client errors, we may need to configure a PoToken or investigate a compatible client update. Do not use your primary Google account for OAuth; the plugin maintainers warn that OAuth is not risk-free.
+
+The YouTube plugin release page currently lists 1.18.2 as its latest stable release. Keep an eye on the official repository for updates.
+
 ## Important: Render Free sleep behavior
 
 A Free Web Service can spin down after a period without inbound traffic. The first connection after sleep can take a while while Render starts the container. Music may therefore be temporarily unavailable, and this is not equivalent to an always-on Lavalink node.
@@ -46,8 +62,6 @@ A Free Web Service can spin down after a period without inbound traffic. The fir
 5. Start Lavalink.
 6. Start Nexus with `LAVALINK_URI=http://127.0.0.1:2333` and the same password.
 
-## Sources and YouTube policy
+## Sources and Spotify
 
-The LavaSrc provider list is explicit and contains SoundCloud and Bandcamp only. YouTube, YouTube Music and yt-dlp are disabled; there is no YouTube search fallback.
-
-Spotify and Apple Music can be enabled later as metadata/mirror sources after adding the credentials required by LavaSrc. They do not provide direct audio playback through this integration. Any mirror fallback must remain restricted to the non-YouTube providers listed above.
+YouTube, SoundCloud and Bandcamp are enabled for playback. Spotify is not configured as a native playback source and no Spotify API credentials are required by this change. Spotify links still need a separate metadata-to-playable-track resolver before they can be advertised as supported.
