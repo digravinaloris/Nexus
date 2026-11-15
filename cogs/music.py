@@ -16,7 +16,6 @@ MAX_QUEUE_DISPLAY = 10
 
 SOURCES = {
     "SoundCloud": "scsearch",
-    "Deezer": "dzsearch",
     "Bandcamp": "bcsearch",
 }
 SOURCE_CHOICES = [
