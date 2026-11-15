@@ -87,8 +87,10 @@ async def _get_player(interaction):
         return player
 
     try:
-        return await channel.connect(cls=wavelink.Player, self_deaf=True)
-    except (discord.ClientException, discord.Forbidden, asyncio.TimeoutError) as exc:
+        player = await channel.connect(cls=wavelink.Player, self_deaf=True)
+        await player.set_volume(DEFAULT_VOLUME)
+        return player
+    except Exception as exc:
         await interaction.followup.send(
             f"❌ I couldn't join that voice channel: {str(exc)[:180]}",
             ephemeral=True,
