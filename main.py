@@ -6987,7 +6987,6 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-keep_alive()
 
 # Arrêt propre : Render envoie SIGTERM avant de tuer le process lors d'un
 # redéploiement. Par défaut, SIGTERM termine Python immédiatement sans
@@ -6999,7 +6998,6 @@ def _handle_sigterm(signum, frame):
     log_json("info", "shutdown_sigterm")
     raise KeyboardInterrupt()
 
-signal.signal(signal.SIGTERM, _handle_sigterm)
 
 # Si Discord/Cloudflare renvoie un 429 au login (rate limit) : bot.run() ferme
 # sa session HTTP en interne dès qu'il ressort (même sur erreur, via son
@@ -7012,19 +7010,30 @@ signal.signal(signal.SIGTERM, _handle_sigterm)
 # Contrepartie connue : le compteur de tentatives repart de zéro à chaque
 # redémarrage process (pas d'escalade 60s/120s/240s qui survit à un restart) --
 # avant si pépin après la 1ère attente de 60s.
-try:
-    bot.run(os.getenv("TOKEN"))
-except discord.errors.HTTPException as e:
-    if e.status == 429:
-        print("[LOGIN] 429 rate limited par Discord/Cloudflare, attente 60s avant de laisser Render redémarrer proprement", flush=True)
-        time.sleep(60)
-    raise
-except KeyboardInterrupt:
-    pass
+def main():
+    """Point d'entrée : le serveur Flask, le handler SIGTERM et bot.run() ne
+    démarrent QUE si on lance `python main.py`. Importer main.py (tests,
+    futurs modules) n'a donc plus d'effet de bord."""
+    keep_alive()
+    signal.signal(signal.SIGTERM, _handle_sigterm)
 
-if mongo:
     try:
-        mongo.close()
-        print("[SHUTDOWN] MongoDB connection closed.", flush=True)
-    except Exception:
+        bot.run(os.getenv("TOKEN"))
+    except discord.errors.HTTPException as e:
+        if e.status == 429:
+            print("[LOGIN] 429 rate limited par Discord/Cloudflare, attente 60s avant de laisser Render redémarrer proprement", flush=True)
+            time.sleep(60)
+        raise
+    except KeyboardInterrupt:
         pass
+
+    if mongo:
+        try:
+            mongo.close()
+            print("[SHUTDOWN] MongoDB connection closed.", flush=True)
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    main()
