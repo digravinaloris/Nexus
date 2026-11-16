@@ -1,0 +1,126 @@
+"""sanctions_store -- avertissements, salons verrouillés, cases de sanction, appels.
+
+Extrait de main.py (étape 2a). Couche données uniquement (aucune dépendance à
+discord ni à Flask) ; les collections viennent de `core.col`. main.py ré-importe
+ces noms pour que le code existant marche sans modification.
+"""
+import datetime
+
+from pymongo import ReturnDocument
+
+from core import col
+
+
+def get_warns(guild_id, user_id):
+    doc = col.warns.find_one({"guild_id": str(guild_id), "user_id": str(user_id)})
+    return doc["count"] if doc else 0
+
+
+def set_warns(guild_id, user_id, count):
+    col.warns.update_one({"guild_id": str(guild_id), "user_id": str(user_id)}, {"$set": {"count": count}}, upsert=True)
+
+
+def mark_channel_locked(guild_id, channel_id, channel_name, locked_by, channel_type="text"):
+    col.locked_channels.update_one(
+        {"guild_id": str(guild_id), "channel_id": str(channel_id)},
+        {"$set": {
+            "channel_name": channel_name,
+            "channel_type": channel_type,
+            "locked_by": str(locked_by),
+            "locked_at": datetime.datetime.utcnow(),
+        }},
+        upsert=True,
+    )
+
+
+def mark_channel_unlocked(guild_id, channel_id):
+    col.locked_channels.delete_one({"guild_id": str(guild_id), "channel_id": str(channel_id)})
+
+
+def get_locked_channels(guild_id):
+    return list(col.locked_channels.find({"guild_id": str(guild_id)}))
+
+
+def get_next_case_id(guild_id):
+    """Compteur atomique par serveur — jamais de doublon même avec des
+    sanctions concurrentes."""
+    doc = col.case_counters.find_one_and_update(
+        {"_id": str(guild_id)},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return doc["seq"]
+
+
+def log_sanction(guild_id, user_id, sanction_type, reason, moderator_id):
+    """Enregistre une sanction dans l'historique. moderator_id peut être un ID Discord,
+    'mobile_app' (action via l'app Android), ou 'automod' (déclenchée automatiquement).
+    Retourne le case_id généré, consultable ensuite via /case view."""
+    case_id = get_next_case_id(guild_id)
+    col.sanctions.insert_one({
+        "guild_id": str(guild_id),
+        "case_id": case_id,
+        "user_id": str(user_id),
+        "type": sanction_type,
+        "reason": reason or "No reason provided",
+        "moderator_id": str(moderator_id),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc),
+    })
+    return case_id
+
+
+def get_case(guild_id, case_id):
+    return col.sanctions.find_one({"guild_id": str(guild_id), "case_id": case_id})
+
+
+def create_sanction_appeal(guild_id, case_id, sanction_type, user_id, user_name, reason, token):
+    col.ban_appeals.insert_one({
+        "token": token,
+        "guild_id": str(guild_id),
+        "case_id": case_id,
+        "sanction_type": sanction_type,
+        "user_id": str(user_id),
+        "user_name": user_name,
+        "ban_reason": reason,  # nom de champ conservé pour compat avec les anciens enregistrements
+        "status": "pending",  # pending -> submitted -> accepted / denied
+        "appeal_text": None,
+        "created_at": datetime.datetime.now(datetime.timezone.utc),
+        "submitted_at": None,
+        "resolved_at": None,
+    })
+
+
+def get_ban_appeal(token):
+    return col.ban_appeals.find_one({"token": token})
+
+
+def get_ban_appeal_by_case(guild_id, case_id):
+    return col.ban_appeals.find_one({"guild_id": str(guild_id), "case_id": case_id})
+
+
+def get_sanction_stats(guild_id, days=30):
+    """Agrège le nombre de sanctions par jour sur les N derniers jours, pour
+    le graphe du dashboard. Retourne une liste de (label_jour, nombre),
+    avec les jours sans sanction inclus à zéro (sinon le graphe serait
+    trompeur : il sauterait les périodes calmes)."""
+    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
+    counts = {}
+    try:
+        for doc in col.sanctions.find({"guild_id": str(guild_id), "timestamp": {"$gte": since}}):
+            ts = doc["timestamp"]
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=datetime.timezone.utc)
+            key = ts.strftime("%Y-%m-%d")
+            counts[key] = counts.get(key, 0) + 1
+    except Exception as e:
+        print(f"[STATS] Failed to aggregate sanctions: {e}", flush=True)
+        return []
+
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    series = []
+    for i in range(days - 1, -1, -1):
+        day = today - datetime.timedelta(days=i)
+        key = day.strftime("%Y-%m-%d")
+        series.append((day.strftime("%d/%m"), counts.get(key, 0)))
+    return series
