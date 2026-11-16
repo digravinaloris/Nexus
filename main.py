@@ -43,6 +43,11 @@ from audit import record_audit, build_sparkline_svg, get_audit_log
 from i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
 )
+from features import FEATURE_TOGGLES
+from bridge import run_coroutine
+from discord_logging import get_or_create_log_webhook, _send_log_embed, log_dashboard_action
+from moderation_actions import reverse_sanction, _dm_user_appeal_result
+from web.rest_api import bp as rest_api_bp
 from utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
     is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
@@ -108,29 +113,6 @@ def init_mongo():
     bot.db = db
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 async def post_appeal_for_review(guild, appeal, appeal_text):
     cfg = get_config(guild.id)
     channel_id = cfg.get("appeal_channel_id")
@@ -145,34 +127,6 @@ async def post_appeal_for_review(guild, appeal, appeal_text):
     embed.add_field(name="Appeal", value=appeal_text[:1000], inline=False)
     embed.set_footer(text=f"Review with: /appeal accept case_id:{appeal['case_id']}  or  /appeal deny case_id:{appeal['case_id']}")
     await channel.send(embed=embed)
-
-
-async def reverse_sanction(guild, sanction_type, user_id):
-    """Tente d'annuler les effets d'une sanction acceptée en appel. Retourne
-    une courte description de ce qui a été fait (ou pas) pour informer le
-    staff, même quand aucune action automatique n'est possible."""
-    if sanction_type in ("ban", "tempban", "softban"):
-        try:
-            await guild.unban(discord.Object(id=int(user_id)), reason="Appeal accepted")
-            return "user unbanned"
-        except discord.HTTPException:
-            return "user was already not banned"
-    if sanction_type == "mute":
-        member = guild.get_member(int(user_id))
-        if member is not None and member.timed_out_until:
-            try:
-                await member.timeout(None, reason="Appeal accepted")
-                return "timeout removed"
-            except discord.HTTPException:
-                return "couldn't remove the timeout"
-        return "user isn't currently timed out"
-    if sanction_type == "warn":
-        count = get_warns(guild.id, user_id)
-        if count > 0:
-            set_warns(guild.id, user_id, count - 1)
-            return "one warning removed"
-        return "no warnings left to remove"
-    return "no automatic action for this sanction type — reviewed manually"
 
 
 async def send_sanction_dm(member_or_user, guild, sanction_type, reason):
@@ -420,8 +374,6 @@ _cached_global_commands = []  # snapshot des commandes, pris avant de vider le b
 # Discord ou d'un token bot compromis.
 
 
-
-
 _command_cooldowns = {}  # {user_id: last_invocation_timestamp}
 COMMAND_COOLDOWN_SECONDS = 2
 
@@ -569,8 +521,6 @@ def send_daily_killswitch_email():
     return send_email("Nexus — daily control link", body)
 
 
-
-
 async def daily_killswitch_email_loop():
     await bot.wait_until_ready()
     while not bot.is_closed():
@@ -582,9 +532,6 @@ async def daily_killswitch_email_loop():
             print(f"[KILLSWITCH] Daily email loop error: {e}", flush=True)
         await asyncio.sleep(24 * 60 * 60)
 
-
-
-API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à définir sur Render
 
 def has_admin():
     """Decorator: réservé aux membres avec la permission Discord Administrator."""
@@ -2780,25 +2727,6 @@ bot.tree.add_command(export_group)
 
 # Interrupteur unique pour toutes les fonctionnalités à bascule simple
 # (on/off) — évite d'avoir une commande différente par feature.
-FEATURE_TOGGLES = {
-    "detailed_logs": {"config_key": "detailed_logs_enabled", "label": "Detailed activity logs (voice, nicknames, roles)"},
-    "antinuke": {"config_key": "antinuke_enabled", "label": "Anti-nuke protection"},
-    "weekly_digest": {"config_key": "weekly_digest_enabled", "label": "Weekly DM digest"},
-    "dashboard_logging": {"config_key": "log_dashboard_actions", "label": "Log dashboard actions to the logs channel"},
-    "anti_link_global": {"config_key": "anti_link_global_enabled", "label": "Block ALL links, not just Discord invites"},
-    "welcome_banner": {"config_key": "welcome_banner_enabled", "label": "Generate a welcome banner image on member join"},
-    "verification": {"config_key": "verification_enabled", "label": "Assign Unverified role on join until member verifies"},
-    "quarantine": {"config_key": "quarantine_enabled", "label": "Hold suspicious new accounts for review"},
-    "anti_mention_spam": {"config_key": "anti_mention_spam_enabled", "label": "Delete messages with too many mentions / @everyone abuse"},
-    "anti_media_flood": {"config_key": "anti_media_flood_enabled", "label": "Delete rapid-fire image/attachment spam"},
-    "auto_slowmode": {"config_key": "auto_slowmode_enabled", "label": "Temporarily enable slowmode when a channel gets hyperactive"},
-    "anti_doxx": {"config_key": "anti_doxx_enabled", "label": "Detect and act on phone numbers / address-like content"},
-    "raid_pattern_alert": {"config_key": "raid_pattern_alert_enabled", "label": "Alert on coordinated-looking join patterns (similar usernames)"},
-    "auto_translate": {"config_key": "auto_translate_enabled", "label": "Translate a message via 🌐 reaction (DMs the translation)"},
-    "remindme": {"config_key": "remindme_enabled", "label": "Enable the /remindme command"},
-    "serverinfo_visual": {"config_key": "serverinfo_visual_enabled", "label": "Attach a 7-day activity chart to /serverinfo"},
-    "trap_channel": {"config_key": "trap_channel_enabled", "label": "Any message in the trap channel = instant softban (no content check)"},
-}
 FEATURE_CHOICES = [app_commands.Choice(name=v["label"], value=k) for k, v in FEATURE_TOGGLES.items()]
 
 feature_group = app_commands.Group(name="feature", description="Enable or disable optional bot features — admin only", default_permissions=discord.Permissions(administrator=True))
@@ -3302,7 +3230,6 @@ async def poll(interaction: discord.Interaction, question: str, option1: str = N
         message = await interaction.original_response()
         await message.add_reaction("👍")
         await message.add_reaction("👎")
-
 
 
 @bot.tree.command(name="tempban", description="Temporarily ban a member")
@@ -4858,156 +4785,8 @@ if _SENTRY_DSN:
 # dossier courant (cwd) pour chercher templates/ -- ça marchait sur Render (lancé
 # depuis la racine du repo) mais cassait dès qu'on lance main.py depuis ailleurs.
 api = Flask('', template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"))
+api.register_blueprint(rest_api_bp)  # REST API /api/* (voir web/rest_api.py)
 
-def require_api_key(f):
-    """Décorateur : vérifie le header X-API-Key sur chaque requête protégée.
-    Deux clés sont acceptées :
-    - la clé "maîtresse" définie dans la variable d'env API_KEY sur Render (accès à tous les serveurs)
-    - la clé propre à UN serveur, générée via /config apikey (accès à ce serveur uniquement)
-
-    Pose g.auth_guild_id = None si la clé maîtresse est utilisée (accès total),
-    ou l'ID du serveur si une clé propre à un serveur est utilisée (accès limité à ce serveur).
-    Utile pour les routes sans guild_id dans l'URL (/api/health, /api/guilds).
-    """
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        key = request.headers.get("X-API-Key")
-        if not key:
-            return jsonify({"error": "Missing X-API-Key header"}), 401
-        if API_KEY and key == API_KEY:
-            g.auth_guild_id = None
-            return f(*args, **kwargs)
-        guild_id = kwargs.get("guild_id")
-        if guild_id:
-            cfg = get_config(guild_id)
-            if cfg.get("api_key") and key == cfg["api_key"]:
-                g.auth_guild_id = str(guild_id)
-                return f(*args, **kwargs)
-        elif bot.is_ready():
-            # Pas de guild_id dans l'URL (ex: /api/health, /api/guilds) : on cherche
-            # à quel serveur cette clé appartient parmi tous les serveurs du bot.
-            for candidate_guild in bot.guilds:
-                cfg = get_config(candidate_guild.id)
-                if cfg.get("api_key") and key == cfg["api_key"]:
-                    g.auth_guild_id = str(candidate_guild.id)
-                    return f(*args, **kwargs)
-        return jsonify({"error": "Unauthorized"}), 401
-    return wrapper
-
-def run_coroutine(coro, timeout=10):
-    """
-    Exécute une coroutine discord.py depuis un thread Flask (sync),
-    en la poussant dans l'event loop du bot, et attend le résultat.
-    """
-    future = asyncio.run_coroutine_threadsafe(coro, bot.loop)
-    return future.result(timeout=timeout)
-
-async def get_or_create_log_webhook(guild, channel):
-    """Récupère le webhook de logs en cache pour ce salon, ou en crée un.
-    Un webhook n'a pas besoin que le bot ait la permission d'envoyer des
-    messages classiques dans ce salon — juste de l'avoir créé une fois."""
-    cfg = get_config(guild.id)
-    webhook_url = cfg.get("log_webhook_url")
-    webhook_channel_id = cfg.get("log_webhook_channel_id")
-    if webhook_url and webhook_channel_id == str(channel.id):
-        try:
-            return discord.Webhook.from_url(webhook_url, client=bot)
-        except (discord.errors.InvalidData, ValueError):
-            pass  # webhook invalide (supprimé manuellement ?), on en recrée un plus bas
-
-    try:
-        webhook = await channel.create_webhook(name="Nexus Logs", reason="Nexus log webhook")
-        update_config(guild.id, "log_webhook_url", webhook.url)
-        update_config(guild.id, "log_webhook_channel_id", str(channel.id))
-        return webhook
-    except discord.HTTPException as e:
-        print(f"[WEBHOOK] Failed to create log webhook in guild {guild.id}: {e}", flush=True)
-        return None
-
-
-async def _send_log_embed(guild, embed):
-    """Envoie un embed dans le channel de logs configuré pour ce serveur,
-    via un webhook (créé/mis en cache automatiquement) plutôt qu'un message
-    classique du bot — avec repli sur l'envoi classique si le webhook
-    échoue ou ne peut pas être créé (ex: permission Manage Webhooks manquante)."""
-    cfg = get_config(guild.id)
-    channel = discord.utils.get(guild.text_channels, name=cfg.get("logs_channel", "logs"))
-    if channel is None:
-        return
-    webhook = await get_or_create_log_webhook(guild, channel)
-    if webhook is not None:
-        try:
-            await webhook.send(embed=embed, username="Nexus Logs")
-            return
-        except discord.HTTPException as e:
-            print(f"[WEBHOOK] Failed to send via webhook, falling back to normal send: {e}", flush=True)
-    try:
-        await channel.send(embed=embed)
-    except discord.HTTPException:
-        pass
-
-def log_dashboard_action(guild, actor_name, action, details=""):
-    """Poste un embed dans le salon de logs Discord quand une action est
-    faite depuis le dashboard web — seulement si l'option est activée
-    (config.log_dashboard_actions)."""
-    cfg = get_config(guild.id)
-    if not cfg.get("log_dashboard_actions"):
-        return None
-    embed = discord.Embed(title="🖥️ Dashboard change", color=0x9b59b6)
-    embed.add_field(name="By", value=actor_name, inline=True)
-    embed.add_field(name="Action", value=action, inline=True)
-    if details:
-        embed.add_field(name="Details", value=details[:1000], inline=False)
-    return _send_log_embed(guild, embed)
-
-def log_ban(guild, member, reason):
-    embed = discord.Embed(title="🔨 Member Banned", color=0xff0000)
-    embed.add_field(name="User", value=f"**{member}**", inline=True)
-    embed.add_field(name="Banned by", value="📱 mobile app", inline=True)
-    embed.add_field(name="Reason", value=reason, inline=False)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    return _send_log_embed(guild, embed)
-
-def log_kick(guild, member, reason):
-    embed = discord.Embed(title="👢 Member Kicked", color=0xff0000)
-    embed.add_field(name="User", value=f"**{member}**", inline=True)
-    embed.add_field(name="Kicked by", value="📱 mobile app", inline=True)
-    embed.add_field(name="Reason", value=reason, inline=False)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    return _send_log_embed(guild, embed)
-
-def log_mute(guild, member, minutes, reason):
-    embed = discord.Embed(title="🔇 Member Muted", color=0xff6600)
-    embed.add_field(name="User", value=f"**{member}**", inline=True)
-    embed.add_field(name="Muted by", value="📱 mobile app", inline=True)
-    embed.add_field(name="Duration", value=f"{minutes} minutes", inline=True)
-    embed.add_field(name="Reason", value=reason, inline=False)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    return _send_log_embed(guild, embed)
-
-def log_unmute(guild, member):
-    embed = discord.Embed(title="🔊 Member Unmuted", color=0xff6600)
-    embed.add_field(name="User", value=f"**{member}**", inline=True)
-    embed.add_field(name="Unmuted by", value="📱 mobile app", inline=True)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    return _send_log_embed(guild, embed)
-
-def log_warn(guild, member, reason, count):
-    embed = discord.Embed(title="⚠️ Member Warned", color=0xffcc00)
-    embed.add_field(name="User", value=f"**{member}**", inline=True)
-    embed.add_field(name="Warned by", value="📱 mobile app", inline=True)
-    embed.add_field(name="Reason", value=reason, inline=False)
-    embed.add_field(name="Total Warnings", value=f"{count}", inline=True)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    return _send_log_embed(guild, embed)
-
-def log_unwarn(guild, member, count):
-    embed = discord.Embed(title="✅ Warning Removed", color=0xffcc00)
-    embed.add_field(name="User", value=f"**{member}**", inline=True)
-    embed.add_field(name="Unwarn by", value="📱 mobile app", inline=True)
-    embed.add_field(name="Remaining Warnings", value=f"{count}", inline=True)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    return _send_log_embed(guild, embed)
 
 @api.route('/')
 def home():
@@ -5033,576 +4812,6 @@ def favicon():
     # Nexus.png vit à la racine du repo (à côté de main.py), pas dans un
     # dossier static/ -- send_from_directory pointe dessus directement.
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "Nexus.png", mimetype="image/png")
-
-
-@api.route('/api/health', methods=['GET'])
-@require_api_key
-def health():
-    if g.auth_guild_id:
-        # Clé propre à un serveur : "locked" reflète uniquement ce serveur, pas les autres.
-        return jsonify({
-            "online": bot.is_ready(),
-            "locked": int(g.auth_guild_id) in bot.locked_guilds,
-            "guild_count": 1
-        })
-    return jsonify({
-        "online": bot.is_ready(),
-        "locked": len(bot.locked_guilds) > 0,
-        "guild_count": len(bot.guilds) if bot.is_ready() else 0
-    })
-
-@api.route('/api/guilds', methods=['GET'])
-@require_api_key
-def list_guilds():
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    if g.auth_guild_id:
-        # Clé propre à un serveur : ne renvoie que CE serveur, jamais les autres.
-        guild = bot.get_guild(int(g.auth_guild_id))
-        if not guild:
-            return jsonify([])
-        return jsonify([{
-            "id": str(guild.id),
-            "name": guild.name,
-            "member_count": guild.member_count,
-            "icon_url": str(guild.icon.url) if guild.icon else None,
-        }])
-    guilds = [{
-        "id": str(gd.id),
-        "name": gd.name,
-        "member_count": gd.member_count,
-        "icon_url": str(gd.icon.url) if gd.icon else None,
-    } for gd in bot.guilds]
-    return jsonify(guilds)
-
-@api.route('/api/guilds/<guild_id>/stats', methods=['GET'])
-@require_api_key
-def guild_stats(guild_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-
-    async def _stats():
-        bans = [b async for b in guild.bans()]
-        muted = [m for m in guild.members if m.is_timed_out()]
-        return len(bans), len(muted)
-
-    try:
-        ban_count, muted_count = run_coroutine(_stats())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    warned_count = warns_col.count_documents({"guild_id": str(guild_id), "count": {"$gt": 0}})
-
-    cfg = get_config(guild_id)
-    open_tickets_count = 0
-    ticket_category_id = cfg.get("ticket_category_id")
-    if ticket_category_id:
-        category = guild.get_channel(int(ticket_category_id))
-        if isinstance(category, discord.CategoryChannel):
-            open_tickets_count = len(category.text_channels)
-
-    today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    warns_today = sanctions_col.count_documents({
-        "guild_id": str(guild_id), "type": "warn", "timestamp": {"$gte": today_start},
-    })
-    activity_7d = [count for _, count in get_sanction_stats(guild_id, days=7)]
-
-    return jsonify({
-        "guild_id": str(guild.id),
-        "name": guild.name,
-        "member_count": guild.member_count,
-        "ban_count": ban_count,
-        "muted_count": muted_count,
-        "warned_count": warned_count,
-        "warns_today": warns_today,
-        "open_tickets_count": open_tickets_count,
-        "activity_7d": activity_7d,
-        "locked": int(guild_id) in bot.locked_guilds
-    })
-
-@api.route('/api/guilds/<guild_id>/config', methods=['GET'])
-@require_api_key
-def get_guild_config(guild_id):
-    cfg = get_config(guild_id)
-    cfg.pop("_id", None)
-    cfg.pop("api_key", None)  # jamais renvoyée en clair
-    return jsonify(cfg)
-
-@api.route('/api/guilds/<guild_id>/config', methods=['POST'])
-@require_api_key
-def update_guild_config(guild_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    allowed_keys = {"logs_channel", "autorole", "allowed_roles", "command_roles", "language"}
-    updated = {}
-    for key, value in data.items():
-        if key in allowed_keys:
-            update_config(guild_id, key, value)
-            updated[key] = value
-
-    if not updated:
-        return jsonify({"error": "No valid fields provided"}), 400
-    return jsonify({"success": True, "updated": updated})
-
-@api.route('/api/guilds/<guild_id>/lock', methods=['POST'])
-@require_api_key
-def lock_bot_route(guild_id):
-    bot.locked_guilds.add(int(guild_id))
-    return jsonify({"success": True, "locked": True})
-
-@api.route('/api/guilds/<guild_id>/unlock', methods=['POST'])
-@require_api_key
-def unlock_bot_route(guild_id):
-    bot.locked_guilds.discard(int(guild_id))
-    return jsonify({"success": True, "locked": False})
-
-@api.route('/api/guilds/<guild_id>/broadcast', methods=['POST'])
-@require_api_key
-def broadcast_route(guild_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    message = data.get("message")
-    channel_id = data.get("channel_id")
-    mention = data.get("mention", "none")
-
-    if not message or not channel_id:
-        return jsonify({"error": "message and channel_id are required"}), 400
-
-    channel = guild.get_channel(int(channel_id))
-    if not channel:
-        return jsonify({"error": "Channel not found"}), 404
-
-    if mention == "everyone":
-        ping = "@everyone"
-    elif mention == "here":
-        ping = "@here"
-    else:
-        role = discord.utils.get(guild.roles, name=mention)
-        ping = role.mention if role else None
-
-    embed = discord.Embed(description=message, color=0x3399ff)
-    embed.set_footer(text="📢 Sent from the mobile app")
-
-    async def _send():
-        await channel.send(content=ping, embed=embed)
-
-    try:
-        run_coroutine(_send())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    return jsonify({"success": True})
-
-@api.route('/api/guilds/<guild_id>/members/<user_id>/ban', methods=['POST'])
-@require_api_key
-def ban_member_route(guild_id, user_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    reason = data.get("reason", "Banned via mobile app")
-
-    async def _ban():
-        member = guild.get_member(int(user_id))
-        if not member:
-            return False, "Member not found"
-        if member.top_role >= guild.me.top_role:
-            return False, "Role too high"
-        await member.ban(reason=reason)
-        log_sanction(guild_id, user_id, "ban", reason, "mobile_app")
-        await log_ban(guild, member, reason)
-        return True, None
-
-    try:
-        success, error = run_coroutine(_ban())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    if not success:
-        return jsonify({"error": error}), 400
-    return jsonify({"success": True})
-
-@api.route('/api/guilds/<guild_id>/members/<user_id>/kick', methods=['POST'])
-@require_api_key
-def kick_member_route(guild_id, user_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    reason = data.get("reason", "Kicked via mobile app")
-
-    async def _kick():
-        member = guild.get_member(int(user_id))
-        if not member:
-            return False, "Member not found"
-        if member.top_role >= guild.me.top_role:
-            return False, "Role too high"
-        await member.kick(reason=reason)
-        log_sanction(guild_id, user_id, "kick", reason, "mobile_app")
-        await log_kick(guild, member, reason)
-        return True, None
-
-    try:
-        success, error = run_coroutine(_kick())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    if not success:
-        return jsonify({"error": error}), 400
-    return jsonify({"success": True})
-
-@api.route('/api/guilds/<guild_id>/members/<user_id>/warnings', methods=['GET'])
-@require_api_key
-def get_warnings_route(guild_id, user_id):
-    count = get_warns(guild_id, user_id)
-    return jsonify({"user_id": user_id, "warnings": count})
-
-@api.route('/api/guilds/<guild_id>/warnlist', methods=['GET'])
-@require_api_key
-def warnlist_route(guild_id):
-    docs = list(warns_col.find({"guild_id": str(guild_id), "count": {"$gt": 0}}))
-    result = [{"user_id": d["user_id"], "count": d["count"]} for d in docs]
-    return jsonify(result)
-
-@api.route('/api/guilds/<guild_id>/channels', methods=['GET'])
-@require_api_key
-def list_channels_route(guild_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-    channels = [{"id": str(c.id), "name": c.name} for c in guild.text_channels]
-    return jsonify(channels)
-
-@api.route('/api/guilds/<guild_id>/roles', methods=['GET'])
-@require_api_key
-def list_roles_route(guild_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-    roles = [{"id": str(r.id), "name": r.name} for r in guild.roles if not r.is_default()]
-    return jsonify(roles)
-
-@api.route('/api/guilds/<guild_id>/members', methods=['GET'])
-@require_api_key
-def list_members_route(guild_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-    members = [
-        {
-            "id": str(m.id),
-            "name": m.display_name,
-            "username": str(m),
-            "avatar_url": m.display_avatar.url,
-            "is_muted": m.is_timed_out()
-        }
-        for m in guild.members if not m.bot
-    ]
-    return jsonify(members)
-
-@api.route('/api/guilds/<guild_id>/members/<user_id>/mute', methods=['POST'])
-@require_api_key
-def mute_member_route(guild_id, user_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    minutes = int(data.get("minutes", 10))
-    reason = data.get("reason") or "Muted by mobile app"
-
-    async def _mute():
-        member = guild.get_member(int(user_id))
-        if not member:
-            return False, "Member not found"
-        if member.top_role >= guild.me.top_role:
-            return False, "Role too high"
-        duration = datetime.timedelta(minutes=minutes)
-        await member.timeout(duration, reason=reason)
-        log_sanction(guild_id, user_id, "mute", f"{reason} ({minutes} min)", "mobile_app")
-        await log_mute(guild, member, minutes, reason)
-        return True, None
-
-    try:
-        success, error = run_coroutine(_mute())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    if not success:
-        return jsonify({"error": error}), 400
-    return jsonify({"success": True})
-
-@api.route('/api/guilds/<guild_id>/members/<user_id>/unmute', methods=['POST'])
-@require_api_key
-def unmute_member_route(guild_id, user_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-
-    async def _unmute():
-        member = guild.get_member(int(user_id))
-        if not member:
-            return False, "Member not found"
-        await member.timeout(None)
-        await log_unmute(guild, member)
-        return True, None
-
-    try:
-        success, error = run_coroutine(_unmute())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    if not success:
-        return jsonify({"error": error}), 400
-    return jsonify({"success": True})
-
-@api.route('/api/guilds/<guild_id>/members/<user_id>/warn', methods=['POST'])
-@require_api_key
-def warn_member_route(guild_id, user_id):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    reason = data.get("reason") or "Warned by mobile app"
-
-    member = guild.get_member(int(user_id))
-    if not member:
-        return jsonify({"error": "Member not found"}), 404
-
-    count = get_warns(guild_id, user_id) + 1
-    set_warns(guild_id, user_id, count)
-    log_sanction(guild_id, user_id, "warn", reason, "mobile_app")
-
-    try:
-        run_coroutine(log_warn(guild, member, reason, count))
-    except Exception:
-        pass  # le warn est déjà enregistré, le log est secondaire
-
-    return jsonify({"success": True, "warnings": count, "reason": reason})
-
-@api.route('/api/guilds/<guild_id>/members/<user_id>/unwarn', methods=['POST'])
-@require_api_key
-def unwarn_member_route(guild_id, user_id):
-    count = get_warns(guild_id, user_id)
-    if count == 0:
-        return jsonify({"error": "No warnings to remove"}), 400
-    count -= 1
-    set_warns(guild_id, user_id, count)
-
-    if bot.is_ready():
-        guild = bot.get_guild(int(guild_id))
-        if guild:
-            member = guild.get_member(int(user_id))
-            if member:
-                try:
-                    run_coroutine(log_unwarn(guild, member, count))
-                except Exception:
-                    pass
-
-    return jsonify({"success": True, "warnings": count})
-
-
-@api.route('/api/guilds/<guild_id>/audit', methods=['GET'])
-@require_api_key
-def guild_audit_route(guild_id):
-    """Fil d'activité multi-admin pour l'app mobile -- même source que le
-    dashboard web (get_audit_log), fusionne actions dashboard + sanctions."""
-    limit = min(request.args.get("limit", default=20, type=int) or 20, 100)
-    entries = get_audit_log(guild_id, limit=limit)
-    return jsonify([{
-        "actor_name": e.get("actor_name", "Unknown"),
-        "action": e.get("action", ""),
-        "details": e.get("details", ""),
-        "timestamp": e["timestamp"].isoformat(),
-    } for e in entries])
-
-
-@api.route('/api/guilds/<guild_id>/cases', methods=['GET'])
-@require_api_key
-def guild_cases_route(guild_id):
-    """Historique des sanctions (case browser) pour l'app mobile -- même
-    requête Mongo que la page /dashboard/<guild_id>/cases côté web."""
-    filter_type = request.args.get("type", "")
-    limit = min(request.args.get("limit", default=50, type=int) or 50, 200)
-    query = {"guild_id": str(guild_id)}
-    if filter_type:
-        query["type"] = filter_type
-    cases = list(sanctions_col.find(query).sort("timestamp", -1).limit(limit))
-    return jsonify([{
-        "case_id": c.get("case_id"),
-        "user_id": c.get("user_id"),
-        "type": c.get("type"),
-        "reason": c.get("reason", ""),
-        "moderator_id": c.get("moderator_id"),
-        "timestamp": c["timestamp"].isoformat(),
-    } for c in cases])
-
-
-@api.route('/api/guilds/<guild_id>/appeals', methods=['GET'])
-@require_api_key
-def guild_appeals_route(guild_id):
-    """Appels de sanction en attente de revue, pour l'app mobile -- mêmes
-    entrées que la page /dashboard/<guild_id>/appeals côté web."""
-    appeals = list(ban_appeals_col.find({"guild_id": str(guild_id), "status": "submitted"}).sort("submitted_at", -1))
-    return jsonify([{
-        "token": a["token"],
-        "case_id": a.get("case_id"),
-        "sanction_type": a.get("sanction_type", "ban"),
-        "user_id": a.get("user_id"),
-        "user_name": a.get("user_name"),
-        "original_reason": a.get("ban_reason", ""),
-        "appeal_text": a.get("appeal_text", ""),
-    } for a in appeals])
-
-
-@api.route('/api/guilds/<guild_id>/appeals/<token>/accept', methods=['POST'])
-@require_api_key
-def guild_appeal_accept_route(guild_id, token):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-    appeal = get_ban_appeal(token)
-    if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
-        return jsonify({"error": "Appeal not found or already resolved"}), 404
-
-    sanction_type = appeal.get("sanction_type", "ban")
-    result = run_coroutine(reverse_sanction(guild, sanction_type, appeal["user_id"]))
-    ban_appeals_col.update_one({"token": token}, {"$set": {"status": "accepted", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
-    record_audit(guild_id, "mobile_app", "📱 Mobile App", "Accepted appeal (via mobile app)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
-    try:
-        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], True, result))
-    except Exception as e:
-        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
-    return jsonify({"success": True, "result": result})
-
-
-@api.route('/api/guilds/<guild_id>/appeals/<token>/deny', methods=['POST'])
-@require_api_key
-def guild_appeal_deny_route(guild_id, token):
-    if not bot.is_ready():
-        return jsonify({"error": "Bot not ready"}), 503
-    guild = bot.get_guild(int(guild_id))
-    if not guild:
-        return jsonify({"error": "Guild not found"}), 404
-    appeal = get_ban_appeal(token)
-    if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
-        return jsonify({"error": "Appeal not found or already resolved"}), 404
-
-    ban_appeals_col.update_one({"token": token}, {"$set": {"status": "denied", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
-    record_audit(guild_id, "mobile_app", "📱 Mobile App", "Denied appeal (via mobile app)", f"Case #{appeal['case_id']}")
-    try:
-        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], False, None))
-    except Exception as e:
-        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
-    return jsonify({"success": True})
-
-
-@api.route('/api/guilds/<guild_id>/features', methods=['GET'])
-@require_api_key
-def guild_features_route(guild_id):
-    cfg = get_config(guild_id)
-    return jsonify([{
-        "key": key,
-        "label": meta["label"],
-        "enabled": bool(cfg.get(meta["config_key"])),
-    } for key, meta in FEATURE_TOGGLES.items()])
-
-
-@api.route('/api/guilds/<guild_id>/features/<feature_key>', methods=['POST'])
-@require_api_key
-def guild_feature_toggle_route(guild_id, feature_key):
-    if feature_key not in FEATURE_TOGGLES:
-        return jsonify({"error": "Unknown feature"}), 404
-    data = request.get_json(silent=True) or {}
-    enabled = bool(data.get("enabled", True))
-    update_config(guild_id, FEATURE_TOGGLES[feature_key]["config_key"], enabled)
-    return jsonify({"success": True, "key": feature_key, "enabled": enabled})
-
-
-@api.route('/api/guilds/<guild_id>/faq', methods=['GET'])
-@require_api_key
-def guild_faq_list_route(guild_id):
-    """Même collection Mongo que cogs/faq.py -- l'app lit/écrit directement
-    dedans, pas besoin de passer par le bot (pas d'accès discord.py requis ici)."""
-    doc = db["faq"].find_one({"guild_id": str(guild_id)})
-    if not doc:
-        return jsonify({"enabled": False, "entries": []})
-    return jsonify({"enabled": bool(doc.get("enabled")), "entries": doc.get("entries", [])})
-
-
-@api.route('/api/guilds/<guild_id>/faq', methods=['POST'])
-@require_api_key
-def guild_faq_add_route(guild_id):
-    data = request.get_json(silent=True) or {}
-    keywords = [k.strip() for k in data.get("keywords", []) if k.strip()]
-    response_text = data.get("response", "").strip()
-    if not keywords or not response_text:
-        return jsonify({"error": "keywords and response are required"}), 400
-
-    doc = db["faq"].find_one({"guild_id": str(guild_id)}) or {"guild_id": str(guild_id), "enabled": False, "entries": []}
-    existing_ids = {e["id"] for e in doc["entries"]}
-    entry_id = secrets.token_hex(2)
-    while entry_id in existing_ids:
-        entry_id = secrets.token_hex(2)
-    doc["entries"].append({"id": entry_id, "keywords": keywords, "response": response_text})
-    db["faq"].update_one({"guild_id": str(guild_id)}, {"$set": {"entries": doc["entries"]}}, upsert=True)
-    return jsonify({"success": True, "id": entry_id})
-
-
-@api.route('/api/guilds/<guild_id>/faq/<entry_id>', methods=['DELETE'])
-@require_api_key
-def guild_faq_remove_route(guild_id, entry_id):
-    doc = db["faq"].find_one({"guild_id": str(guild_id)})
-    if not doc:
-        return jsonify({"error": "No FAQ entries for this server"}), 404
-    remaining = [e for e in doc["entries"] if e["id"] != entry_id]
-    if len(remaining) == len(doc["entries"]):
-        return jsonify({"error": "Entry not found"}), 404
-    db["faq"].update_one({"guild_id": str(guild_id)}, {"$set": {"entries": remaining}})
-    return jsonify({"success": True})
-
-
-@api.route('/api/guilds/<guild_id>/faq/toggle', methods=['POST'])
-@require_api_key
-def guild_faq_toggle_route(guild_id):
-    data = request.get_json(silent=True) or {}
-    enabled = bool(data.get("enabled", True))
-    db["faq"].update_one({"guild_id": str(guild_id)}, {"$set": {"enabled": enabled}}, upsert=True)
-    return jsonify({"success": True, "enabled": enabled})
 
 
 # ============================================================
@@ -5760,18 +4969,6 @@ MODERATION_COMMANDS = [
 ]
 
 # ---------- i18n ----------
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 api.jinja_env.globals["t"] = t
@@ -6688,14 +5885,6 @@ def dash_appeal_deny(guild_id, token):
         print(f"[APPEAL] Failed to DM user: {e}", flush=True)
     flash(f"Case #{appeal['case_id']} denied.")
     return redirect(url_for("dash_appeals_page", guild_id=guild_id))
-
-
-async def _dm_user_appeal_result(user_id, guild_name, case_id, accepted, result):
-    user = await bot.fetch_user(user_id)
-    if accepted:
-        await user.send(f"✅ Your appeal for **{guild_name}** (case #{case_id}) was accepted — {result}.")
-    else:
-        await user.send(f"❌ Your appeal for **{guild_name}** (case #{case_id}) was reviewed and denied.")
 
 
 def run_api():
