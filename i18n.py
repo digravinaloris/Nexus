@@ -13,14 +13,14 @@ TRANSLATIONS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 _FALLBACK_TRANSLATIONS = {
     "en": {"logout": "Log out", "dash_title": "Your servers"},
-    "fr": {"logout": "Se d\\u00e9connecter", "dash_title": "Tes serveurs"},
+    "fr": {"logout": "Se d\u00e9connecter", "dash_title": "Tes serveurs"},
 }
 
 
 def _load_locale_file(filename):
     """Charge un fichier de langue .yml. En cas de souci (fichier manquant,
     YAML invalide...), on log l'erreur et on retombe sur un mini-dict de
-    secours plut\\u00f4t que de planter tout le dashboard."""
+    secours plut\u00f4t que de planter tout le dashboard."""
     path = os.path.join(TRANSLATIONS_DIR, filename)
     try:
         with open(path, "r", encoding="utf-8") as f:
