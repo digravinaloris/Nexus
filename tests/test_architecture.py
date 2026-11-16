@@ -1,0 +1,49 @@
+"""Garde-fous d'architecture pour le découpage de main.py.
+
+1. Aucun module (hors main.py) ne doit importer `main` : sous `python main.py`
+   le module s'appelle `__main__`, un `import main` le rechargerait une 2e fois
+   (2e bot, commandes en double). Les modules passent par `core` (core.bot,
+   core.col) ; ce test scanne tous les .py du repo, y compris les futurs.
+2. La REST API doit rester portée par le Blueprint `rest_api`.
+"""
+import ast
+import glob
+import os
+
+import pytest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _python_files():
+    files = []
+    for pattern in ("*.py", "web/**/*.py", "cogs/**/*.py"):
+        files.extend(glob.glob(os.path.join(ROOT, pattern), recursive=True))
+    return sorted(f for f in files if os.path.basename(f) != "main.py")
+
+
+def test_scan_finds_the_modules():
+    names = {os.path.relpath(f, ROOT).replace(os.sep, "/") for f in _python_files()}
+    assert {"core.py", "audit.py", "web/rest_api.py", "bridge.py"} <= names
+
+
+@pytest.mark.parametrize("path", _python_files(), ids=lambda p: os.path.relpath(p, ROOT))
+def test_module_never_imports_main(path):
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            assert all(a.name.split(".")[0] != "main" for a in node.names), path
+        elif isinstance(node, ast.ImportFrom):
+            assert (node.module or "").split(".")[0] != "main", path
+
+
+def test_rest_api_is_a_registered_blueprint():
+    pytest.importorskip("flask")
+    pytest.importorskip("discord")
+    import sys
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    from web import rest_api
+    assert rest_api.bp.name == "rest_api"
+    assert callable(rest_api.require_api_key)
