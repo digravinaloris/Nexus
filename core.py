@@ -93,6 +93,7 @@ class Collections:
 
 col = Collections()
 
+bot = None    # commands.Bot, branché par main.py (core.bot = bot)
 mongo = None  # MongoClient
 db = None     # base `discordbot`
 
