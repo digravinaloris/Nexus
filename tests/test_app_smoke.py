@@ -151,3 +151,31 @@ def test_core_stays_in_sync_with_main_collections(nexus, monkeypatch):
         assert core.col.faq is nexus.db["faq"]
     finally:
         core.reset()
+
+
+def test_extracted_helpers_are_reexported_by_main(nexus):
+    """Étape 2a : les fonctions déplacées hors de main.py doivent rester
+    accessibles sous les MÊMES noms (tout le code de main.py les appelle ainsi)."""
+    import audit
+    import config_store
+    import core
+    import i18n
+    import sanctions_store
+
+    for mod, names in {
+        config_store: ["get_config", "update_config", "add_command_role", "remove_command_role",
+                       "set_command_template", "get_global_lock", "set_global_lock"],
+        sanctions_store: ["get_warns", "set_warns", "mark_channel_locked", "mark_channel_unlocked",
+                          "get_locked_channels", "get_next_case_id", "log_sanction", "get_case",
+                          "create_sanction_appeal", "get_ban_appeal", "get_ban_appeal_by_case",
+                          "get_sanction_stats"],
+        audit: ["record_audit", "build_sparkline_svg", "get_audit_log"],
+        i18n: ["TRANSLATIONS", "t", "current_lang", "current_theme"],
+    }.items():
+        for name in names:
+            assert getattr(nexus, name) is getattr(mod, name), f"main.{name} n'est plus {mod.__name__}.{name}"
+
+    # core.bot doit être branché dès l'import (get_audit_log en dépend)
+    assert core.bot is nexus.bot
+    # et le moteur Jinja doit utiliser le t() de i18n
+    assert nexus.api.jinja_env.globals["t"] is i18n.t
