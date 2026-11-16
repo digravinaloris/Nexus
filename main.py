@@ -29,6 +29,20 @@ import json as _json
 import zipfile
 import utils
 import core
+from config_store import (
+    get_config, update_config, add_command_role, remove_command_role,
+    set_command_template, get_global_lock, set_global_lock,
+)
+from sanctions_store import (
+    get_warns, set_warns, mark_channel_locked, mark_channel_unlocked,
+    get_locked_channels, get_next_case_id, log_sanction, get_case,
+    create_sanction_appeal, get_ban_appeal, get_ban_appeal_by_case,
+    get_sanction_stats,
+)
+from audit import record_audit, build_sparkline_svg, get_audit_log
+from i18n import (
+    TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
+)
 from utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
     is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
@@ -93,291 +107,28 @@ def init_mongo():
     # l'import du module, donc cette valeur est déjà prête à ce moment-là.
     bot.db = db
 
-def record_audit(guild_id, actor_id, actor_name, action, details=""):
-    """Trace de chaque changement de config (dashboard ou commande) pour
-    l'audit log affiché dans le dashboard — indépendant du log Discord
-    optionnel (log_dashboard_actions)."""
-    try:
-        audit_col.insert_one({
-            "guild_id": str(guild_id),
-            "actor_id": str(actor_id) if actor_id else None,
-            "actor_name": actor_name,
-            "action": action,
-            "details": details[:500] if details else "",
-            "timestamp": datetime.datetime.now(datetime.timezone.utc),
-        })
-    except Exception as e:
-        print(f"[AUDIT] Failed to record audit entry: {e}", flush=True)
-
-def get_sanction_stats(guild_id, days=30):
-    """Agrège le nombre de sanctions par jour sur les N derniers jours, pour
-    le graphe du dashboard. Retourne une liste de (label_jour, nombre),
-    avec les jours sans sanction inclus à zéro (sinon le graphe serait
-    trompeur : il sauterait les périodes calmes)."""
-    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
-    counts = {}
-    try:
-        for doc in sanctions_col.find({"guild_id": str(guild_id), "timestamp": {"$gte": since}}):
-            ts = doc["timestamp"]
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=datetime.timezone.utc)
-            key = ts.strftime("%Y-%m-%d")
-            counts[key] = counts.get(key, 0) + 1
-    except Exception as e:
-        print(f"[STATS] Failed to aggregate sanctions: {e}", flush=True)
-        return []
-
-    today = datetime.datetime.now(datetime.timezone.utc).date()
-    series = []
-    for i in range(days - 1, -1, -1):
-        day = today - datetime.timedelta(days=i)
-        key = day.strftime("%Y-%m-%d")
-        series.append((day.strftime("%d/%m"), counts.get(key, 0)))
-    return series
 
 
-def build_sparkline_svg(series, width=640, height=120):
-    """Génère un petit graphe en barres en SVG pur — évite de charger une
-    librairie JS externe juste pour ça (et marche même hors ligne)."""
-    if not series:
-        return ""
-    max_val = max(v for _, v in series) or 1
-    bar_gap = 2
-    bar_width = max(2, (width - bar_gap * len(series)) / len(series))
-    bars = []
-    for i, (label, value) in enumerate(series):
-        bar_h = (value / max_val) * (height - 20)
-        x = i * (bar_width + bar_gap)
-        y = height - bar_h
-        bars.append(
-            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_h:.1f}" '
-            f'rx="2" fill="var(--raspberry)" opacity="0.85"><title>{label}: {value}</title></rect>'
-        )
-    return (
-        f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" '
-        f'preserveAspectRatio="none" role="img">{"".join(bars)}</svg>'
-    )
 
 
-def get_audit_log(guild_id, limit=20):
-    """Fil d'activité multi-source : fusionne les changements faits depuis
-    le dashboard (audit_col) et les sanctions prises via les commandes
-    (sanctions_col), triés chronologiquement — une vraie vue multi-admin,
-    pas juste les actions web."""
-    entries = []
-    try:
-        entries.extend(audit_col.find({"guild_id": str(guild_id)}).sort("timestamp", -1).limit(limit))
-    except Exception as e:
-        print(f"[AUDIT] Failed to fetch audit log: {e}", flush=True)
-
-    try:
-        for doc in sanctions_col.find({"guild_id": str(guild_id)}).sort("timestamp", -1).limit(limit):
-            mod_id = doc.get("moderator_id", "")
-            if mod_id == "mobile_app":
-                actor_name = "📱 Mobile App"
-            elif mod_id == "automod":
-                actor_name = "🤖 AutoMod"
-            else:
-                try:
-                    cached_user = bot.get_user(int(mod_id))
-                    actor_name = str(cached_user) if cached_user else f"Moderator {mod_id}"
-                except (ValueError, TypeError):
-                    actor_name = f"Moderator {mod_id}"
-            entries.append({
-                "actor_name": actor_name,
-                "action": f"{doc.get('type', 'sanction').replace('_', ' ').title()} (case #{doc.get('case_id', '?')})",
-                "details": doc.get("reason", ""),
-                "timestamp": doc["timestamp"],
-            })
-    except Exception as e:
-        print(f"[AUDIT] Failed to fetch sanctions for activity feed: {e}", flush=True)
-
-    def _sort_key(entry):
-        ts = entry["timestamp"]
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=datetime.timezone.utc)
-        return ts
-
-    entries.sort(key=_sort_key, reverse=True)
-    return entries[:limit]
-
-def get_config(guild_id):
-    doc = config_col.find_one({"guild_id": str(guild_id)})
-    if not doc:
-        doc = {
-            "guild_id": str(guild_id),
-            "logs_channel": "logs",
-            "autorole": None,
-            "allowed_roles": [],
-            "command_roles": {},
-            "command_templates": {},
-            "language": None,
-            "log_dashboard_actions": False,
-            "log_webhook_url": None,
-            "log_webhook_channel_id": None,
-            "tickets_enabled": False,
-            "ticket_category_id": None,
-            "ticket_support_role_id": None,
-            "ticket_archive_category_id": None,
-            "appeal_channel_id": None,
-            "boost_channel_id": None,
-            "detailed_logs_enabled": False,
-            "banned_words": [],
-            "antinuke_enabled": False,
-            "antinuke_threshold": 5,
-            "weekly_digest_enabled": False,
-            "last_digest_sent_at": None,
-            "member_count_channel_id": None,
-            "min_account_age_days": 0,
-            "banned_domains": [],
-            "anti_link_global_enabled": False,
-            "welcome_channel_id": None,
-            "welcome_banner_enabled": False,
-            "verification_enabled": False,
-            "verified_role_id": None,
-            "unverified_role_id": None,
-            "quarantine_enabled": False,
-            "quarantine_role_id": None,
-            "quarantine_channel_id": None,
-            "quarantine_hold_minutes": 30,
-            "quarantine_suspicion_days": 7,
-            "anti_mention_spam_enabled": False,
-            "mention_spam_threshold": 5,
-            "anti_media_flood_enabled": False,
-            "media_flood_count": 5,
-            "media_flood_window": 10,
-            "auto_slowmode_enabled": False,
-            "auto_slowmode_threshold": 10,
-            "auto_slowmode_window": 10,
-            "auto_slowmode_seconds": 10,
-            "auto_slowmode_duration_minutes": 5,
-            "anti_doxx_enabled": False,
-            "raid_pattern_alert_enabled": False,
-            "auto_translate_enabled": False,
-            "remindme_enabled": True,
-            "serverinfo_visual_enabled": False,
-            "trap_channel_enabled": False,
-            "trap_channel_id": None,
-            "automod_spam_count": 10,
-            "automod_spam_window": 5,
-            "automod_caps_ratio": 0.7,
-            "automod_raid_count": 5,
-            "automod_raid_window": 10,
-            "warn_escalation_enabled": False,
-            "warn_mute_threshold": 3,
-            "warn_mute_minutes": 10,
-            "warn_kick_threshold": 5,
-            "jtc_channel_id": None,
-            "jtc_category_id": None,
-            "pending_role_menu_items": [],
-        }
-        config_col.insert_one(doc)
-    return doc
-
-def update_config(guild_id, key, value):
-    config_col.update_one({"guild_id": str(guild_id)}, {"$set": {key: value}}, upsert=True)
-
-def add_command_role(guild_id, command_name, role_id):
-    """Autorise un rôle à utiliser une commande spécifique pour ce serveur."""
-    config_col.update_one(
-        {"guild_id": str(guild_id)},
-        {"$addToSet": {f"command_roles.{command_name}": role_id}},
-        upsert=True,
-    )
-
-def remove_command_role(guild_id, command_name, role_id):
-    """Retire l'autorisation d'un rôle pour une commande spécifique sur ce serveur."""
-    config_col.update_one(
-        {"guild_id": str(guild_id)},
-        {"$pull": {f"command_roles.{command_name}": role_id}},
-        upsert=True,
-    )
-
-def set_command_template(guild_id, template_name, commands_list):
-    """Crée ou remplace un template de permissions propre à ce serveur."""
-    config_col.update_one(
-        {"guild_id": str(guild_id)},
-        {"$set": {f"command_templates.{template_name}": commands_list}},
-        upsert=True,
-    )
-
-def get_warns(guild_id, user_id):
-    doc = warns_col.find_one({"guild_id": str(guild_id), "user_id": str(user_id)})
-    return doc["count"] if doc else 0
-
-def set_warns(guild_id, user_id, count):
-    warns_col.update_one({"guild_id": str(guild_id), "user_id": str(user_id)}, {"$set": {"count": count}}, upsert=True)
-
-def mark_channel_locked(guild_id, channel_id, channel_name, locked_by, channel_type="text"):
-    locked_channels_col.update_one(
-        {"guild_id": str(guild_id), "channel_id": str(channel_id)},
-        {"$set": {
-            "channel_name": channel_name,
-            "channel_type": channel_type,
-            "locked_by": str(locked_by),
-            "locked_at": datetime.datetime.utcnow(),
-        }},
-        upsert=True,
-    )
-
-def mark_channel_unlocked(guild_id, channel_id):
-    locked_channels_col.delete_one({"guild_id": str(guild_id), "channel_id": str(channel_id)})
-
-def get_locked_channels(guild_id):
-    return list(locked_channels_col.find({"guild_id": str(guild_id)}))
-
-def get_next_case_id(guild_id):
-    """Compteur atomique par serveur — jamais de doublon même avec des
-    sanctions concurrentes."""
-    doc = case_counters_col.find_one_and_update(
-        {"_id": str(guild_id)},
-        {"$inc": {"seq": 1}},
-        upsert=True,
-        return_document=ReturnDocument.AFTER,
-    )
-    return doc["seq"]
-
-def log_sanction(guild_id, user_id, sanction_type, reason, moderator_id):
-    """Enregistre une sanction dans l'historique. moderator_id peut être un ID Discord,
-    'mobile_app' (action via l'app Android), ou 'automod' (déclenchée automatiquement).
-    Retourne le case_id généré, consultable ensuite via /case view."""
-    case_id = get_next_case_id(guild_id)
-    sanctions_col.insert_one({
-        "guild_id": str(guild_id),
-        "case_id": case_id,
-        "user_id": str(user_id),
-        "type": sanction_type,
-        "reason": reason or "No reason provided",
-        "moderator_id": str(moderator_id),
-        "timestamp": datetime.datetime.now(datetime.timezone.utc),
-    })
-    return case_id
-
-def get_case(guild_id, case_id):
-    return sanctions_col.find_one({"guild_id": str(guild_id), "case_id": case_id})
 
 
-def create_sanction_appeal(guild_id, case_id, sanction_type, user_id, user_name, reason, token):
-    ban_appeals_col.insert_one({
-        "token": token,
-        "guild_id": str(guild_id),
-        "case_id": case_id,
-        "sanction_type": sanction_type,
-        "user_id": str(user_id),
-        "user_name": user_name,
-        "ban_reason": reason,  # nom de champ conservé pour compat avec les anciens enregistrements
-        "status": "pending",  # pending -> submitted -> accepted / denied
-        "appeal_text": None,
-        "created_at": datetime.datetime.now(datetime.timezone.utc),
-        "submitted_at": None,
-        "resolved_at": None,
-    })
 
-def get_ban_appeal(token):
-    return ban_appeals_col.find_one({"token": token})
 
-def get_ban_appeal_by_case(guild_id, case_id):
-    return ban_appeals_col.find_one({"guild_id": str(guild_id), "case_id": case_id})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 async def post_appeal_for_review(guild, appeal, appeal_text):
@@ -654,6 +405,7 @@ def get_active_tempbans():
 # Bot setup
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
+core.bot = bot  # accès au bot pour les modules extraits (jamais `import main`)
 bot.locked_guilds = set()  # {guild_id, ...} — serveurs actuellement verrouillés (par serveur, pas global)
 bot.start_time = time.time()
 bot.ready_event = None  # set in on_ready, used so Flask waits until bot is ready
@@ -667,12 +419,7 @@ _cached_global_commands = []  # snapshot des commandes, pris avant de vider le b
 # à usage unique + un code TOTP (2FA), donc indépendant d'un compte
 # Discord ou d'un token bot compromis.
 
-def get_global_lock():
-    doc = bot_state_col.find_one({"_id": "global"})
-    return bool(doc and doc.get("locked"))
 
-def set_global_lock(locked: bool):
-    bot_state_col.update_one({"_id": "global"}, {"$set": {"locked": locked}}, upsert=True)
 
 
 _command_cooldowns = {}  # {user_id: last_invocation_timestamp}
@@ -6014,48 +5761,17 @@ MODERATION_COMMANDS = [
 
 # ---------- i18n ----------
 
-TRANSLATIONS_DIR = os.path.dirname(os.path.abspath(__file__))
-
-_FALLBACK_TRANSLATIONS = {
-    "en": {"logout": "Log out", "dash_title": "Your servers"},
-    "fr": {"logout": "Se d\u00e9connecter", "dash_title": "Tes serveurs"},
-}
 
 
-def _load_locale_file(filename):
-    """Charge un fichier de langue .yml. En cas de souci (fichier manquant,
-    YAML invalide...), on log l'erreur et on retombe sur un mini-dict de
-    secours plut\u00f4t que de planter tout le dashboard."""
-    path = os.path.join(TRANSLATIONS_DIR, filename)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            return data if isinstance(data, dict) else {}
-    except FileNotFoundError:
-        print(f"[I18N] Locale file not found: {path}", flush=True)
-        return {}
-    except yaml.YAMLError as e:
-        print(f"[I18N] Failed to parse {path}: {e}", flush=True)
-        return {}
 
 
-TRANSLATIONS = {
-    "en": _load_locale_file("en_us.yml") or _FALLBACK_TRANSLATIONS["en"],
-    "fr": _load_locale_file("fr_fr.yml") or _FALLBACK_TRANSLATIONS["fr"],
-}
 
 
-def t(key):
-    lang = session.get("lang", "en")
-    return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, TRANSLATIONS["en"].get(key, key))
 
 
-def current_lang():
-    return session.get("lang", "en")
 
 
-def current_theme():
-    return session.get("theme", "dark")
+
 
 
 api.jinja_env.globals["t"] = t
