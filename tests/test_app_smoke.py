@@ -179,3 +179,25 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     assert core.bot is nexus.bot
     # et le moteur Jinja doit utiliser le t() de i18n
     assert nexus.api.jinja_env.globals["t"] is i18n.t
+
+
+def test_rest_api_blueprint_is_registered_on_the_app(nexus):
+    """Étape 2b-1 : la REST API vit dans web/rest_api.py (Blueprint `rest_api`)
+    et main.py ne redéfinit plus ses routes."""
+    assert "rest_api" in nexus.api.blueprints
+    rest_rules = [r for r in nexus.api.url_map.iter_rules() if r.endpoint.startswith("rest_api.")]
+    assert len(rest_rules) == 30
+    assert {r.rule for r in rest_rules} == {r.rule for r in nexus.api.url_map.iter_rules()
+                                            if r.rule.startswith("/api/")}
+    for name in ("health", "list_guilds", "guild_stats", "ban_member_route", "guild_faq_toggle_route"):
+        assert not hasattr(nexus, name), f"main.{name} aurait dû partir dans web/rest_api.py"
+    # Les helpers déplacés restent accessibles sous le même nom dans main.py
+    import bridge
+    import discord_logging
+    import features
+    import moderation_actions
+    assert nexus.run_coroutine is bridge.run_coroutine
+    assert nexus.FEATURE_TOGGLES is features.FEATURE_TOGGLES
+    assert nexus._send_log_embed is discord_logging._send_log_embed
+    assert nexus.log_dashboard_action is discord_logging.log_dashboard_action
+    assert nexus.reverse_sanction is moderation_actions.reverse_sanction
