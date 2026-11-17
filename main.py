@@ -46,8 +46,11 @@ from i18n import (
 from features import FEATURE_TOGGLES
 from bridge import run_coroutine
 from discord_logging import get_or_create_log_webhook, _send_log_embed, log_dashboard_action
-from moderation_actions import reverse_sanction, _dm_user_appeal_result
+from moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTION_ICONS, post_appeal_for_review
+from owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
 from web.rest_api import bp as rest_api_bp
+from web import auth as web_auth, public as web_public
+from web.auth import dash_login_required, dash_guild_admin_required, get_user_admin_guilds  # utilisés par les pages /dashboard/* (encore ici)
 from utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
     is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
@@ -111,22 +114,6 @@ def init_mongo():
     # (ex: cogs/faq.py) lit bot.db au moment de la commande/l'event, jamais à
     # l'import du module, donc cette valeur est déjà prête à ce moment-là.
     bot.db = db
-
-
-async def post_appeal_for_review(guild, appeal, appeal_text):
-    cfg = get_config(guild.id)
-    channel_id = cfg.get("appeal_channel_id")
-    channel = guild.get_channel(int(channel_id)) if channel_id else None
-    if channel is None:
-        return
-    sanction_type = appeal.get("sanction_type", "ban")
-    icon = SANCTION_ICONS.get(sanction_type, "📨")
-    embed = discord.Embed(title=f"{icon} Appeal — Case #{appeal['case_id']} ({sanction_type})", color=0xffb84d)
-    embed.add_field(name="User", value=f"{appeal['user_name']} ({appeal['user_id']})", inline=False)
-    embed.add_field(name="Original reason", value=appeal["ban_reason"][:1000] or "No reason provided", inline=False)
-    embed.add_field(name="Appeal", value=appeal_text[:1000], inline=False)
-    embed.set_footer(text=f"Review with: /appeal accept case_id:{appeal['case_id']}  or  /appeal deny case_id:{appeal['case_id']}")
-    await channel.send(embed=embed)
 
 
 async def send_sanction_dm(member_or_user, guild, sanction_type, reason):
@@ -423,33 +410,6 @@ def is_bot_owner():
             return False
         return True
     return app_commands.check(predicate)
-
-
-async def get_owner_user():
-    app_info = await bot.application_info()
-    if app_info.owner:
-        return app_info.owner
-    if app_info.team:
-        try:
-            return await bot.fetch_user(app_info.team.owner_id)
-        except discord.HTTPException:
-            return None
-    return None
-
-
-async def notify_owner_killswitch(locked: bool):
-    owner = await get_owner_user()
-    if owner is None:
-        return
-    msg = (
-        "🔒 Nexus has just been **locked down** across all servers via the email kill-switch."
-        if locked else
-        "🔓 Nexus has just been **unlocked** and is back to normal across all servers."
-    )
-    try:
-        await owner.send(msg)
-    except discord.HTTPException:
-        pass
 
 
 def send_email(subject, body):
@@ -1273,22 +1233,6 @@ async def warnlist(interaction: discord.Interaction):
     await interaction.followup.send(embed=view.build_embed(), view=view if view.max_page > 0 else None)
 
 # /history
-SANCTION_ICONS = {
-    "ban": "🔨",
-    "kick": "👢",
-    "mute": "🔇",
-    "warn": "⚠️",
-    "softban": "🧹",
-    "note": "📝",
-    "automod_spam": "🤖",
-    "automod_link": "🔗",
-    "automod_link_global": "🌐",
-    "automod_mention_spam": "📢",
-    "automod_media_flood": "🖼️",
-    "automod_doxx": "🪪",
-    "automod_caps": "🔠",
-}
-
 @bot.tree.command(name="history", description="Show moderation history for a member")
 async def history(interaction: discord.Interaction, member: discord.Member):
     if not await check_access(interaction, "history", None): return
@@ -4786,32 +4730,8 @@ if _SENTRY_DSN:
 # depuis la racine du repo) mais cassait dès qu'on lance main.py depuis ailleurs.
 api = Flask('', template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"))
 api.register_blueprint(rest_api_bp)  # REST API /api/* (voir web/rest_api.py)
-
-
-@api.route('/')
-def home():
-    # Reste toujours 200 (UptimeRobot et Render s'en servent comme simple ping
-    # de "le serveur web répond") -- le détail par composant est dans le JSON,
-    # pas dans le status code, pour ne jamais déclencher de faux downtime sur
-    # un blip Mongo passager.
-    mongo_ok = False
-    try:
-        mongo.admin.command("ping")
-        mongo_ok = True
-    except Exception:
-        pass
-    return jsonify({
-        "status": "alive",
-        "discord_gateway": "connected" if bot.is_ready() else "disconnected",
-        "mongodb": "connected" if mongo_ok else "unreachable",
-        "guild_count": len(bot.guilds) if bot.is_ready() else 0,
-    })
-
-@api.route('/favicon.ico')
-def favicon():
-    # Nexus.png vit à la racine du repo (à côté de main.py), pas dans un
-    # dossier static/ -- send_from_directory pointe dessus directement.
-    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "Nexus.png", mimetype="image/png")
+web_auth.routes.register(api)    # login / callback / logout (voir web/auth.py)
+web_public.routes.register(api)  # /, /status, kill-switch, appels publics (voir web/public.py)
 
 
 # ============================================================
@@ -4826,139 +4746,6 @@ api.config.update(
     SESSION_COOKIE_HTTPONLY=True,   # inaccessible en JS (anti XSS)
     SESSION_COOKIE_SAMESITE="Lax",  # anti CSRF de base
 )
-
-DASH_CLIENT_ID = os.environ["DISCORD_CLIENT_ID"]
-DASH_CLIENT_SECRET = os.environ["DISCORD_CLIENT_SECRET"]
-DASH_REDIRECT_URI = os.environ["DISCORD_REDIRECT_URI"]
-
-DISCORD_API_BASE = "https://discord.com/api"
-ADMINISTRATOR_PERM = 0x8
-GUILD_ID_RE = re.compile(r"^\d{17,19}$")  # valide un vrai snowflake Discord
-
-
-def dash_login_required(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if "access_token" not in session:
-            return redirect(url_for("dash_login"))
-        return f(*args, **kwargs)
-    return wrapper
-
-
-def get_user_admin_guilds():
-    """Revient chercher la vérité chez Discord, avec un court cache pour éviter
-    de spammer l'API à chaque clic (et donc de se reprendre un rate limit)."""
-    cached = session.get("admin_guilds_cache")
-    cached_at = session.get("admin_guilds_cache_at", 0)
-    if cached is not None and (time.time() - cached_at) < 120:
-        return cached
-
-    r = requests.get(
-        f"{DISCORD_API_BASE}/users/@me/guilds",
-        headers={"Authorization": f"Bearer {session['access_token']}"},
-        timeout=10,
-    )
-    if r.status_code == 401:
-        session.clear()
-        return None
-    if r.status_code != 200:
-        # Discord a répondu autre chose qu'une liste de serveurs (rate limit,
-        # erreur temporaire...) : on ne plante pas, on retombe sur le cache
-        # précédent s'il existe, sinon on force un nouveau login.
-        if cached is not None:
-            return cached
-        return None
-
-    guilds = r.json()
-    if not isinstance(guilds, list):
-        return cached if cached is not None else None
-
-    admin_guilds = [
-        g_ for g_ in guilds
-        if isinstance(g_, dict) and int(g_.get("permissions", 0)) & ADMINISTRATOR_PERM == ADMINISTRATOR_PERM
-    ]
-    session["admin_guilds_cache"] = admin_guilds
-    session["admin_guilds_cache_at"] = time.time()
-    return admin_guilds
-
-
-def dash_guild_admin_required(f):
-    """Vérifie que guild_id dans l'URL est un serveur où l'user est admin ET où le bot est présent."""
-    @wraps(f)
-    def wrapper(guild_id, *args, **kwargs):
-        if not GUILD_ID_RE.match(guild_id):
-            return jsonify({"error": "Invalid guild id"}), 400
-        admin_guilds = get_user_admin_guilds()
-        if admin_guilds is None:
-            return redirect(url_for("dash_login"))
-        admin_guild_ids = {g_["id"] for g_ in admin_guilds}
-        if guild_id not in admin_guild_ids:
-            return jsonify({"error": "Forbidden"}), 403
-        if not bot.is_ready() or not bot.get_guild(int(guild_id)):
-            return jsonify({"error": "Bot not present on this server"}), 403
-        return f(guild_id, *args, **kwargs)
-    return wrapper
-
-
-@api.route("/login")
-def dash_login():
-    state = secrets.token_urlsafe(32)
-    session["oauth_state"] = state
-    params = {
-        "client_id": DASH_CLIENT_ID,
-        "redirect_uri": DASH_REDIRECT_URI,
-        "response_type": "code",
-        "scope": "identify guilds",
-        "state": state,
-    }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return redirect(f"{DISCORD_API_BASE}/oauth2/authorize?{query}")
-
-
-@api.route("/callback")
-def dash_callback():
-    state = request.args.get("state")
-    if not state or state != session.pop("oauth_state", None):
-        return jsonify({"error": "Invalid state"}), 403
-
-    code = request.args.get("code")
-    if not code:
-        return jsonify({"error": "Missing code"}), 400
-
-    token_r = requests.post(
-        f"{DISCORD_API_BASE}/oauth2/token",
-        data={
-            "client_id": DASH_CLIENT_ID,
-            "client_secret": DASH_CLIENT_SECRET,
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": DASH_REDIRECT_URI,
-        },
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=10,
-    )
-    if token_r.status_code != 200:
-        return jsonify({"error": "Token exchange failed"}), 400
-
-    token_data = token_r.json()
-    session["access_token"] = token_data["access_token"]
-    session["refresh_token"] = token_data["refresh_token"]
-
-    user_r = requests.get(
-        f"{DISCORD_API_BASE}/users/@me",
-        headers={"Authorization": f"Bearer {token_data['access_token']}"},
-        timeout=10,
-    )
-    session["dash_user"] = user_r.json()
-
-    return redirect(url_for("dash_home"))
-
-
-@api.route("/logout")
-def dash_logout():
-    session.clear()
-    return redirect(url_for("dash_login"))
-
 
 # ---------- Templates HTML ----------
 
@@ -5638,177 +5425,15 @@ def dash_toggle_lock(guild_id):
 # les scanners anti-spam qui pré-visitent les liens des emails) ;
 # seul le POST, avec un code correct, change l'état du bot.
 
-def _killswitch_token_doc(token):
-    doc = killswitch_tokens_col.find_one({"token": token})
-    if not doc:
-        return None
-    now = datetime.datetime.now(datetime.timezone.utc)
-    expires_at = doc["expires_at"]
-    if expires_at.tzinfo is None:
-        # pymongo relit les dates sans fuseau (naive) même si on les a
-        # stockées "aware" : on remet UTC explicitement avant de comparer,
-        # sinon TypeError (naive vs aware) et 500 sur la page de confirmation.
-        expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
-    if doc.get("used") or expires_at < now or doc.get("attempts", 0) >= 5:
-        return None
-    return doc
-
-
-def get_client_ip():
-    """Render est derrière un proxy : la vraie IP du visiteur est dans
-    X-Forwarded-For, pas request.remote_addr (qui donnerait l'IP du proxy)."""
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.remote_addr or "unknown"
-
-
-async def notify_owner_bruteforce(ip):
-    owner = await get_owner_user()
-    if owner is None:
-        return
-    msg = (
-        f"🚨 **Possible intrusion attempt**: 5 incorrect codes were entered on a kill-switch "
-        f"confirmation link (from IP `{ip}`). That link is now dead.\n\n"
-        f"If this wasn't you, consider rotating your TOTP secret (`generate_totp_secret.py`) "
-        f"and updating `TOTP_SECRET` on Render."
-    )
-    try:
-        await owner.send(msg)
-    except discord.HTTPException:
-        pass
-
-
-@api.route("/admin/kill-switch/<token>", methods=["GET"])
-def killswitch_confirm_page(token):
-    ip = get_client_ip()
-    if _killswitch_token_doc(token) is None:
-        record_audit("global", None, f"Unknown (IP {ip})", "Viewed an invalid/expired kill-switch link")
-        return render_template("killswitch_invalid.html"), 410
-    record_audit("global", None, f"Unknown (IP {ip})", "Opened the kill-switch confirmation page")
-    return render_template("killswitch_confirm.html", locked=get_global_lock(), error=False)
-
-
-@api.route("/admin/kill-switch/<token>", methods=["POST"])
-def killswitch_submit(token):
-    ip = get_client_ip()
-    doc = _killswitch_token_doc(token)
-    if doc is None:
-        return render_template("killswitch_invalid.html"), 410
-
-    code = request.form.get("code", "").strip()
-    totp_secret = os.getenv("TOTP_SECRET")
-    valid = bool(totp_secret) and bool(code) and pyotp.TOTP(totp_secret).verify(code, valid_window=1)
-
-    if not valid:
-        new_attempts = doc.get("attempts", 0) + 1
-        killswitch_tokens_col.update_one({"token": token}, {"$inc": {"attempts": 1}})
-        attempts_left = max(0, 5 - new_attempts)
-        record_audit("global", None, f"Unknown (IP {ip})", "Failed kill-switch code attempt", f"{new_attempts}/5 attempts used")
-        if new_attempts >= 5:
-            try:
-                run_coroutine(notify_owner_bruteforce(ip))
-            except Exception as e:
-                print(f"[KILLSWITCH] Failed to DM owner about brute-force: {e}", flush=True)
-        return render_template("killswitch_confirm.html", locked=get_global_lock(), error=True, attempts_left=attempts_left
-        )
-
-    # Code correct : le token est consommé immédiatement (usage unique),
-    # avant même de faire quoi que ce soit d'autre.
-    killswitch_tokens_col.update_one({"token": token}, {"$set": {"used": True}})
-    new_state = not get_global_lock()
-    set_global_lock(new_state)
-    record_audit("global", None, f"Owner (email + authenticator, IP {ip})", "Locked bot globally" if new_state else "Unlocked bot globally")
-    try:
-        run_coroutine(notify_owner_killswitch(new_state))
-    except Exception as e:
-        print(f"[KILLSWITCH] Failed to DM owner: {e}", flush=True)
-
-    return render_template("killswitch_done.html", locked=new_state)
-
-
 # ============================================================
 # =================== BAN APPEALS — public form ===============
 # ============================================================
 # Formulaire public (pas de login) : la sécurité vient du token à usage
 # unique envoyé uniquement dans le DM de ban, pas d'un compte Discord.
 
-APPEAL_STATUS_COPY = {
-    "submitted": ("Already submitted", "Your appeal has already been submitted and is awaiting review."),
-    "accepted": ("Appeal accepted", "Your appeal was accepted — you should already be unbanned."),
-    "denied": ("Appeal denied", "Your appeal was reviewed and denied."),
-}
-
-
-@api.route("/appeal/<token>", methods=["GET"])
-def appeal_form_page(token):
-    appeal = get_ban_appeal(token)
-    if not appeal:
-        return render_template("appeal_invalid.html"), 404
-    if appeal["status"] != "pending":
-        title, message = APPEAL_STATUS_COPY.get(appeal["status"], ("Status", "This appeal has already been processed."))
-        return render_template("appeal_status.html", title=title, message=message)
-    guild = bot.get_guild(int(appeal["guild_id"]))
-    return render_template("appeal_form.html",
-        guild_name=guild.name if guild else "the server",
-        case_id=appeal["case_id"],
-        ban_reason=appeal["ban_reason"] or "No reason provided",
-    )
-
-
-@api.route("/appeal/<token>", methods=["POST"])
-def appeal_form_submit(token):
-    appeal = get_ban_appeal(token)
-    if not appeal or appeal["status"] != "pending":
-        return render_template("appeal_invalid.html"), 404
-
-    appeal_text = request.form.get("appeal_text", "").strip()[:1000]
-    guild = bot.get_guild(int(appeal["guild_id"]))
-    if not appeal_text:
-        return render_template("appeal_form.html",
-            guild_name=guild.name if guild else "the server",
-            case_id=appeal["case_id"],
-            ban_reason=appeal["ban_reason"] or "No reason provided",
-        )
-
-    ban_appeals_col.update_one(
-        {"token": token},
-        {"$set": {
-            "status": "submitted",
-            "appeal_text": appeal_text,
-            "submitted_at": datetime.datetime.now(datetime.timezone.utc),
-        }},
-    )
-
-    if guild:
-        try:
-            run_coroutine(post_appeal_for_review(guild, appeal, appeal_text))
-        except Exception as e:
-            print(f"[APPEAL] Failed to post appeal for review: {e}", flush=True)
-
-    return render_template("appeal_done.html", case_id=appeal["case_id"])
-
-
 # ============================================================
 # =================== PUBLIC STATUS PAGE =====================
 # ============================================================
-
-_format_uptime = utils.format_uptime
-
-
-@api.route("/status")
-def public_status_page():
-    online = bot.is_ready()
-    if not online:
-        return render_template("status_page.html", online=False), 503
-    uptime = _format_uptime(time.time() - bot.start_time) if hasattr(bot, "start_time") else "unknown"
-    return render_template("status_page.html",
-        online=True,
-        guild_count=len(bot.guilds),
-        latency_ms=round(bot.latency * 1000) if bot.latency == bot.latency else "—",  # NaN check avant le premier heartbeat
-        uptime=uptime,
-    )
-
 
 # ============================================================
 # =============== CASES BROWSER (dashboard) ===================

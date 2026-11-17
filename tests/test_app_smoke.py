@@ -201,3 +201,26 @@ def test_rest_api_blueprint_is_registered_on_the_app(nexus):
     assert nexus._send_log_embed is discord_logging._send_log_embed
     assert nexus.log_dashboard_action is discord_logging.log_dashboard_action
     assert nexus.reverse_sanction is moderation_actions.reverse_sanction
+
+
+def test_public_and_auth_routes_live_in_web_modules(nexus):
+    """Étape 2b-2a : /, /status, kill-switch, appels publics et login/callback/logout
+    vivent dans web/public.py et web/auth.py, enregistrés SANS préfixe de Blueprint
+    (les templates font url_for('dash_home'), url_for('dash_guild_page')...)."""
+    from web import auth, public
+    endpoints = {r.endpoint for r in nexus.api.url_map.iter_rules()}
+    for name in ("home", "favicon", "public_status_page", "killswitch_confirm_page", "killswitch_submit",
+                 "appeal_form_page", "appeal_form_submit", "dash_login", "dash_callback", "dash_logout"):
+        assert name in endpoints, f"endpoint {name} disparu (ou renommé avec un préfixe)"
+        assert not hasattr(nexus, name) or getattr(nexus, name) is None, f"main.{name} aurait dû partir"
+    assert nexus.api.view_functions["dash_login"] is auth.dash_login
+    assert nexus.api.view_functions["home"] is public.home
+    # Les décorateurs d'auth utilisés par les pages /dashboard/* (encore dans main) sont ré-importés
+    assert nexus.dash_login_required is auth.dash_login_required
+    assert nexus.dash_guild_admin_required is auth.dash_guild_admin_required
+    # Helpers déplacés, toujours accessibles sous le même nom
+    import moderation_actions
+    import owner_notify
+    assert nexus.SANCTION_ICONS is moderation_actions.SANCTION_ICONS
+    assert nexus.post_appeal_for_review is moderation_actions.post_appeal_for_review
+    assert nexus.get_owner_user is owner_notify.get_owner_user

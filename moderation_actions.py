@@ -1,11 +1,28 @@
-"""moderation_actions -- actions Discord liées aux appels de sanction.
+"""moderation_actions -- icônes de sanction et actions Discord liées aux appels.
 
-Extrait de main.py (étape 2b-1). Le bot est lu via `core.bot` (jamais `import main`).
+Extrait de main.py (étapes 2b-1 et 2b-2a). Le bot est lu via `core.bot` (jamais `import main`).
 """
 import discord
 
 import core
+from config_store import get_config
 from sanctions_store import get_warns, set_warns
+
+SANCTION_ICONS = {
+    "ban": "🔨",
+    "kick": "👢",
+    "mute": "🔇",
+    "warn": "⚠️",
+    "softban": "🧹",
+    "note": "📝",
+    "automod_spam": "🤖",
+    "automod_link": "🔗",
+    "automod_link_global": "🌐",
+    "automod_mention_spam": "📢",
+    "automod_media_flood": "🖼️",
+    "automod_doxx": "🪪",
+    "automod_caps": "🔠",
+}
 
 
 async def reverse_sanction(guild, sanction_type, user_id):
@@ -42,3 +59,19 @@ async def _dm_user_appeal_result(user_id, guild_name, case_id, accepted, result)
         await user.send(f"✅ Your appeal for **{guild_name}** (case #{case_id}) was accepted — {result}.")
     else:
         await user.send(f"❌ Your appeal for **{guild_name}** (case #{case_id}) was reviewed and denied.")
+
+
+async def post_appeal_for_review(guild, appeal, appeal_text):
+    cfg = get_config(guild.id)
+    channel_id = cfg.get("appeal_channel_id")
+    channel = guild.get_channel(int(channel_id)) if channel_id else None
+    if channel is None:
+        return
+    sanction_type = appeal.get("sanction_type", "ban")
+    icon = SANCTION_ICONS.get(sanction_type, "📨")
+    embed = discord.Embed(title=f"{icon} Appeal — Case #{appeal['case_id']} ({sanction_type})", color=0xffb84d)
+    embed.add_field(name="User", value=f"{appeal['user_name']} ({appeal['user_id']})", inline=False)
+    embed.add_field(name="Original reason", value=appeal["ban_reason"][:1000] or "No reason provided", inline=False)
+    embed.add_field(name="Appeal", value=appeal_text[:1000], inline=False)
+    embed.set_footer(text=f"Review with: /appeal accept case_id:{appeal['case_id']}  or  /appeal deny case_id:{appeal['case_id']}")
+    await channel.send(embed=embed)
