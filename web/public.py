@@ -1,0 +1,200 @@
+"""web.public -- pages publiques : statut JSON (/), favicon, /status, kill-switch par e-mail
+(+ code TOTP) et formulaire public d'appel de sanction.
+
+Extrait de main.py (étape 2b-2a). Ce module n'importe JAMAIS main.py (bot -> `core.bot`,
+Mongo -> `core.mongo` / `core.col`). Routes enregistrées par main.py via `routes.register(api)`.
+"""
+import datetime
+import os
+import time
+
+from flask import jsonify, render_template, request, send_from_directory
+import pyotp
+
+from audit import record_audit
+from bridge import run_coroutine
+from config_store import get_global_lock, set_global_lock
+import core
+from core import col
+from moderation_actions import post_appeal_for_review
+from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
+from sanctions_store import get_ban_appeal
+import utils
+from web.routing import Routes
+
+routes = Routes()
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # racine du repo (Nexus.png)
+
+
+@routes.route('/')
+def home():
+    # Reste toujours 200 (UptimeRobot et Render s'en servent comme simple ping
+    # de "le serveur web répond") -- le détail par composant est dans le JSON,
+    # pas dans le status code, pour ne jamais déclencher de faux downtime sur
+    # un blip Mongo passager.
+    mongo_ok = False
+    try:
+        core.mongo.admin.command("ping")
+        mongo_ok = True
+    except Exception:
+        pass
+    return jsonify({
+        "status": "alive",
+        "discord_gateway": "connected" if core.bot.is_ready() else "disconnected",
+        "mongodb": "connected" if mongo_ok else "unreachable",
+        "guild_count": len(core.bot.guilds) if core.bot.is_ready() else 0,
+    })
+
+
+@routes.route('/favicon.ico')
+def favicon():
+    # Nexus.png vit à la racine du repo (à côté de main.py), pas dans un
+    # dossier static/ -- send_from_directory pointe dessus directement.
+    return send_from_directory(ROOT_DIR, "Nexus.png", mimetype="image/png")
+
+
+def _killswitch_token_doc(token):
+    doc = col.killswitch_tokens.find_one({"token": token})
+    if not doc:
+        return None
+    now = datetime.datetime.now(datetime.timezone.utc)
+    expires_at = doc["expires_at"]
+    if expires_at.tzinfo is None:
+        # pymongo relit les dates sans fuseau (naive) même si on les a
+        # stockées "aware" : on remet UTC explicitement avant de comparer,
+        # sinon TypeError (naive vs aware) et 500 sur la page de confirmation.
+        expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+    if doc.get("used") or expires_at < now or doc.get("attempts", 0) >= 5:
+        return None
+    return doc
+
+
+def get_client_ip():
+    """Render est derrière un proxy : la vraie IP du visiteur est dans
+    X-Forwarded-For, pas request.remote_addr (qui donnerait l'IP du proxy)."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+@routes.route("/admin/kill-switch/<token>", methods=["GET"])
+def killswitch_confirm_page(token):
+    ip = get_client_ip()
+    if _killswitch_token_doc(token) is None:
+        record_audit("global", None, f"Unknown (IP {ip})", "Viewed an invalid/expired kill-switch link")
+        return render_template("killswitch_invalid.html"), 410
+    record_audit("global", None, f"Unknown (IP {ip})", "Opened the kill-switch confirmation page")
+    return render_template("killswitch_confirm.html", locked=get_global_lock(), error=False)
+
+
+@routes.route("/admin/kill-switch/<token>", methods=["POST"])
+def killswitch_submit(token):
+    ip = get_client_ip()
+    doc = _killswitch_token_doc(token)
+    if doc is None:
+        return render_template("killswitch_invalid.html"), 410
+
+    code = request.form.get("code", "").strip()
+    totp_secret = os.getenv("TOTP_SECRET")
+    valid = bool(totp_secret) and bool(code) and pyotp.TOTP(totp_secret).verify(code, valid_window=1)
+
+    if not valid:
+        new_attempts = doc.get("attempts", 0) + 1
+        col.killswitch_tokens.update_one({"token": token}, {"$inc": {"attempts": 1}})
+        attempts_left = max(0, 5 - new_attempts)
+        record_audit("global", None, f"Unknown (IP {ip})", "Failed kill-switch code attempt", f"{new_attempts}/5 attempts used")
+        if new_attempts >= 5:
+            try:
+                run_coroutine(notify_owner_bruteforce(ip))
+            except Exception as e:
+                print(f"[KILLSWITCH] Failed to DM owner about brute-force: {e}", flush=True)
+        return render_template("killswitch_confirm.html", locked=get_global_lock(), error=True, attempts_left=attempts_left
+        )
+
+    # Code correct : le token est consommé immédiatement (usage unique),
+    # avant même de faire quoi que ce soit d'autre.
+    col.killswitch_tokens.update_one({"token": token}, {"$set": {"used": True}})
+    new_state = not get_global_lock()
+    set_global_lock(new_state)
+    record_audit("global", None, f"Owner (email + authenticator, IP {ip})", "Locked bot globally" if new_state else "Unlocked bot globally")
+    try:
+        run_coroutine(notify_owner_killswitch(new_state))
+    except Exception as e:
+        print(f"[KILLSWITCH] Failed to DM owner: {e}", flush=True)
+
+    return render_template("killswitch_done.html", locked=new_state)
+
+
+APPEAL_STATUS_COPY = {
+    "submitted": ("Already submitted", "Your appeal has already been submitted and is awaiting review."),
+    "accepted": ("Appeal accepted", "Your appeal was accepted — you should already be unbanned."),
+    "denied": ("Appeal denied", "Your appeal was reviewed and denied."),
+}
+
+
+@routes.route("/appeal/<token>", methods=["GET"])
+def appeal_form_page(token):
+    appeal = get_ban_appeal(token)
+    if not appeal:
+        return render_template("appeal_invalid.html"), 404
+    if appeal["status"] != "pending":
+        title, message = APPEAL_STATUS_COPY.get(appeal["status"], ("Status", "This appeal has already been processed."))
+        return render_template("appeal_status.html", title=title, message=message)
+    guild = core.bot.get_guild(int(appeal["guild_id"]))
+    return render_template("appeal_form.html",
+        guild_name=guild.name if guild else "the server",
+        case_id=appeal["case_id"],
+        ban_reason=appeal["ban_reason"] or "No reason provided",
+    )
+
+
+@routes.route("/appeal/<token>", methods=["POST"])
+def appeal_form_submit(token):
+    appeal = get_ban_appeal(token)
+    if not appeal or appeal["status"] != "pending":
+        return render_template("appeal_invalid.html"), 404
+
+    appeal_text = request.form.get("appeal_text", "").strip()[:1000]
+    guild = core.bot.get_guild(int(appeal["guild_id"]))
+    if not appeal_text:
+        return render_template("appeal_form.html",
+            guild_name=guild.name if guild else "the server",
+            case_id=appeal["case_id"],
+            ban_reason=appeal["ban_reason"] or "No reason provided",
+        )
+
+    col.ban_appeals.update_one(
+        {"token": token},
+        {"$set": {
+            "status": "submitted",
+            "appeal_text": appeal_text,
+            "submitted_at": datetime.datetime.now(datetime.timezone.utc),
+        }},
+    )
+
+    if guild:
+        try:
+            run_coroutine(post_appeal_for_review(guild, appeal, appeal_text))
+        except Exception as e:
+            print(f"[APPEAL] Failed to post appeal for review: {e}", flush=True)
+
+    return render_template("appeal_done.html", case_id=appeal["case_id"])
+
+
+_format_uptime = utils.format_uptime
+
+
+@routes.route("/status")
+def public_status_page():
+    online = core.bot.is_ready()
+    if not online:
+        return render_template("status_page.html", online=False), 503
+    uptime = _format_uptime(time.time() - core.bot.start_time) if hasattr(core.bot, "start_time") else "unknown"
+    return render_template("status_page.html",
+        online=True,
+        guild_count=len(core.bot.guilds),
+        latency_ms=round(core.bot.latency * 1000) if core.bot.latency == core.bot.latency else "—",  # NaN check avant le premier heartbeat
+        uptime=uptime,
+    )
