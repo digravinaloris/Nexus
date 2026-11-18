@@ -215,12 +215,36 @@ def test_public_and_auth_routes_live_in_web_modules(nexus):
         assert not hasattr(nexus, name) or getattr(nexus, name) is None, f"main.{name} aurait dû partir"
     assert nexus.api.view_functions["dash_login"] is auth.dash_login
     assert nexus.api.view_functions["home"] is public.home
-    # Les décorateurs d'auth utilisés par les pages /dashboard/* (encore dans main) sont ré-importés
-    assert nexus.dash_login_required is auth.dash_login_required
-    assert nexus.dash_guild_admin_required is auth.dash_guild_admin_required
     # Helpers déplacés, toujours accessibles sous le même nom
     import moderation_actions
     import owner_notify
     assert nexus.SANCTION_ICONS is moderation_actions.SANCTION_ICONS
     assert nexus.post_appeal_for_review is moderation_actions.post_appeal_for_review
     assert nexus.get_owner_user is owner_notify.get_owner_user
+
+
+DASHBOARD_ENDPOINTS = [
+    "dash_set_lang", "dash_presence_ping", "dash_presence_who", "dash_features_page", "dash_settings_page",
+    "dash_settings_save", "dash_template_marketplace", "dash_template_import", "dash_set_theme", "dash_home",
+    "dash_guild_page", "dash_automod", "dash_permission_add", "dash_permission_template",
+    "dash_permission_remove", "dash_apikey_regen", "dash_export_audit_csv", "dash_export_audit_pdf",
+    "dash_toggle_lock", "dash_cases_page", "dash_appeals_page", "dash_appeal_accept", "dash_appeal_deny",
+]
+
+
+def test_dashboard_pages_live_in_web_dashboard(nexus):
+    """Étape 2b-2b : les 23 pages /dashboard/* vivent dans web/dashboard.py, enregistrées avec
+    leurs noms d'endpoints d'origine (url_for('dash_guild_page')... dans les templates)."""
+    from web import dashboard
+    for name in DASHBOARD_ENDPOINTS:
+        assert nexus.api.view_functions[name] is getattr(dashboard, name), name
+        assert not hasattr(nexus, name), f"main.{name} aurait dû partir dans web/dashboard.py"
+    import audit_export
+    import command_catalog
+    import template_ops
+    # Données / helpers partagés avec les slash commands, ré-importés sous le même nom
+    assert nexus.MODERATION_COMMANDS is command_catalog.MODERATION_COMMANDS
+    assert nexus.COMMAND_TEMPLATES is command_catalog.COMMAND_TEMPLATES
+    assert nexus._get_audit_records is audit_export._get_audit_records
+    assert nexus._build_audit_csv_bytes is audit_export._build_audit_csv_bytes
+    assert nexus._apply_template_base_config is template_ops._apply_template_base_config
