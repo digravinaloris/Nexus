@@ -1,0 +1,70 @@
+"""Durcissement : redirection ouverte du dashboard (?next=) et démarrage du serveur web."""
+import sys
+
+import pytest
+
+EVIL = [
+    "https://evil.example/phish",
+    "http://evil.example",
+    "//evil.example",
+    "///evil.example",
+    "/\\evil.example",          # /\hote : certains navigateurs l'interprètent comme //hote
+    "/\t/evil.example",         # tab ignoré par les navigateurs -> //evil.example
+    "/\n/evil.example",
+    "javascript:alert(1)",
+    "evil.example",             # relatif sans slash initial
+    " https://evil.example",
+]
+
+
+@pytest.mark.parametrize("path", ["/dashboard/lang/fr", "/dashboard/theme/light"])
+@pytest.mark.parametrize("nxt", EVIL)
+def test_next_param_never_redirects_off_site(nexus, path, nxt):
+    resp = nexus.api.test_client().get(path, query_string={"next": nxt})
+    assert resp.status_code == 302
+    location = resp.headers["Location"]
+    assert location.endswith("/dashboard") and "evil" not in location and "javascript" not in location
+
+
+@pytest.mark.parametrize("path", ["/dashboard/lang/fr", "/dashboard/theme/light"])
+def test_next_param_keeps_working_for_site_paths(nexus, path):
+    # Les templates passent next=request.path (ex: /dashboard/123/settings)
+    for nxt in ("/status", "/dashboard/123456789012345678/settings", "/dashboard?x=1"):
+        resp = nexus.api.test_client().get(path, query_string={"next": nxt})
+        assert resp.status_code == 302 and resp.headers["Location"].endswith(nxt)
+    resp = nexus.api.test_client().get(path)  # sans next -> dashboard
+    assert resp.headers["Location"].endswith("/dashboard")
+
+
+def test_run_api_serves_with_waitress(nexus, monkeypatch):
+    waitress = pytest.importorskip("waitress")
+    calls = {}
+    monkeypatch.setattr(waitress, "serve", lambda app, **kw: calls.update(app=app, **kw))
+    monkeypatch.setattr(nexus.api, "run", lambda **kw: calls.update(dev_server=True))
+    monkeypatch.setenv("PORT", "9123")
+    nexus.run_api()
+    assert calls == {"app": nexus.api, "host": "0.0.0.0", "port": 9123, "threads": 16}
+
+
+def test_run_api_falls_back_to_flask_dev_server(nexus, monkeypatch, capsys):
+    calls = {}
+    monkeypatch.setitem(sys.modules, "waitress", None)  # import impossible
+    monkeypatch.setattr(nexus.api, "run", lambda **kw: calls.update(kw))
+    monkeypatch.setenv("PORT", "9124")
+    nexus.run_api()
+    assert calls == {"host": "0.0.0.0", "port": 9124}
+    assert "repli sur le serveur de développement" in capsys.readouterr().out
+
+
+def test_run_api_falls_back_when_waitress_crashes_at_startup(nexus, monkeypatch):
+    waitress = pytest.importorskip("waitress")
+    calls = {}
+
+    def boom(app, **kw):
+        raise RuntimeError("incompatible")
+
+    monkeypatch.setattr(waitress, "serve", boom)
+    monkeypatch.setattr(nexus.api, "run", lambda **kw: calls.update(kw))
+    monkeypatch.setenv("PORT", "9125")
+    nexus.run_api()
+    assert calls == {"host": "0.0.0.0", "port": 9125}
