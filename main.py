@@ -4701,7 +4701,13 @@ api.jinja_env.globals["theme"] = current_theme
 
 def run_api():
     port = int(os.getenv("PORT", 8080))
-    api.run(host='0.0.0.0', port=port)
+    try:
+        # Serveur WSGI de production : le serveur intégré de Flask n'est qu'un serveur de développement.
+        from waitress import serve
+        serve(api, host='0.0.0.0', port=port, threads=16)
+    except Exception as e:  # waitress absent ou incompatible : repli sur le serveur de développement
+        print(f"[WEB] waitress indisponible ({e!r}), repli sur le serveur de développement Flask", flush=True)
+        api.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = Thread(target=run_api)
