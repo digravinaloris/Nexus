@@ -10,6 +10,7 @@ import datetime
 from functools import wraps
 import secrets
 import time
+from urllib.parse import urlparse
 
 import discord
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
@@ -34,12 +35,27 @@ from web.routing import Routes
 routes = Routes()
 
 
+def _safe_next_url(default):
+    """Cible de redirection tirée de ?next=, uniquement si c'est un chemin RELATIF de ce site.
+
+    Sans ce filtre, `/dashboard/lang/fr?next=https://site-pirate` redirigerait n'importe qui vers
+    un site externe (« open redirect », utile pour du phishing depuis un vrai lien Nexus).
+    Refusés : URL absolues, `//hote` (protocole relatif), antislash, caractères de contrôle
+    (les navigateurs ignorent tab/retour ligne : `/\t/hote` redevient `//hote`)."""
+    target = request.args.get("next") or ""
+    parsed = urlparse(target)
+    if (target.startswith("/") and not target.startswith("//") and "\\" not in target
+            and not any(ord(c) < 32 or ord(c) == 127 for c in target)
+            and not parsed.scheme and not parsed.netloc):
+        return target
+    return default
+
+
 @routes.route("/dashboard/lang/<lang_code>")
 def dash_set_lang(lang_code):
     if lang_code in TRANSLATIONS:
         session["lang"] = lang_code
-    next_url = request.args.get("next") or url_for("dash_home")
-    return redirect(next_url)
+    return redirect(_safe_next_url(url_for("dash_home")))
 
 
 _dashboard_presence = {}  # {guild_id: {user_id: (name, last_seen_epoch)}}
@@ -364,8 +380,7 @@ def dash_template_import(guild_id, code):
 def dash_set_theme(theme_name):
     if theme_name in ("dark", "light"):
         session["theme"] = theme_name
-    next_url = request.args.get("next") or url_for("dash_home")
-    return redirect(next_url)
+    return redirect(_safe_next_url(url_for("dash_home")))
 
 
 def dash_is_owner(guild):
