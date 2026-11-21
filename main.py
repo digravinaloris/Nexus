@@ -53,6 +53,8 @@ from web import auth as web_auth, public as web_public, dashboard as web_dashboa
 from command_catalog import MODERATION_COMMANDS, COMMAND_TEMPLATES
 from audit_export import _get_audit_records, _build_audit_csv_bytes
 from template_ops import _apply_template_base_config
+from jsonlog import log_json
+from welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
 from utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
     is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
@@ -1927,12 +1929,26 @@ async def config_boostmessage(interaction: discord.Interaction, channel: discord
     await interaction.response.send_message(f"🎉 Boost thank-you messages will be posted in {where}.", ephemeral=True)
 
 
-@config_group.command(name="welcome", description="Set the welcome banner channel — admin only. Enable via /feature welcome_banner.")
-@app_commands.describe(channel="Channel where the generated welcome banner gets posted")
+@config_group.command(name="welcome", description="Set the welcome channel and message — admin only. Enable via /feature welcome_banner.")
+@app_commands.describe(
+    channel="Channel where the welcome message + banner (member's profile picture) get posted",
+    message="Optional text. Placeholders: {user} {username} {server} {count}. Type 'default' to reset.",
+)
 @has_admin()
-async def config_welcome(interaction: discord.Interaction, channel: discord.TextChannel):
+async def config_welcome(interaction: discord.Interaction, channel: discord.TextChannel, message: str = None):
     update_config(interaction.guild_id, "welcome_channel_id", channel.id)
-    await interaction.response.send_message(f"🖼️ Welcome banners will be posted in {channel.mention} once enabled (`/feature enable welcome_banner`).", ephemeral=True)
+    note = ""
+    if message is not None:
+        if message.strip().lower() == "default" or not message.strip():
+            update_config(interaction.guild_id, "welcome_message", None)
+            note = f"\n✏️ Message reset to the default: `{DEFAULT_WELCOME_MESSAGE}`"
+        else:
+            message = message.strip()[:MAX_WELCOME_MESSAGE_LENGTH]
+            update_config(interaction.guild_id, "welcome_message", message)
+            note = f"\n✏️ Message set to: {message}"
+    await interaction.response.send_message(
+        f"🖼️ Welcome messages will be posted in {channel.mention} once enabled (`/feature enable welcome_banner`).{note}",
+        ephemeral=True)
 
 
 verification_group = app_commands.Group(name="verification", description="Set up member verification — admin only", parent=config_group)
@@ -4256,50 +4272,6 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-_WELCOME_BANNER_BG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "welcome_banner_bg.jpg")
-_MPL_FONT_PATH = os.path.join(os.path.dirname(matplotlib.__file__), "mpl-data", "fonts", "ttf", "DejaVuSans-Bold.ttf")
-
-
-def _compose_welcome_banner(member_name, avatar_bytes):
-    """CPU-bound (Pillow) -- toujours appelée via asyncio.to_thread, jamais
-    directement dans une coroutine. Retourne un BytesIO PNG prêt à envoyer."""
-    bg = Image.open(_WELCOME_BANNER_BG_PATH).convert("RGBA").resize((900, 300))
-    avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA").resize((160, 160))
-    mask = Image.new("L", avatar.size, 0)
-    ImageDraw.Draw(mask).ellipse((0, 0) + avatar.size, fill=255)
-    avatar_pos = (60, 70)
-    bg.paste(avatar, avatar_pos, mask)
-
-    draw = ImageDraw.Draw(bg)
-    try:
-        title_font = ImageFont.truetype(_MPL_FONT_PATH, 42)
-        subtitle_font = ImageFont.truetype(_MPL_FONT_PATH, 22)
-    except OSError:
-        title_font = ImageFont.load_default()
-        subtitle_font = ImageFont.load_default()
-
-    text_x = avatar_pos[0] + avatar.width + 30
-    draw.text((text_x, 108), f"Welcome, {member_name}!", font=title_font, fill=(255, 255, 255, 255))
-    draw.text((text_x, 168), "We're glad you're here.", font=subtitle_font, fill=(200, 200, 200, 255))
-
-    buf = io.BytesIO()
-    bg.convert("RGB").save(buf, format="PNG")
-    buf.seek(0)
-    return buf
-
-
-async def send_welcome_banner(member, channel):
-    """Télécharge l'avatar (réseau, thread) puis compose l'image (CPU, thread)
-    avant de poster. Ne lève jamais -- une bannière ratée ne doit pas empêcher
-    le reste de on_member_join de tourner."""
-    try:
-        avatar_bytes = await asyncio.to_thread(lambda: requests.get(member.display_avatar.replace(size=256).url, timeout=10).content)
-        buf = await asyncio.to_thread(_compose_welcome_banner, member.display_name, avatar_bytes)
-        await channel.send(file=discord.File(buf, filename="welcome.png"))
-    except Exception as e:
-        log_json("error", "welcome_banner_failed", user_id=member.id, guild_id=member.guild.id, error=str(e))
-
-
 # Logs
 @bot.event
 async def on_member_join(member):
@@ -4407,11 +4379,11 @@ async def on_member_join(member):
             if role:
                 await member.add_roles(role)
 
-    # Bannière de bienvenue générée (image perso pseudo + avatar).
+    # Message de bienvenue (texte configurable) + bannière avec la seule photo de profil.
     if cfg.get("welcome_banner_enabled") and cfg.get("welcome_channel_id"):
         welcome_channel = member.guild.get_channel(int(cfg["welcome_channel_id"]))
         if welcome_channel:
-            asyncio.create_task(send_welcome_banner(member, welcome_channel))
+            asyncio.create_task(send_welcome(member, welcome_channel, cfg.get("welcome_message")))
 
     # Détection de pattern de raid par pseudo (indépendante du seuil brut de
     # check_raid -- peut capter un raid coordonné même sous le seuil de comptage).
@@ -4645,17 +4617,6 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 # ============================================================
 # ===================  API REST (App Android) =================
 # ============================================================
-
-def log_json(level, event, **fields):
-    """Log structuré en une ligne JSON -- Render capture stdout tel quel, donc
-    une ligne JSON devient greppable/filtrable dans ses logs sans rien de plus
-    à configurer côté infra. N'écrit jamais rien d'autre que cette ligne.
-    Migration progressive depuis print(...) -- voir le changelog pour la liste
-    des points déjà convertis ; le reste des print() existants n'a pas été
-    touché pour ne rien risquer de casser sans pouvoir tester en prod."""
-    payload = {"level": level, "event": event, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), **fields}
-    print(_json.dumps(payload, default=str), flush=True)
-
 
 _SENTRY_DSN = os.environ.get("SENTRY_DSN")
 if _SENTRY_DSN:
