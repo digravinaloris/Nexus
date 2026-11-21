@@ -1,0 +1,19 @@
+{% extends "_layout.html" %}
+{% block title %}Verification · Nexus{% endblock %}
+{% block extra_head %}
+<meta name="referrer" content="no-referrer">
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+{% endblock %}
+{% block content %}
+<div class="wrap" style="max-width:480px; margin:60px auto;">
+  <div class="eyebrow">Verification</div>
+  <h1>{{ guild_name }}</h1>
+  <p class="lead">One quick check to confirm you're human. Then you get access to the server.</p>
+  {% if error %}<p class="lead" style="color:#ff6b6b;">{{ error }}</p>{% endif %}
+  <form method="POST">
+    <div class="cf-turnstile" data-sitekey="{{ site_key }}" data-theme="auto"></div>
+    <button type="submit" style="margin-top:16px;">Verify</button>
+  </form>
+  <p class="lead" style="margin-top:18px; font-size:12px;">Attempts left: {{ attempts_left }}. This link is personal and works once.</p>
+</div>
+{% endblock %}
