@@ -3,6 +3,7 @@ import asyncio
 import datetime
 import io
 import json
+import os
 import sys
 import types
 
@@ -10,8 +11,12 @@ import discord
 import pytest
 from PIL import Image, ImageChops
 
-import welcome
-from jsonlog import log_json
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:  # `pytest tests/` (comme la CI) n'ajoute pas la racine du repo
+    sys.path.insert(0, ROOT)
+
+import welcome  # noqa: E402
+from jsonlog import log_json  # noqa: E402
 
 
 def png_bytes(color=(255, 0, 0), size=64):
