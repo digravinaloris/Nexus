@@ -50,6 +50,7 @@ COLLECTION_NAMES = {
     "reminders": "reminders",
     "templates": "templates",  # GLOBALE : PAS scopée par guild_id, contrairement au reste
     "faq": "faq",              # utilisée par cogs/faq.py (via bot.db)
+    "verification_challenges": "verification_challenges",  # liens de vérification Turnstile (core.col uniquement)
 }
 
 
