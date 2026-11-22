@@ -51,6 +51,8 @@ GOLDEN_ENDPOINTS = [
     ('killswitch_confirm_page', '/admin/kill-switch/<token>', ('GET',)),
     ('killswitch_submit', '/admin/kill-switch/<token>', ('POST',)),
     ('public_status_page', '/status', ('GET',)),
+    ('verify_page', '/verify/<token>', ('GET',)),
+    ('verify_submit', '/verify/<token>', ('POST',)),
 ]
 
 
