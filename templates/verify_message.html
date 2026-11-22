@@ -1,0 +1,10 @@
+{% extends "_layout.html" %}
+{% block title %}{{ title }} · Nexus{% endblock %}
+{% block extra_head %}<meta name="referrer" content="no-referrer">{% endblock %}
+{% block content %}
+<div class="wrap" style="max-width:480px; margin:60px auto;">
+  <div class="eyebrow">Verification</div>
+  <h1>{{ title }}</h1>
+  <p class="lead">{{ message }}</p>
+</div>
+{% endblock %}

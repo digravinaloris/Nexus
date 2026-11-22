@@ -49,7 +49,8 @@ from discord_logging import get_or_create_log_webhook, _send_log_embed, log_dash
 from moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTION_ICONS, post_appeal_for_review
 from owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
 from web.rest_api import bp as rest_api_bp
-from web import auth as web_auth, public as web_public, dashboard as web_dashboard
+from web import auth as web_auth, public as web_public, dashboard as web_dashboard, verify as web_verify
+from verification import turnstile_configured, create_challenge, verification_url
 from command_catalog import MODERATION_COMMANDS, COMMAND_TEMPLATES
 from audit_export import _get_audit_records, _build_audit_csv_bytes
 from template_ops import _apply_template_base_config
@@ -1977,6 +1978,24 @@ async def verification_setup(interaction: discord.Interaction, verified_role: di
     )
 
 
+@verification_group.command(name="method", description="Choose how members verify: one-click button or Cloudflare Turnstile — admin only")
+@app_commands.describe(method="button = one click; turnstile = Cloudflare human check on a web page")
+@app_commands.choices(method=[
+    app_commands.Choice(name="Button (one click)", value="button"),
+    app_commands.Choice(name="Cloudflare Turnstile (web check)", value="turnstile"),
+])
+@has_admin()
+async def verification_method(interaction: discord.Interaction, method: app_commands.Choice[str]):
+    if method.value == "turnstile" and not turnstile_configured():
+        await interaction.response.send_message(
+            "❌ Turnstile isn't configured on this bot yet (it needs `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` and a public URL). Ask the bot owner.",
+            ephemeral=True)
+        return
+    update_config(interaction.guild_id, "verification_method", method.value)
+    label = "Cloudflare Turnstile" if method.value == "turnstile" else "one-click button"
+    await interaction.response.send_message(f"✅ Members will now verify with: **{label}**.", ephemeral=True)
+
+
 @verification_group.command(name="post", description="Post the Verify button in this channel — admin only")
 @has_admin()
 async def verification_post(interaction: discord.Interaction):
@@ -3820,6 +3839,18 @@ class VerificationView(discord.ui.View):
         if verified_role and verified_role in interaction.user.roles:
             await interaction.response.send_message("✅ You're already verified.", ephemeral=True)
             return
+        # Méthode « turnstile » : le bouton ne donne PAS le rôle, il envoie un lien personnel vers la
+        # page de vérification (voir verification.py). Si Turnstile n'est pas configuré on REFUSE, on ne
+        # retombe jamais silencieusement sur « rôle donné sans contrôle ».
+        if cfg.get("verification_method", "button") == "turnstile":
+            if not turnstile_configured():
+                await interaction.response.send_message("❌ Web verification is temporarily unavailable. Please try again later or contact a moderator.", ephemeral=True)
+                return
+            token = create_challenge(interaction.guild_id, interaction.user.id)
+            link_view = discord.ui.View()
+            link_view.add_item(discord.ui.Button(label="Open verification page", style=discord.ButtonStyle.link, url=verification_url(token)))
+            await interaction.response.send_message("🛡️ One quick check to confirm you're human. This link is yours only, valid 10 minutes, and works once.", view=link_view, ephemeral=True)
+            return
         try:
             if unverified_role and unverified_role in interaction.user.roles:
                 await interaction.user.remove_roles(unverified_role, reason="Verified")
@@ -4633,6 +4664,7 @@ api.register_blueprint(rest_api_bp)  # REST API /api/* (voir web/rest_api.py)
 web_auth.routes.register(api)    # login / callback / logout (voir web/auth.py)
 web_public.routes.register(api)  # /, /status, kill-switch, appels publics (voir web/public.py)
 web_dashboard.routes.register(api)  # pages /dashboard/* (voir web/dashboard.py)
+web_verify.routes.register(api)     # /verify/<jeton> : vérification Turnstile (voir web/verify.py)
 
 
 # ============================================================

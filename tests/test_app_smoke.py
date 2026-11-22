@@ -134,8 +134,8 @@ def test_core_stays_in_sync_with_main_collections(nexus, monkeypatch):
         assert core.db is nexus.db
 
         # core -> main : chaque collection de core a sa variable xxx_col identique.
-        # (faq n'a pas de variable dans main : elle passe par bot.db["faq"].)
-        main_only_in_core = {"faq"}
+        # (faq / verification_challenges n'ont pas de variable dans main : elles passent par core.col.)
+        main_only_in_core = {"faq", "verification_challenges"}  # accessibles via core.col uniquement
         for attr in core.COLLECTION_NAMES:
             if attr in main_only_in_core:
                 continue
