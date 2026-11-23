@@ -50,7 +50,8 @@ from moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTIO
 from owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
 from web.rest_api import bp as rest_api_bp
 from web import auth as web_auth, public as web_public, dashboard as web_dashboard, verify as web_verify
-from verification import turnstile_configured, create_challenge, verification_url
+from verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
+                          account_days_left, kick_pass, SETTINGS_LIMITS)
 from command_catalog import MODERATION_COMMANDS, COMMAND_TEMPLATES
 from audit_export import _get_audit_records, _build_audit_csv_bytes
 from template_ops import _apply_template_base_config
@@ -655,6 +656,9 @@ async def on_ready():
     bot.loop.create_task(mongo_backup_loop())
     bot.loop.create_task(auto_slowmode_revert_loop())
     bot.loop.create_task(quarantine_review_loop())
+    if not getattr(bot, "_nexus_unverified_kick_started", False):  # on_ready peut se redéclencher
+        bot._nexus_unverified_kick_started = True
+        bot.loop.create_task(unverified_kick_loop())
     for guild in bot.guilds:
         await refresh_invite_cache(guild)
 
@@ -1996,6 +2000,38 @@ async def verification_method(interaction: discord.Interaction, method: app_comm
     await interaction.response.send_message(f"✅ Members will now verify with: **{label}**.", ephemeral=True)
 
 
+@verification_group.command(name="settings", description="Tune web verification: link lifetime, attempts, auto-kick, minimum account age — admin only")
+@app_commands.describe(
+    link_minutes="How long the personal link stays valid, in minutes (2-60, default 10)",
+    max_attempts="Failed checks before the link dies (1-10, default 3)",
+    kick_hours="Kick members still Unverified after N hours (0 = never, max 168)",
+    min_account_days="Minimum Discord account age to verify, in days (0 = no limit, max 365)",
+)
+@has_admin()
+async def verification_settings(interaction: discord.Interaction, link_minutes: int = None, max_attempts: int = None,
+                                kick_hours: int = None, min_account_days: int = None):
+    requested = {
+        "verification_link_minutes": ("Link lifetime (minutes)", link_minutes),
+        "verification_max_attempts": ("Max attempts", max_attempts),
+        "verification_kick_hours": ("Auto-kick after (hours, 0 = never)", kick_hours),
+        "verification_min_account_days": ("Minimum account age (days, 0 = none)", min_account_days),
+    }
+    errors = []
+    for key, (label, value) in requested.items():
+        lo, hi = SETTINGS_LIMITS[key]
+        if value is not None and not lo <= value <= hi:
+            errors.append(f"{label} must be between {lo} and {hi}.")
+    if errors:  # tout ou rien : aucune valeur n'est enregistrée si l'une est invalide
+        await interaction.response.send_message("❌ " + " ".join(errors), ephemeral=True)
+        return
+    for key, (_, value) in requested.items():
+        if value is not None:
+            update_config(interaction.guild_id, key, value)
+    current = get_verification_settings(interaction.guild_id)
+    lines = [f"• {label}: **{current[key]}**" for key, (label, _) in requested.items()]
+    await interaction.response.send_message("✅ Web verification settings:\n" + "\n".join(lines), ephemeral=True)
+
+
 @verification_group.command(name="post", description="Post the Verify button in this channel — admin only")
 @has_admin()
 async def verification_post(interaction: discord.Interaction):
@@ -2922,6 +2958,19 @@ async def auto_slowmode_revert_loop():
         await asyncio.sleep(30)
 
 
+async def unverified_kick_loop():
+    """Toutes les 15 min : kick des membres restés Unverified plus de `verification_kick_hours`
+    heures (0 = désactivé, valeur par défaut). Garde-fous et règles dans verification.kick_pass."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            for guild in list(bot.guilds):
+                await kick_pass(guild)
+        except Exception as e:
+            log_json("error", "unverified_kick_loop_error", error=str(e))
+        await asyncio.sleep(900)
+
+
 async def quarantine_review_loop():
     """Check toutes les 5 min les entrées de quarantaine pas encore reviewées
     depuis plus de quarantine_hold_minutes -- envoie un rappel unique dans le
@@ -3845,6 +3894,10 @@ class VerificationView(discord.ui.View):
         if cfg.get("verification_method", "button") == "turnstile":
             if not turnstile_configured():
                 await interaction.response.send_message("❌ Web verification is temporarily unavailable. Please try again later or contact a moderator.", ephemeral=True)
+                return
+            days_left = account_days_left(interaction.user, get_verification_settings(interaction.guild_id)["verification_min_account_days"])
+            if days_left > 0:
+                await interaction.response.send_message(f"❌ Your Discord account is too new to verify on this server yet. Please try again in {days_left} day(s), or contact a moderator.", ephemeral=True)
                 return
             token = create_challenge(interaction.guild_id, interaction.user.id)
             link_view = discord.ui.View()

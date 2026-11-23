@@ -32,7 +32,7 @@ def _form(doc, status=200, error=None):
     guild = core.bot.get_guild(int(doc["guild_id"]))
     return _page("verify.html", status, site_key=site_key(), error=error,
                  guild_name=guild.name if guild else "the server",
-                 attempts_left=max(0, MAX_ATTEMPTS - doc.get("attempts", 0)))
+                 attempts_left=max(0, doc.get("max_attempts", MAX_ATTEMPTS) - doc.get("attempts", 0)))
 
 
 @routes.route("/verify/<token>", methods=["GET"])
@@ -64,7 +64,7 @@ def verify_submit(token):
         if reason == "service_unavailable":  # panne côté Cloudflare : pas la faute du membre
             return _form(doc, 503, "The verification service is unreachable. Please try again in a moment.")
         attempts = record_failed_attempt(token)
-        if attempts >= MAX_ATTEMPTS:
+        if attempts >= doc.get("max_attempts", MAX_ATTEMPTS):
             return _message("Too many attempts", "This link has been disabled. Go back to Discord and click "
                                                  "the Verify button again.", 410)
         doc["attempts"] = attempts

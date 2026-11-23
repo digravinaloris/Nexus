@@ -1,6 +1,6 @@
 # Privacy Policy — Nexus
 
-**Last updated:** July 8, 2026
+**Last updated:** November 22, 2026
 
 This Privacy Policy explains what data the Nexus Discord bot ("the Bot", "we", "us") collects, why, and how it is handled. By using the Bot in any Discord server, you agree to this Policy.
 
@@ -18,6 +18,8 @@ We only collect data needed for the Bot's features to function:
 | Reaction role mappings (message ID, emoji, role ID) | `/reactionrole` |
 | Role application answers submitted via `/apply` (why you want the role, age, what you bring) | Forwarded to the server owner to review and accept/refuse |
 | API key usage (companion Android app) | Authenticating server staff for remote moderation actions |
+| Verification link (Discord User ID, server ID, random token, timestamps, number of failed attempts) — only when a server enables web verification | Letting you prove you are human before getting access. Short-lived: it expires after a few minutes and is deleted shortly afterwards |
+| IP address and Turnstile response token — only when you use a web verification page | Sent to Cloudflare Turnstile to confirm you are human. Nexus does not store them |
 
 We do **not** collect or store:
 - Message content outside of what's explicitly needed for a command or log (e.g., we don't log or read your regular chat messages)
@@ -45,6 +47,7 @@ Server staff using the Android app authenticate via a private API key. The app o
 - Moderation and sanction history is kept indefinitely to preserve accurate records, unless a server owner or user requests deletion (see Section 8).
 - Server configuration and reaction role data are kept as long as the Bot remains in the server, and removed if the Bot is kicked/removed.
 - Locked channel records are removed once a channel is unlocked.
+- Web verification links expire after a few minutes (10 by default) and are deleted automatically shortly after they expire.
 
 ## 7. Third-Party Services
 
@@ -53,6 +56,7 @@ The Bot relies on the following third-party services, each with their own privac
 - **MongoDB Atlas** — database hosting
 - **Render** — bot hosting
 - **YouTube** (via yt-dlp) — music playback source
+- **Cloudflare Turnstile** (cloudflare.com/privacypolicy) — human verification (captcha) when a server enables web verification; Cloudflare receives your IP address and the Turnstile response
 
 We are not responsible for the privacy practices of these third parties.
 
