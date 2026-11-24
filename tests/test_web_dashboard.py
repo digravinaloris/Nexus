@@ -121,6 +121,17 @@ def test_lang_and_theme_switch(env):
         assert sess["theme"] == "light"
 
 
+def test_dashboard_mutations_reject_missing_or_invalid_csrf_tokens(dash):
+    before = dash.cfg().copy()
+    missing = dash.raw_post(dash.url("/features"), data={"feat__antinuke": "on"})
+    invalid = dash.raw_post(dash.url("/features"), data={
+        "feat__antinuke": "on", "csrf_token": "attacker-controlled-token"
+    })
+    assert missing.status_code == 400
+    assert invalid.status_code == 400
+    assert dash.cfg() == before
+
+
 # ------------------------------------------------------------- liste serveurs
 
 def test_dashboard_home_lists_only_manageable_guilds(dash):
