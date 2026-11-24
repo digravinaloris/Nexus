@@ -260,10 +260,9 @@ def test_slash_command_groups_are_not_nested(nexus):
                 assert not isinstance(child, __import__("discord").app_commands.Group), (
                     f"Nested slash-command group found: /{top_level.name} {child.name}"
                 )
-    ticket = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
-    ticket_group = next(c for c in ticket.commands if c.name == "ticket")
+    ticket_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "ticket")
     ticket_names = {c.name for c in ticket_group.commands}
-    assert {"panel-create", "panel-list", "panel-remove"} <= ticket_names
+    assert {"setup", "disable", "panel-create", "panel-list", "panel-remove"} <= ticket_names
 
 
 def test_ticket_topic_parsing(nexus):
