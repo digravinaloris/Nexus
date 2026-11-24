@@ -266,7 +266,7 @@ def test_slash_command_groups_are_not_nested(nexus):
     config_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
     ticket_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "ticket")
     ticket_names = {c.name for c in ticket_group.commands}
-    assert {"setup", "disable", "panel-create", "panel-list", "panel-remove", "assign", "unassign", "priority"} <= ticket_names
+    assert {"setup", "disable", "panel-create", "panel-list", "panel-remove", "reopen", "assign", "unassign", "priority"} <= ticket_names
     assert not any(c.name == "ticket" for c in config_group.commands), "/ticket must not be nested under /config"
     for group_name in ("template", "rolemenu", "verification", "sticky", "badwords", "domains"):
         assert any(c.name == group_name for c in config_group.commands), f"/config {group_name} missing"
@@ -309,6 +309,14 @@ def test_ticket_topic_value_reads_assignment(nexus):
     assert nexus._ticket_topic_value(topic, "assignee") == "456"
     assert nexus._ticket_topic_value(topic, "missing") is None
 
+
+
+def test_ticket_topic_status_reads_closed_and_open(nexus):
+    topic = "nexus-ticket|opener:123|panel:abc|status:closed"
+    assert nexus._ticket_topic_value(topic, "status") == "closed"
+    assert nexus._ticket_topic_update(topic, "status", "open") == (
+        "nexus-ticket|opener:123|panel:abc|status:open"
+    )
 
 def test_ticket_assignment_commands_are_registered(nexus):
     ticket_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "ticket")
