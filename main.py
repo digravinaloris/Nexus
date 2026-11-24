@@ -4067,7 +4067,7 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
         ticket_topic = (
             f"nexus-ticket|opener:{interaction.user.id}|panel:{panel_id}"
             f"|support:{support_role_id or ''}|archive:{archive_id if archive_id else 'none'}"
-            if panel_id else str(interaction.user.id)
+            "|priority:normal"
         )
         try:
             channel = await category.create_text_channel(
@@ -4087,6 +4087,7 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
             description=f"Hey {interaction.user.mention}! {discord.utils.escape_mentions(opening_message)}",
             color=0x3399ff,
         )
+        embed.add_field(name="Priority", value="🔵 Normal", inline=True)
         embed.add_field(name="What they need help with", value=self.reason.value[:1000], inline=False)
         await channel.send(
             content=support_role.mention if support_role else None,
