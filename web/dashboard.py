@@ -269,7 +269,7 @@ def dash_calendar_page(guild_id):
             update_config(guild_id, "calendar_timezone", timezone_name)
             update_config(guild_id, "calendar_channel_id", channel_id)
             dash_log_action(guild, guild_id, "Updated calendar settings", f"timezone={timezone_name}; channel={channel_id}")
-            flash("Calendar settings saved." if current_lang() == "en" else "Réglages du calendrier enregistrés.")
+            flash("Calendar settings saved." if current_lang() == "en" else "Réglages du calendrier enregistrés.", "calendar")
         elif action == "create":
             title = request.form.get("title", "").strip()
             description = request.form.get("description", "").strip()
@@ -301,14 +301,14 @@ def dash_calendar_page(guild_id):
             sent = False
             if channel:
                 try:
-                    await channel.send(content=role.mention, embed=make_embed(event),
-                        allowed_mentions=discord.AllowedMentions(roles=[role], users=False, everyone=False))
+                    run_coroutine(channel.send(content=role.mention, embed=make_embed(event),
+                        allowed_mentions=discord.AllowedMentions(roles=[role], users=False, everyone=False)))
                     sent = True
                 except discord.HTTPException:
                     pass
             dash_log_action(guild, guild_id, "Created calendar event", title)
             flash(("Event created and announced." if sent else "Event saved; announcement could not be sent.") if current_lang() == "en"
-                  else ("Événement créé et annoncé." if sent else "Événement enregistré, annonce non envoyée."))
+                  else ("Événement créé et annoncé." if sent else "Événement enregistré, annonce non envoyée."), "calendar")
         elif action == "delete":
             from bson import ObjectId
             raw_id = request.form.get("event_id", "")
@@ -319,7 +319,7 @@ def dash_calendar_page(guild_id):
             result = collection.delete_one({"_id": oid, "guild_id": str(guild_id)}) if oid else None
             if result and result.deleted_count:
                 dash_log_action(guild, guild_id, "Deleted calendar event", raw_id)
-                flash("Event deleted." if current_lang() == "en" else "Événement supprimé.")
+                flash("Event deleted." if current_lang() == "en" else "Événement supprimé.", "calendar")
             else:
                 flash("Event not found." if current_lang() == "en" else "Événement introuvable.", "error-calendar")
         elif action == "manager":
@@ -333,7 +333,7 @@ def dash_calendar_page(guild_id):
             else: manager_ids.add(str(role.id))
             update_config(guild_id, "calendar_manager_role_ids", sorted(manager_ids))
             dash_log_action(guild, guild_id, "Updated calendar manager roles", role.name)
-            flash("Calendar manager roles saved." if current_lang() == "en" else "Rôles gestionnaires enregistrés.")
+            flash("Calendar manager roles saved." if current_lang() == "en" else "Rôles gestionnaires enregistrés.", "calendar")
         else:
             flash("Unknown action." if current_lang() == "en" else "Action inconnue.", "error-calendar")
         return redirect(url_for("dash_calendar_page", guild_id=guild_id))
