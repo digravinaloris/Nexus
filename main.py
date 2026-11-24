@@ -3906,7 +3906,8 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
         # Re-vérifié ici (pas juste au clic du bouton) : le formulaire prend
         # du temps à remplir, un doublon a pu être ouvert entre-temps.
         existing = next((ch for ch in interaction.guild.text_channels
-                         if _ticket_topic_parts(ch.topic)[0] == str(interaction.user.id)), None)
+                         if not ch.name.startswith("closed-")
+                         and _ticket_topic_parts(ch.topic)[0] == str(interaction.user.id)), None)
         if existing:
             await interaction.response.send_message(
                 f"You already have an open ticket: {existing.mention}", ephemeral=True
@@ -4056,6 +4057,9 @@ class TicketPanelView(discord.ui.View):
         footer = interaction.message.embeds[0].footer.text if interaction.message.embeds and interaction.message.embeds[0].footer else ""
         panel_id = footer.split("nexus-ticket-panel:", 1)[1].strip() if "nexus-ticket-panel:" in footer else None
         panel = _find_ticket_panel(cfg, panel_id)
+        if panel_id and panel is None:
+            await interaction.response.send_message("This ticket panel is no longer configured. Please contact a server administrator.", ephemeral=True)
+            return
         if not panel and not cfg.get("tickets_enabled"):
             await interaction.response.send_message("Tickets are currently disabled on this server.", ephemeral=True)
             return
@@ -4071,7 +4075,8 @@ class TicketPanelView(discord.ui.View):
         # Empêche un utilisateur d'ouvrir plusieurs tickets en même temps :
         # on stocke son id dans le topic du salon pour le retrouver.
         existing = next((ch for ch in interaction.guild.text_channels
-                         if _ticket_topic_parts(ch.topic)[0] == str(interaction.user.id)), None)
+                         if not ch.name.startswith("closed-")
+                         and _ticket_topic_parts(ch.topic)[0] == str(interaction.user.id)), None)
         if existing:
             await interaction.response.send_message(
                 f"You already have an open ticket: {existing.mention}", ephemeral=True
