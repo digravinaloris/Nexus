@@ -45,7 +45,7 @@ def build_release_embed(release):
     if len(body) > 4000:
         body = body[:3997].rstrip() + "..."
     embed = discord.Embed(
-        title=f"🚀 Nexus {name}",
+        title=f"🚀 {name}",
         url=release["html_url"],
         description=body,
         color=0x5865F2,
