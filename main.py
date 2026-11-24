@@ -1659,8 +1659,9 @@ async def config_language(interaction: discord.Interaction, language: app_comman
 # Templates de permissions propres à un serveur (distincts des modèles
 # prédéfinis intégrés au dashboard) : /config template set|list
 template_group = app_commands.Group(
-    name="config-template",
+    name="template",
     description="Manage custom command-permission templates for this server — server owner only",
+    parent=config_group,
 )
 
 
@@ -1847,6 +1848,7 @@ async def config_jointocreate(interaction: discord.Interaction, channel: discord
 rolemenu_group = app_commands.Group(
     name="rolemenu",
     description="Build and post a dropdown role-selection menu — admin only",
+    parent=config_group,
 )
 
 
@@ -2088,6 +2090,7 @@ async def config_antinuke(interaction: discord.Interaction, threshold: int = 5):
 sticky_group = app_commands.Group(
     name="sticky",
     description="Manage a sticky message that stays at the bottom of a channel — admin only",
+    parent=config_group,
 )
 
 
@@ -2128,6 +2131,7 @@ BADWORDS_TEMPLATE_URLS = {
 badwords_group = app_commands.Group(
     name="badwords",
     description="Manage a custom list of banned words for this server — admin only",
+    parent=config_group,
 )
 
 
@@ -2222,6 +2226,7 @@ async def config_badwords_import(interaction: discord.Interaction, language: app
 ticket_group = app_commands.Group(
     name="ticket",
     description="Configure the button-based ticket system for this server — server owner only",
+    parent=config_group,
 )
 
 
@@ -2363,6 +2368,7 @@ async def config_ticket_panel_remove(interaction: discord.Interaction, panel_id:
 domains_group = app_commands.Group(
     name="domains",
     description="Manage a blocked domains/links list for this server — admin only",
+    parent=config_group,
 )
 
 
@@ -2409,8 +2415,6 @@ async def config_domains_list(interaction: discord.Interaction):
 
 
 bot.tree.add_command(config_group)
-for _group in (template_group, rolemenu_group, verification_group, sticky_group, badwords_group, ticket_group, domains_group):
-    bot.tree.add_command(_group)
 
 
 # Kill-switch d'urgence : commandes réservées au vrai owner de l'app Discord
@@ -2418,6 +2422,7 @@ for _group in (template_group, rolemenu_group, verification_group, sticky_group,
 killswitch_admin_group = app_commands.Group(
     name="killswitch",
     description="Manage the emergency kill-switch — bot owner only",
+    parent=config_group,
 )
 
 
@@ -2443,7 +2448,7 @@ async def admin_killswitch_resend(interaction: discord.Interaction):
         await interaction.followup.send(f"❌ Email failed to send:\n```{error}```", ephemeral=True)
 
 
-bot.tree.add_command(killswitch_admin_group)
+bot.tree.add_command(admin_group)
 
 
 # Revue des appels de ban : /appeal accept|deny — admin only
