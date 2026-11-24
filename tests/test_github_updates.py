@@ -51,6 +51,7 @@ def test_build_release_embed_handles_empty_and_long_notes():
 
     assert empty.description == "A new Nexus version is available."
     assert len(long.description) == 4000
+    assert len(long.title) <= 256
     assert long.description.endswith("...")
 
 
