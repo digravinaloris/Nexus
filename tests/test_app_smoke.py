@@ -359,3 +359,18 @@ def test_ticket_transcript_escapes_user_content_and_renders_attachments(nexus):
     assert 'report.pdf' in rendered
     assert 'image-attachment' in rendered
     assert 'rel="noopener noreferrer"' in rendered
+
+
+
+def test_ticket_panel_questions_command_is_registered(nexus):
+    ticket_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "ticket")
+    assert "panel-questions" in {command.name for command in ticket_group.commands}
+
+
+def test_ticket_modal_supports_five_custom_questions(nexus):
+    questions = ["Reason", "Platform", "Issue", "Steps", "Extra details"]
+    modal = nexus.TicketOpenModal(panel_config={"form_questions": questions})
+    text_inputs = [item for item in modal.children if isinstance(item, __import__("discord").ui.TextInput)]
+    assert len(text_inputs) == 5
+    assert [item.label for item in text_inputs] == questions
+    assert all(item.required for item in text_inputs)
