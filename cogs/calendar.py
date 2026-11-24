@@ -226,7 +226,12 @@ class Calendar(commands.Cog):
             if not ch: continue
             remaining = event["starts_at"] - now
             for key, offset in REMINDERS:
-                if remaining <= offset and key not in event.get("reminders_sent", []):
+                # Avoid sending an H-24 reminder late for events created less than 24h ahead.
+                window_start = offset - dt.timedelta(hours=1)
+                in_window = window_start < remaining <= offset
+                if key == "1h":
+                    in_window = dt.timedelta(0) < remaining <= offset
+                if in_window and key not in event.get("reminders_sent", []):
                     if await self.post(ch, event, key + " before"):
                         self.col().update_one({"_id": event["_id"], "reminders_sent": {"$ne": key}}, {"$addToSet": {"reminders_sent": key}})
                         event.setdefault("reminders_sent", []).append(key)
