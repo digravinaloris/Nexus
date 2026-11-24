@@ -9,6 +9,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      DISCORD_CLIENT_ID: "test-client-id"
+      DISCORD_CLIENT_SECRET: "test-client-secret"
+      DISCORD_REDIRECT_URI: "http://localhost/callback"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

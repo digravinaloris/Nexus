@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import time
+from urllib.parse import urlencode
 
 from flask import jsonify, redirect, request, session, url_for
 import requests
@@ -31,7 +32,11 @@ GUILD_ID_RE = re.compile(r"^\d{17,19}$")  # valide un vrai snowflake Discord
 def dash_login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        if "access_token" not in session:
+        expires_at = session.get("token_expires_at")
+        if "access_token" not in session or (
+            isinstance(expires_at, (int, float)) and time.time() >= expires_at
+        ):
+            session.clear()
             return redirect(url_for("dash_login"))
         return f(*args, **kwargs)
     return wrapper
@@ -103,7 +108,7 @@ def dash_login():
         "scope": "identify guilds",
         "state": state,
     }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
+    query = urlencode(params)
     return redirect(f"{DISCORD_API_BASE}/oauth2/authorize?{query}")
 
 
@@ -116,32 +121,57 @@ def dash_callback():
     code = request.args.get("code")
     if not code:
         return jsonify({"error": "Missing code"}), 400
+    if len(code) > 2048:
+        return jsonify({"error": "Invalid code"}), 400
 
-    token_r = requests.post(
-        f"{DISCORD_API_BASE}/oauth2/token",
-        data={
-            "client_id": DASH_CLIENT_ID,
-            "client_secret": DASH_CLIENT_SECRET,
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": DASH_REDIRECT_URI,
-        },
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=10,
-    )
-    if token_r.status_code != 200:
-        return jsonify({"error": "Token exchange failed"}), 400
+    # Consume the one-time state and discard any pre-authentication session data.
+    # A fresh session is created only after Discord has authenticated the user.
+    session.clear()
 
-    token_data = token_r.json()
-    session["access_token"] = token_data["access_token"]
-    session["refresh_token"] = token_data["refresh_token"]
+    try:
+        token_r = requests.post(
+            f"{DISCORD_API_BASE}/oauth2/token",
+            data={
+                "client_id": DASH_CLIENT_ID,
+                "client_secret": DASH_CLIENT_SECRET,
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": DASH_REDIRECT_URI,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        if token_r.status_code != 200:
+            return jsonify({"error": "Token exchange failed"}), 400
 
-    user_r = requests.get(
-        f"{DISCORD_API_BASE}/users/@me",
-        headers={"Authorization": f"Bearer {token_data['access_token']}"},
-        timeout=10,
-    )
-    session["dash_user"] = user_r.json()
+        token_data = token_r.json()
+        access_token = token_data.get("access_token") if isinstance(token_data, dict) else None
+        if not isinstance(access_token, str) or not access_token:
+            return jsonify({"error": "Invalid token response"}), 502
+
+        user_r = requests.get(
+            f"{DISCORD_API_BASE}/users/@me",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        if user_r.status_code != 200:
+            return jsonify({"error": "Discord user lookup failed"}), 502
+
+        user_data = user_r.json()
+        if not isinstance(user_data, dict) or not user_data.get("id"):
+            return jsonify({"error": "Invalid Discord user response"}), 502
+    except (requests.RequestException, ValueError):
+        return jsonify({"error": "Discord authentication is temporarily unavailable"}), 502
+
+    # Store credentials only after both OAuth exchange and identity lookup succeed.
+    session["access_token"] = access_token
+    refresh_token = token_data.get("refresh_token")
+    if isinstance(refresh_token, str) and refresh_token:
+        session["refresh_token"] = refresh_token
+    expires_in = token_data.get("expires_in")
+    if isinstance(expires_in, (int, float)) and expires_in > 0:
+        session["token_expires_at"] = time.time() + min(expires_in, 60 * 60 * 24)
+    session["dash_user"] = user_data
 
     return redirect(url_for("dash_home"))
 
