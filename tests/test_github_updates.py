@@ -47,7 +47,7 @@ def test_build_release_embed_uses_release_metadata():
 
 def test_build_release_embed_handles_empty_and_long_notes():
     empty = github_updates.build_release_embed(sample_release(body=""))
-    long = github_updates.build_release_embed(sample_release(body="x" * 5000))
+    long = github_updates.build_release_embed(sample_release(body="x" * 5000, name="N" * 400))
 
     assert empty.description == "A new Nexus version is available."
     assert len(long.description) == 4000
