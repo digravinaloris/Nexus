@@ -66,6 +66,7 @@ def test_api_routes_are_registered(nexus):
     assert "/" in rules
     assert any(r.startswith("/api/") for r in rules)
     assert len(rules) >= 60
+    assert "/dashboard/<guild_id>/calendar" in rules
 
 
 def test_all_feature_toggles_present(nexus):
