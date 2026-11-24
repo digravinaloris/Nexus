@@ -252,9 +252,9 @@ def test_dashboard_pages_live_in_web_dashboard(nexus):
 
 
 def test_ticket_topic_parsing(nexus):
-    assert nexus._ticket_topic_parts("123456789") == ("123456789", None)
-    assert nexus._ticket_topic_parts("nexus-ticket|opener:123456789|panel:abcd1234") == ("123456789", "abcd1234")
-    assert nexus._ticket_topic_parts(None) == (None, None)
+    assert nexus._ticket_topic_parts("123456789") == ("123456789", None, None, None)
+    assert nexus._ticket_topic_parts("nexus-ticket|opener:123456789|panel:abcd1234|support:222|archive:333") == ("123456789", "abcd1234", "222", "333")
+    assert nexus._ticket_topic_parts(None) == (None, None, None, None)
 
 
 def test_ticket_panel_lookup(nexus):
