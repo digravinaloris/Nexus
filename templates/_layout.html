@@ -2,11 +2,10 @@
 <html data-theme="{{ theme() }}">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Nexus{% endblock %}</title>
 <link rel="icon" type="image/png" href="/favicon.ico">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
-
   :root {
     --ink: #0b0c12;
     --surface: #171a24;
@@ -38,77 +37,62 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background:
-      radial-gradient(900px 500px at 15% -10%, rgba(255,95,143,.08), transparent 60%),
-      radial-gradient(700px 500px at 100% 0%, rgba(195,242,74,.06), transparent 55%),
-      var(--ink);
+    background: var(--ink);
     color: var(--text);
-    font-family: 'Inter', sans-serif;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     min-height: 100vh;
   }
   a { color: inherit; text-decoration: none; }
-  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 600; margin: 0; }
-  code, .mono { font-family: 'JetBrains Mono', monospace; }
+  h1, h2, h3 { font-family: inherit; font-weight: 650; letter-spacing: -.025em; margin: 0; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes jiggle {
-    0%, 100% { transform: translateY(-3px) rotate(-0.3deg); }
-    50% { transform: translateY(-5px) rotate(0.4deg); }
-  }
-  @keyframes popIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
-  @keyframes pulseDot { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,95,143,.5); } 50% { box-shadow: 0 0 0 6px rgba(255,95,143,0); } }
-  @keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
 
   .topbar {
     display: flex; align-items: center; justify-content: space-between;
     padding: 20px 32px; border-bottom: 1px solid var(--line);
-    position: sticky; top: 0; background: rgba(11,12,18,.85); backdrop-filter: blur(10px);
-    z-index: 10; animation: fadeUp .4s ease both;
+    position: sticky; top: 0; background: var(--surface); z-index: 10;
   }
-  .brand { display: flex; align-items: center; gap: 10px; font-family: 'Fraunces', serif; font-size: 20px; font-weight: 700; }
-  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--raspberry); animation: pulseDot 2.4s infinite; }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: inherit; font-size: 20px; font-weight: 700; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--raspberry); }
   .user-chip { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
   .user-chip img { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); }
   .logout { color: var(--muted); font-size: 13px; border: 1px solid var(--line); padding: 6px 12px; border-radius: 8px; transition: all .15s; }
   .logout:hover { color: var(--text); border-color: var(--raspberry); }
 
   .wrap { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
-  .eyebrow { color: var(--raspberry); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600; animation: fadeUp .4s ease .05s both; }
-  h1 { animation: fadeUp .45s ease .08s both; }
-  .lead { color: var(--muted); font-size: 15px; margin-top: 10px; max-width: 56ch; animation: fadeUp .45s ease .12s both; }
+  .eyebrow { color: var(--raspberry); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600;  }
+  .lead { color: var(--muted); font-size: 15px; margin-top: 10px; max-width: 56ch; }
 
-  .flash { background: var(--lime-dim); border: 1px solid var(--lime); color: var(--lime); padding: 10px 16px; border-radius: 12px 4px 12px 4px; font-size: 14px; margin: 20px 0; animation: popIn .25s ease both; }
+  .flash { background: var(--lime-dim); border: 1px solid var(--lime); color: var(--lime); padding: 10px 16px; border-radius: 10px; font-size: 14px; margin: 20px 0; }
   .flash.error { background: var(--raspberry-dim); border-color: var(--raspberry); color: var(--raspberry); }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-top: 28px; }
   .card {
     background: var(--surface); border: 1px solid var(--line);
-    border-radius: 26px 8px 26px 8px;
-    padding: 22px; transition: transform .18s ease, border-color .18s, box-shadow .18s;
-    animation: fadeUp .4s ease both;
+    border-radius: 14px;
+    padding: 22px; transition: border-color .15s ease, background-color .15s ease;
   }
-  a.card:hover { animation: jiggle .5s ease; border-color: var(--raspberry); box-shadow: 0 10px 30px -12px rgba(255,95,143,.35); }
+  a.card:hover { border-color: var(--raspberry); }
   .card-icon {
-    width: 44px; height: 44px; border-radius: 14px 4px 14px 4px;
+    width: 44px; height: 44px; border-radius: 12px;
     background: var(--surface-2); display: flex; align-items: center; justify-content: center;
     font-family: 'Fraunces', serif; font-weight: 700; font-size: 18px; color: var(--raspberry);
-    margin-bottom: 14px; transition: transform .2s;
+    margin-bottom: 14px;
   }
-  a.card:hover .card-icon { transform: rotate(-6deg) scale(1.05); }
   .card h3 { font-size: 17px; }
   .card .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .owner-tag { display: inline-block; margin-top: 12px; font-size: 11px; color: var(--lime); background: var(--lime-dim); padding: 3px 9px; border-radius: 999px; }
 
-  .empty { color: var(--muted); font-size: 14px; margin-top: 28px; padding: 24px; border: 1px dashed var(--line); border-radius: 16px; animation: fadeUp .4s ease both; }
+  .empty { color: var(--muted); font-size: 14px; margin-top: 28px; padding: 24px; border: 1px dashed var(--line); border-radius: 12px; }
 
-  .status-strip { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; animation: fadeUp .4s ease .1s both; }
+  .status-strip { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
   .pill { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); padding: 7px 13px; border-radius: 999px; }
   .pill .pip { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); }
   .pill.locked .pip { background: var(--raspberry); }
 
   .panel {
-    background: var(--surface); border: 1px solid var(--line); border-radius: 20px 6px 20px 6px;
-    padding: 26px; margin-top: 20px; animation: fadeUp .4s ease both;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 24px; margin-top: 18px;
   }
   .panel.danger { border-color: rgba(255,95,143,.35); }
   .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
@@ -128,7 +112,7 @@
   select[multiple] { min-height: 110px; }
   select:focus, input:focus, textarea:focus { outline: none; border-color: var(--raspberry); box-shadow: 0 0 0 3px rgba(255,95,143,.12); }
   .hint { color: var(--muted); font-size: 11px; margin-top: -12px; margin-bottom: 18px; }
-  .risky-warning { background: var(--amber-dim); border: 1px solid var(--amber); color: var(--amber); padding: 10px 14px; border-radius: 12px 4px 12px 4px; font-size: 12.5px; margin: -6px 0 18px; animation: popIn .2s ease both; }
+  .risky-warning { background: var(--amber-dim); border: 1px solid var(--amber); color: var(--amber); padding: 10px 14px; border-radius: 10px; font-size: 12.5px; margin: -6px 0 18px; }
   .cmd-toggle-row { display: flex; gap: 8px; margin-bottom: 10px; }
   button.ghost.small { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
   .cmd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 18px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
@@ -137,7 +121,7 @@
 
   button, .btn {
     background: var(--raspberry); color: #1a0a10; border: none; font-weight: 600;
-    padding: 11px 20px; border-radius: 12px 4px 12px 4px; font-size: 14px; cursor: pointer;
+    padding: 11px 20px; border-radius: 10px; font-size: 14px; cursor: pointer;
     transition: filter .15s, transform .1s; display: inline-flex; align-items: center; gap: 6px;
   }
   button:hover, .btn:hover { filter: brightness(1.1); }
@@ -156,7 +140,7 @@
   .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .chip {
     display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--line);
-    padding: 6px 8px 6px 12px; border-radius: 999px; font-size: 12px; animation: popIn .2s ease both;
+    padding: 6px 8px 6px 12px; border-radius: 999px; font-size: 12px;
   }
   .chip form { margin: 0; }
   .chip button.x {
@@ -202,6 +186,33 @@
   .switch input:focus-visible + .slider { box-shadow: 0 0 0 3px rgba(255,95,143,.25); }
   .field { margin-bottom: 4px; }
   .panel[id^="sec-"] { scroll-margin-top: 90px; }
+
+  /* Responsive layout and accessible motion defaults */
+  html { color-scheme: dark; }
+  html[data-theme="light"] { color-scheme: light; }
+  button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--raspberry); outline-offset: 2px;
+  }
+  @media (max-width: 640px) {
+    .topbar { padding: 12px 16px; gap: 12px; align-items: flex-start; }
+    .user-chip { gap: 7px; flex-wrap: wrap; justify-content: flex-end; font-size: 12px; }
+    .wrap { padding: 28px 16px 56px; }
+    .grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .panel { padding: 18px; }
+    .row { flex-direction: column; gap: 0; }
+    .row > * { min-width: 0; width: 100%; }
+    .panel-head { align-items: flex-start; }
+    button, .btn { min-height: 40px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      scroll-behavior: auto !important;
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+    }
+  }
+
 </style>
 <script>
   function toggleKey(btn) {
