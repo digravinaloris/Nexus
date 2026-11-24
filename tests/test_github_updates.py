@@ -38,7 +38,7 @@ def sample_release(**overrides):
 def test_build_release_embed_uses_release_metadata():
     embed = github_updates.build_release_embed(sample_release())
 
-    assert embed.title == "🚀 Nexus Nexus 2.0"
+    assert embed.title == "🚀 Nexus 2.0"
     assert embed.url.endswith("/v2.0.0")
     assert embed.description == "New features and fixes."
     assert embed.fields[0].value == "v2.0.0"
