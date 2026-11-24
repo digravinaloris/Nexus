@@ -2364,6 +2364,43 @@ async def config_ticket_panel_remove(interaction: discord.Interaction, panel_id:
     await interaction.response.send_message("Panel removed. Existing tickets are unaffected; delete its posted message manually.", ephemeral=True)
 
 
+@ticket_group.command(name="panel-questions", description="Set a ticket panel's custom intake questions — server owner only")
+@app_commands.describe(
+    panel_id="Panel ID shown by /ticket panel-list",
+    question1="First required question",
+    question2="Optional second question",
+    question3="Optional third question",
+    question4="Optional fourth question",
+    question5="Optional fifth question",
+)
+@has_owner()
+async def config_ticket_panel_questions(
+    interaction: discord.Interaction,
+    panel_id: str,
+    question1: str,
+    question2: str = None,
+    question3: str = None,
+    question4: str = None,
+    question5: str = None,
+):
+    cfg = get_config(interaction.guild_id)
+    panels = list(cfg.get("ticket_panels") or [])
+    panel = next((p for p in panels if str(p.get("id")) == panel_id.strip()), None)
+    if panel is None:
+        await interaction.response.send_message("Panel ID not found. Run /ticket panel-list.", ephemeral=True)
+        return
+    questions = [q.strip() for q in (question1, question2, question3, question4, question5) if q and q.strip()]
+    if any(len(q) > 45 for q in questions):
+        await interaction.response.send_message("Each question must be 45 characters or fewer.", ephemeral=True)
+        return
+    panel["form_questions"] = questions
+    update_config(interaction.guild_id, "ticket_panels", panels)
+    await interaction.response.send_message(
+        f"✅ Updated the intake form for **{discord.utils.escape_markdown(str(panel.get('name', 'Panel')))}** with {len(questions)} question(s).",
+        ephemeral=True,
+    )
+
+
 @ticket_group.command(name="assign", description="Assign the current ticket to a staff member")
 @app_commands.describe(member="Staff member responsible for this ticket")
 async def config_ticket_assign(interaction: discord.Interaction, member: discord.Member):
@@ -4106,19 +4143,22 @@ class TicketCloseView(discord.ui.View):
 
 
 class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
-    """Formulaire affiché au clic sur le bouton — la réponse est postée par
-    le bot dans le salon du ticket dès sa création."""
+    """Dynamic intake form: each panel can define up to five questions."""
     def __init__(self, panel_config=None):
         super().__init__()
         self.panel_config = panel_config
-
-    reason = discord.ui.TextInput(
-        label="What do you need help with?",
-        style=discord.TextStyle.paragraph,
-        placeholder="Briefly describe your issue so the team can help faster...",
-        max_length=500,
-        required=True,
-    )
+        questions = list((panel_config or {}).get("form_questions") or [])
+        if not questions:
+            questions = ["What do you need help with?"]
+        for index, question in enumerate(questions[:5]):
+            self.add_item(discord.ui.TextInput(
+                label=str(question)[:45],
+                custom_id=f"ticket_question_{index}",
+                style=discord.TextStyle.paragraph,
+                placeholder="Write your answer here...",
+                max_length=500,
+                required=True,
+            ))
 
     async def on_submit(self, interaction: discord.Interaction):
         cfg = get_config(interaction.guild_id)
@@ -4186,7 +4226,12 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
             color=0x3399ff,
         )
         embed.add_field(name="Priority", value="🔵 Normal", inline=True)
-        embed.add_field(name="What they need help with", value=self.reason.value[:1000], inline=False)
+        for index, answer in enumerate(
+            child for child in self.children if isinstance(child, discord.ui.TextInput)
+        ):
+            question = str(answer.label)
+            response = (answer.value or "").strip() or "No answer provided."
+            embed.add_field(name=question, value=response[:1000], inline=False)
         await channel.send(
             content=support_role.mention if support_role else None,
             embed=embed,
