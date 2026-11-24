@@ -4733,6 +4733,18 @@ api.config.update(
     SESSION_COOKIE_SAMESITE="Lax",  # anti CSRF de base
 )
 
+@api.after_request
+def add_security_headers(response):
+    """Apply baseline browser security headers to every web response."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=()",
+    )
+    return response
+
 # ---------- Templates HTML ----------
 
 # ---------- i18n ----------
