@@ -572,38 +572,12 @@ async def setup_hook():
     # ils accèdent aux quelques helpers partagés via l'objet bot lui-même.
     bot.check_access = check_access
     bot.get_config = get_config
-    for extension in ("cogs.music", "cogs.faq", "cogs.calendar"):
+    for extension in ("cogs.faq", "cogs.calendar"):
         try:
             await bot.load_extension(extension)
             print(f"[COGS] Loaded {extension}", flush=True)
         except Exception as e:
             print(f"[COGS] Failed to load {extension}: {e}", flush=True)
-
-    # Lavalink is an independent service: if it is offline, the rest of Nexus
-    # still starts normally and moderation/dashboard features remain available.
-    lavalink_uri = os.getenv("LAVALINK_URI")
-    lavalink_password = os.getenv("LAVALINK_PASSWORD")
-    if lavalink_uri and lavalink_password:
-        async def connect_lavalink():
-            try:
-                import wavelink
-                node = wavelink.Node(
-                    identifier="nexus-audio",
-                    uri=lavalink_uri,
-                    password=lavalink_password,
-                    client=bot,
-                    resume_timeout=60,
-                )
-                await wavelink.Pool.connect(nodes=[node], client=bot)
-                print("[MUSIC] Lavalink connection established", flush=True)
-            except Exception as e:
-                print(f"[MUSIC] Lavalink unavailable; music commands will stay offline: {e}", flush=True)
-
-        # Do not let an unavailable audio server delay startup of moderation,
-        # dashboard, tickets or the other independent Nexus features.
-        asyncio.create_task(connect_lavalink(), name="nexus-lavalink-connect")
-    else:
-        print("[MUSIC] LAVALINK_URI/LAVALINK_PASSWORD not configured; music disabled", flush=True)
 
 @bot.event
 async def on_ready():

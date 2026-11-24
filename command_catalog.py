@@ -22,5 +22,4 @@ COMMAND_TEMPLATES = {
         "clear", "roleadd", "roleremove", "slowmode", "softban", "purgeuser", "tempban",
     ]},
     "helper": {"label_key": "tmpl_helper", "commands": ["warn", "clear", "slowmode"]},
-    "dj": {"label_key": "tmpl_dj", "commands": ["play", "skip", "pause", "resume", "stop", "queue", "volume"]},
 }
