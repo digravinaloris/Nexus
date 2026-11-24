@@ -386,3 +386,12 @@ def test_appeal_submit_works_without_review_channel(env):
     resp = env.client.post("/appeal/w", data={"appeal_text": "please"})
     assert resp.status_code == 200
     assert env.col.ban_appeals.find_one({"token": "w"})["status"] == "submitted"
+
+
+def test_public_responses_include_baseline_security_headers(env):
+    response = env.client.get("/")
+    assert response.status_code == 200
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
