@@ -3834,7 +3834,7 @@ class TicketCloseView(discord.ui.View):
             log_json("error", "ticket_transcript_failed", channel_id=channel.id, guild_id=interaction.guild_id, error=str(e))
 
         archive_category = None
-        archive_category_id = (panel or {}).get("archive_category_id") or cfg.get("ticket_archive_category_id")
+        archive_category_id = panel.get("archive_category_id") if panel is not None else cfg.get("ticket_archive_category_id")
         if archive_category_id:
             candidate = interaction.guild.get_channel(int(archive_category_id))
             if isinstance(candidate, discord.CategoryChannel):
