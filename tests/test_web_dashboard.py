@@ -76,11 +76,26 @@ def dash(env, monkeypatch):
             sess.clear()
             sess["access_token"] = "AT"
             sess["dash_user"] = {"id": user_id, "username": name}
+            sess["csrf_token"] = "test-csrf-token-for-dashboard"
 
     env.login = login
     env.url = lambda path="": f"/dashboard/{GID}{path}"
     env.cfg = lambda: __import__("config_store").get_config(GID)
     env.audit = lambda: [d["action"] for d in env.col.audit.find({"guild_id": GID})]
+    # Existing tests simulate valid browser form submissions.
+    original_post = env.client.post
+    def post_with_csrf(*args, **kwargs):
+        data = kwargs.get("data")
+        if data is None:
+            data = {}
+        if isinstance(data, dict) and "csrf_token" not in data:
+            data = dict(data)
+            with env.client.session_transaction() as sess:
+                data["csrf_token"] = sess.get("csrf_token", "")
+            kwargs["data"] = data
+        return original_post(*args, **kwargs)
+    env.client.post = post_with_csrf
+    env.raw_post = original_post
     login()
     return env
 
@@ -106,6 +121,17 @@ def test_lang_and_theme_switch(env):
     c.get("/dashboard/theme/pink")
     with c.session_transaction() as sess:
         assert sess["theme"] == "light"
+
+
+def test_dashboard_mutations_reject_missing_or_invalid_csrf_tokens(dash):
+    before = dash.cfg().copy()
+    missing = dash.raw_post(dash.url("/features"), data={"feat__antinuke": "on"})
+    invalid = dash.raw_post(dash.url("/features"), data={
+        "feat__antinuke": "on", "csrf_token": "attacker-controlled-token"
+    })
+    assert missing.status_code == 400
+    assert invalid.status_code == 400
+    assert dash.cfg() == before
 
 
 # ------------------------------------------------------------- liste serveurs

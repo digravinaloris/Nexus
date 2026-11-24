@@ -172,6 +172,7 @@ def dash_callback():
     if isinstance(expires_in, (int, float)) and expires_in > 0:
         session["token_expires_at"] = time.time() + min(expires_in, 60 * 60 * 24)
     session["dash_user"] = user_data
+    session["csrf_token"] = secrets.token_urlsafe(32)
 
     return redirect(url_for("dash_home"))
 

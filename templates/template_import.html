@@ -6,7 +6,7 @@
   <h1>{{ tpl.name }}</h1>
   <p class="lead">From <strong>{{ tpl.created_guild_name }}</strong>. The base config (feature toggles, automod, warn escalation) applies automatically. Map any role-based command permissions below before confirming.</p>
 
-  <form method="POST">
+  <form method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if distinct_names %}
     <div class="panel">
       <h2>Map roles</h2>

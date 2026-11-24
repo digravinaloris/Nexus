@@ -8,7 +8,7 @@
 
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
 
-  <form method="POST" action="{{ url_for('dash_features_page', guild_id=guild.id) }}">
+  <form method="POST" action="{{ url_for('dash_features_page', guild_id=guild.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="panel">
       <div class="panel-head"><h2>{{ t('features_panel_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
       <div class="desc">{{ t('features_panel_desc') }}</div>

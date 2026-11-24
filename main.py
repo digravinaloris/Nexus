@@ -50,6 +50,7 @@ from moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTIO
 from owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
 from web.rest_api import bp as rest_api_bp
 from web import auth as web_auth, public as web_public, dashboard as web_dashboard, verify as web_verify
+from web.csrf import register_csrf
 from verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
                           account_days_left, kick_pass, SETTINGS_LIMITS)
 from command_catalog import MODERATION_COMMANDS, COMMAND_TEMPLATES
@@ -4751,8 +4752,9 @@ api.secret_key = os.environ["FLASK_SECRET_KEY"]
 api.config.update(
     SESSION_COOKIE_SECURE=True,     # cookie envoyé que en HTTPS
     SESSION_COOKIE_HTTPONLY=True,   # inaccessible en JS (anti XSS)
-    SESSION_COOKIE_SAMESITE="Lax",  # anti CSRF de base
+    SESSION_COOKIE_SAMESITE="Lax",  # défense supplémentaire contre CSRF
 )
+register_csrf(api)
 
 @api.after_request
 def add_security_headers(response):
