@@ -249,3 +249,35 @@ def test_dashboard_pages_live_in_web_dashboard(nexus):
     assert nexus._get_audit_records is audit_export._get_audit_records
     assert nexus._build_audit_csv_bytes is audit_export._build_audit_csv_bytes
     assert nexus._apply_template_base_config is template_ops._apply_template_base_config
+
+
+
+def test_slash_command_groups_are_not_nested(nexus):
+    """Discord allows one subgroup level, but never a group inside a subgroup."""
+    discord = __import__("discord")
+    for top_level in nexus.bot.tree.get_commands():
+        if isinstance(top_level, discord.app_commands.Group):
+            for child in top_level.commands:
+                if isinstance(child, discord.app_commands.Group):
+                    for grandchild in child.commands:
+                        assert not isinstance(grandchild, discord.app_commands.Group), (
+                            f"Too many slash-command group levels: /{top_level.name} {child.name} {grandchild.name}"
+                        )
+    config_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
+    ticket_group = next(c for c in config_group.commands if c.name == "ticket")
+    ticket_names = {c.name for c in ticket_group.commands}
+    assert {"setup", "disable", "panel-create", "panel-list", "panel-remove"} <= ticket_names
+    for group_name in ("template", "rolemenu", "verification", "sticky", "badwords", "domains"):
+        assert any(c.name == group_name for c in config_group.commands), f"/config {group_name} missing"
+
+
+def test_ticket_topic_parsing(nexus):
+    assert nexus._ticket_topic_parts("123456789") == ("123456789", None, None, None)
+    assert nexus._ticket_topic_parts("nexus-ticket|opener:123456789|panel:abcd1234|support:222|archive:333") == ("123456789", "abcd1234", "222", "333")
+    assert nexus._ticket_topic_parts(None) == (None, None, None, None)
+
+
+def test_ticket_panel_lookup(nexus):
+    cfg = {"ticket_panels": [{"id": "abcd1234", "name": "Support"}]}
+    assert nexus._find_ticket_panel(cfg, "abcd1234")["name"] == "Support"
+    assert nexus._find_ticket_panel(cfg, "missing") is None

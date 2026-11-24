@@ -25,6 +25,7 @@ def get_config(guild_id):
             "ticket_category_id": None,
             "ticket_support_role_id": None,
             "ticket_archive_category_id": None,
+            "ticket_panels": [],
             "appeal_channel_id": None,
             "boost_channel_id": None,
             "detailed_logs_enabled": False,
