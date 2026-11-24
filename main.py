@@ -2222,11 +2222,10 @@ async def config_badwords_import(interaction: discord.Interaction, language: app
     )
 
 
-# Système de tickets par bouton : /config ticket setup|disable
+# Ticket system commands are available directly under /ticket.
 ticket_group = app_commands.Group(
     name="ticket",
-    description="Configure the button-based ticket system for this server — server owner only",
-    parent=config_group,
+    description="Manage the ticket system and current tickets",
 )
 
 
@@ -2336,7 +2335,7 @@ async def config_ticket_panel_create(
 async def config_ticket_panel_list(interaction: discord.Interaction):
     panels = get_config(interaction.guild_id).get("ticket_panels") or []
     if not panels:
-        await interaction.response.send_message("No additional ticket panels configured. Use /config ticket panel-create.", ephemeral=True)
+        await interaction.response.send_message("No additional ticket panels configured. Use /ticket panel-create.", ephemeral=True)
         return
     lines = []
     for panel in panels:
@@ -2351,14 +2350,14 @@ async def config_ticket_panel_list(interaction: discord.Interaction):
 
 
 @ticket_group.command(name="panel-remove", description="Remove a ticket panel by its ID — server owner only")
-@app_commands.describe(panel_id="ID shown by /config ticket panel-list")
+@app_commands.describe(panel_id="ID shown by /ticket panel-list")
 @has_owner()
 async def config_ticket_panel_remove(interaction: discord.Interaction, panel_id: str):
     cfg = get_config(interaction.guild_id)
     panels = list(cfg.get("ticket_panels") or [])
     remaining = [p for p in panels if str(p.get("id")) != panel_id.strip()]
     if len(remaining) == len(panels):
-        await interaction.response.send_message("Panel ID not found. Run /config ticket panel list.", ephemeral=True)
+        await interaction.response.send_message("Panel ID not found. Run /ticket panel list.", ephemeral=True)
         return
     update_config(interaction.guild_id, "ticket_panels", remaining)
 
@@ -2486,6 +2485,9 @@ async def config_ticket_priority(interaction: discord.Interaction, priority: app
         color={"low": 0x57F287, "normal": 0x5865F2, "high": 0xFEE75C, "urgent": 0xED4245}[priority.value],
     )
     await interaction.response.send_message(embed=embed)
+
+
+bot.tree.add_command(ticket_group)
 
 
 # Liste noire de domaines/liens — /config domains add|remove|list
@@ -4129,7 +4131,7 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
         category = interaction.guild.get_channel(int(category_id or 0))
         if category is None or not isinstance(category, discord.CategoryChannel):
             await interaction.response.send_message(
-                "Ticket system isn't configured properly. Ask an admin to run `/config ticket setup` again.",
+                "Ticket system isn't configured properly. Ask an admin to run `/ticket setup` again.",
                 ephemeral=True,
             )
             return
@@ -4279,7 +4281,7 @@ class VerificationView(discord.ui.View):
 
 
 class TicketPanelView(discord.ui.View):
-    """Bouton persistant posté par /config ticket setup pour ouvrir un ticket."""
+    """Bouton persistant posté par /ticket setup pour ouvrir un ticket."""
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -4299,7 +4301,7 @@ class TicketPanelView(discord.ui.View):
         category = interaction.guild.get_channel(int(category_id or 0))
         if category is None or not isinstance(category, discord.CategoryChannel):
             await interaction.response.send_message(
-                "Ticket system isn't configured properly. Ask an admin to run `/config ticket setup` again.",
+                "Ticket system isn't configured properly. Ask an admin to run `/ticket setup` again.",
                 ephemeral=True,
             )
             return
