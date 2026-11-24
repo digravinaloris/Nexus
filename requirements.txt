@@ -1,9 +1,7 @@
-discord.py[voice]
-wavelink>=3.5,<4
+discord.py
 flask
 pymongo
 dnspython
-PyNaCl
 requests
 pyyaml
 pyotp
