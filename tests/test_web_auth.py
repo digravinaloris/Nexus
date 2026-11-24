@@ -1,5 +1,12 @@
 from urllib.parse import parse_qs, urlparse
 
+import os
+
+# web.auth reads OAuth configuration at import time, before pytest fixtures run.
+os.environ.setdefault("DISCORD_CLIENT_ID", "test-client-id")
+os.environ.setdefault("DISCORD_CLIENT_SECRET", "test-client-secret")
+os.environ.setdefault("DISCORD_REDIRECT_URI", "http://localhost/callback")
+
 import web.auth as auth
 
 
