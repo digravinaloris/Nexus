@@ -39,4 +39,4 @@ def register_csrf(app):
 
     @app.context_processor
     def inject_csrf_token():
-        return {"csrf_token": generate_csrf_token}
+        return {"csrf_token": generate_csrf_token()}
