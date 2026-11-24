@@ -38,7 +38,7 @@ def fetch_latest_release():
 
 
 def build_release_embed(release):
-    name = (release.get("name") or release["tag_name"]).strip()[:256]
+    name = (release.get("name") or release["tag_name"]).strip()[:254]
     body = (release.get("body") or "").strip()
     if not body:
         body = "A new Nexus version is available."
