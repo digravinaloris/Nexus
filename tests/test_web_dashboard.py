@@ -86,6 +86,8 @@ def dash(env, monkeypatch):
     original_post = env.client.post
     def post_with_csrf(*args, **kwargs):
         data = kwargs.get("data")
+        if data is None:
+            data = {}
         if isinstance(data, dict) and "csrf_token" not in data:
             data = dict(data)
             with env.client.session_transaction() as sess:
