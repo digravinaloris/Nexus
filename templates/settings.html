@@ -54,7 +54,7 @@
     <div class="panel-head"><h2>{{ t('sec_automod_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
     <div class="desc">{{ t('sec_automod_desc') }}</div>
     {{ section_flashes(flashes, 'automod') }}
-    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='automod') }}">
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='automod') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="row">
         {{ number_field('automod_spam_count', 'lbl_spam_count', values.automod_spam_count, 1, 1000) }}
         {{ number_field('automod_spam_window', 'lbl_spam_window', values.automod_spam_window, 1, 3600) }}
@@ -78,7 +78,7 @@
     <div class="panel-head"><h2>{{ t('sec_protect_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
     <div class="desc">{{ t('sec_protect_desc') }}</div>
     {{ section_flashes(flashes, 'protection') }}
-    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='protection') }}">
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='protection') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label class="cmd-check" style="margin-bottom:16px;">
         <input type="checkbox" name="warn_escalation_enabled" {% if values.warn_escalation_enabled %}checked{% endif %}>
         {{ t('lbl_warn_enabled') }}
@@ -99,7 +99,7 @@
     <div class="panel-head"><h2>{{ t('sec_channels_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
     <div class="desc">{{ t('sec_channels_desc') }}</div>
     {{ section_flashes(flashes, 'channels') }}
-    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='channels') }}">
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='channels') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="row">
         {{ channel_select('welcome_channel_id', 'lbl_welcome_channel', text_channels, cfg.get('welcome_channel_id'), '#') }}
         {{ channel_select('appeal_channel_id', 'lbl_appeal_channel', text_channels, cfg.get('appeal_channel_id'), '#') }}
@@ -117,7 +117,7 @@
     <div class="panel-head"><h2>{{ t('sec_quarantine_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
     <div class="desc">{{ t('sec_quarantine_desc') }}</div>
     {{ section_flashes(flashes, 'quarantine') }}
-    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='quarantine') }}">
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='quarantine') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="row">
         {{ role_select('quarantine_role_id', 'lbl_q_role', roles, cfg.get('quarantine_role_id')) }}
         {{ channel_select('quarantine_channel_id', 'lbl_q_channel', text_channels, cfg.get('quarantine_channel_id'), '#') }}
@@ -133,7 +133,7 @@
     <div class="panel-head"><h2>{{ t('sec_verification_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
     <div class="desc">{{ t('sec_verification_desc') }}</div>
     {{ section_flashes(flashes, 'verification') }}
-    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='verification') }}">
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='verification') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="row">
         {{ role_select('verified_role_id', 'lbl_verified_role', roles, cfg.get('verified_role_id')) }}
         {{ role_select('unverified_role_id', 'lbl_unverified_role', roles, cfg.get('unverified_role_id')) }}
@@ -147,7 +147,7 @@
     <div class="panel-head"><h2>{{ t('sec_lists_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
     <div class="desc">{{ t('sec_lists_desc') }}</div>
     {{ section_flashes(flashes, 'lists') }}
-    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='lists') }}">
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='lists') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="row">
         <div class="field">
           <label for="banned_words">{{ t('lbl_banned_words') }}</label>
@@ -167,7 +167,7 @@
     <div class="panel-head"><h2>{{ t('sec_language_title') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>
     <div class="desc">{{ t('sec_language_desc') }}</div>
     {{ section_flashes(flashes, 'language') }}
-    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='language') }}">
+    <form method="POST" action="{{ url_for('dash_settings_save', guild_id=guild.id, section='language') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label for="language">{{ t('lbl_language') }}</label>
       <select name="language" id="language">
         {% for code in languages %}
