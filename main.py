@@ -2275,11 +2275,11 @@ async def config_ticket_disable(interaction: discord.Interaction):
 
 
 
-# Multiple independently configured ticket panels
-ticket_panel_group = app_commands.Group(name="panel", description="Manage multiple ticket panels for this server", parent=ticket_group)
+# Multiple independently configured ticket panels.
+# Keep these as direct commands: discord.py does not allow nested groups.
 
 
-@ticket_panel_group.command(name="create", description="Create an additional ticket panel — server owner only")
+@ticket_group.command(name="panel-create", description="Create an additional ticket panel — server owner only")
 @app_commands.describe(
     name="Panel name, e.g. Support, Reports or Partnerships",
     panel_channel="Channel where this panel will be posted",
@@ -2331,7 +2331,7 @@ async def config_ticket_panel_create(
     )
 
 
-@ticket_panel_group.command(name="list", description="List configured ticket panels — server owner only")
+@ticket_group.command(name="panel-list", description="List configured ticket panels — server owner only")
 @has_owner()
 async def config_ticket_panel_list(interaction: discord.Interaction):
     panels = get_config(interaction.guild_id).get("ticket_panels") or []
@@ -2350,7 +2350,7 @@ async def config_ticket_panel_list(interaction: discord.Interaction):
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
-@ticket_panel_group.command(name="remove", description="Remove a ticket panel by its ID — server owner only")
+@ticket_group.command(name="panel-remove", description="Remove a ticket panel by its ID — server owner only")
 @app_commands.describe(panel_id="ID shown by /config ticket panel list")
 @has_owner()
 async def config_ticket_panel_remove(interaction: discord.Interaction, panel_id: str):
