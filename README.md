@@ -92,9 +92,12 @@ Every sanction (ban, kick, mute, warn, tempban, softban) DMs the person a case n
 | Command | Access | Description |
 |---|---|---|
 | `/config ticket setup <panel_channel> <category> <support_role> [archive_category]` | Server owner | Post the "Open Ticket" button and configure where tickets go |
-| `/config ticket disable` | Server owner | Turn off the ticket system |
+| `/config ticket disable` | Server owner | Turn off the legacy/default ticket panel |
+| `/config ticket panel create` | Server owner | Create another panel with its own channel, category, support role, archive category and opening message |
+| `/config ticket panel list` | Server owner | List configured panels and their IDs |
+| `/config ticket panel remove <panel_id>` | Server owner | Remove a panel without affecting existing tickets |
 
-Clicking the panel button opens a short form, then creates a private channel with a **Close Ticket** button (single tap, no delay). If an archive category was set, closed tickets are moved there (inheriting its permissions) instead of being deleted. The person who opened the ticket gets a 👍/👎 satisfaction survey after it closes.
+Each additional panel routes tickets to its own category and support role. Panel IDs are stored in ticket channel topics so closing and archiving use the correct panel configuration. The legacy ticket setup remains supported. Clicking a panel opens the existing intake form and creates a private channel with a **Close Ticket** button. Closed tickets are archived when an archive category is configured, otherwise deleted. The existing satisfaction survey and HTML transcript delivery are preserved.
 
 ### Invites, Backups & Data
 | Command | Access | Description |
