@@ -3760,8 +3760,8 @@ def _ticket_topic_parts(topic):
             if ":" in item:
                 key, val = item.split(":", 1)
                 parts[key] = val
-        return parts.get("opener"), parts.get("panel")
-    return (value if value.isdigit() else None), None
+        return parts.get("opener"), parts.get("panel"), parts.get("support"), parts.get("archive")
+    return (value if value.isdigit() else None), None, None, None
 
 
 def _find_ticket_panel(cfg, panel_id):
@@ -3779,9 +3779,9 @@ class TicketCloseView(discord.ui.View):
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = interaction.channel
         cfg = get_config(interaction.guild_id)
-        opener_id, panel_id = _ticket_topic_parts(channel.topic)
+        opener_id, panel_id, topic_support_role_id, topic_archive_category_id = _ticket_topic_parts(channel.topic)
         panel = _find_ticket_panel(cfg, panel_id)
-        support_role_id = (panel or {}).get("support_role_id") or cfg.get("ticket_support_role_id")
+        support_role_id = (panel or {}).get("support_role_id") or topic_support_role_id or cfg.get("ticket_support_role_id")
         support_role = interaction.guild.get_role(int(support_role_id or 0))
         is_opener = opener_id is not None and str(interaction.user.id) == opener_id
         is_support = support_role is not None and support_role in interaction.user.roles
@@ -3834,7 +3834,12 @@ class TicketCloseView(discord.ui.View):
             log_json("error", "ticket_transcript_failed", channel_id=channel.id, guild_id=interaction.guild_id, error=str(e))
 
         archive_category = None
-        archive_category_id = panel.get("archive_category_id") if panel is not None else cfg.get("ticket_archive_category_id")
+        if panel is not None:
+            archive_category_id = panel.get("archive_category_id")
+        elif panel_id:
+            archive_category_id = None if topic_archive_category_id in (None, "none") else topic_archive_category_id
+        else:
+            archive_category_id = cfg.get("ticket_archive_category_id")
         if archive_category_id:
             candidate = interaction.guild.get_channel(int(archive_category_id))
             if isinstance(candidate, discord.CategoryChannel):
@@ -3922,7 +3927,12 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
         panel_id = str((panel or {}).get("id") or "")
         panel_slug = re.sub(r"[^a-z0-9-]", "", str((panel or {}).get("name", "")).lower().replace(" ", "-"))[:16]
         channel_name = f"{panel_slug}-{safe_name}" if panel_slug else f"ticket-{safe_name}"
-        ticket_topic = f"nexus-ticket|opener:{interaction.user.id}|panel:{panel_id}" if panel_id else str(interaction.user.id)
+        archive_id = (panel or {}).get("archive_category_id")
+        ticket_topic = (
+            f"nexus-ticket|opener:{interaction.user.id}|panel:{panel_id}"
+            f"|support:{support_role_id or ''}|archive:{archive_id if archive_id else 'none'}"
+            if panel_id else str(interaction.user.id)
+        )
         try:
             channel = await category.create_text_channel(
                 name=channel_name[:100],
