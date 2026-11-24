@@ -311,8 +311,6 @@ def test_ticket_topic_value_reads_assignment(nexus):
 
 
 def test_ticket_assignment_commands_are_registered(nexus):
-    config_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
-    ticket_group = next(c for c in config_group.commands if c.name == "ticket")
     ticket_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "ticket")
     assert {"assign", "unassign"} <= {command.name for command in ticket_group.commands}
 
