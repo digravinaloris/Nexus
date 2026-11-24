@@ -62,9 +62,15 @@ class Calendar(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.task = None
+        self._indexes_ready = False
 
     def col(self):
-        return self.bot.db["calendar_events"]
+        collection = self.bot.db["calendar_events"]
+        if not self._indexes_ready:
+            collection.create_index([("guild_id", 1), ("starts_at", 1)])
+            collection.create_index([("guild_id", 1), ("title", 1), ("starts_at", 1)], unique=True)
+            self._indexes_ready = True
+        return collection
 
     def timezone(self, gid):
         return self.bot.get_config(gid).get("calendar_timezone") or DEFAULT_TZ
@@ -126,7 +132,7 @@ class Calendar(commands.Cog):
         await i.response.send_message("Event saved. Announcement " + ("sent." if sent else "not sent (channel unavailable)."), ephemeral=True)
 
     @calendar.command(name="list", description="Show upcoming events")
-    async def list_events(self, i):
+    async def list_events(self, i: discord.Interaction):
         if not await self.allowed(i): return
         items = list(self.col().find({"guild_id": str(i.guild_id), "starts_at": {"$gte": dt.datetime.now(UTC)}}).sort("starts_at", 1).limit(15))
         if not items:
@@ -137,7 +143,7 @@ class Calendar(commands.Cog):
 
     @calendar.command(name="edit", description="Edit an event")
     @app_commands.describe(event_id="MongoDB event ID", title="New title", role="New role", date="New date YYYY-MM-DD", time="New time HH:MM", description="New description (empty clears)")
-    async def edit(self, i, event_id: str, title: str = None, role: discord.Role = None, date: str = None, time: str = None, description: str = None):
+    async def edit(self, i: discord.Interaction, event_id: str, title: str = None, role: discord.Role = None, date: str = None, time: str = None, description: str = None):
         if not await self.allowed(i): return
         if all(x is None for x in (title, role, date, time, description)):
             await i.response.send_message("Provide at least one field to edit.", ephemeral=True); return
@@ -173,7 +179,7 @@ class Calendar(commands.Cog):
         await i.response.send_message("Event updated.", ephemeral=True)
 
     @calendar.command(name="delete", description="Delete an event")
-    async def delete(self, i, event_id: str):
+    async def delete(self, i: discord.Interaction, event_id: str):
         if not await self.allowed(i): return
         from bson import ObjectId
         try: oid = ObjectId(event_id)
@@ -183,7 +189,7 @@ class Calendar(commands.Cog):
         await i.response.send_message("Event deleted." if result.deleted_count else "Event not found.", ephemeral=True)
 
     @calendar.command(name="timezone", description="Set the server calendar timezone")
-    async def set_timezone(self, i, timezone: str):
+    async def set_timezone(self, i: discord.Interaction, timezone: str):
         if not await self.allowed(i): return
         try: name = validate_timezone(timezone)
         except ValueError as exc:
@@ -193,7 +199,7 @@ class Calendar(commands.Cog):
         await i.response.send_message("Timezone set: " + name, ephemeral=True)
 
     @calendar.command(name="channel", description="Set or clear the calendar announcements channel")
-    async def set_channel(self, i, channel: discord.TextChannel = None):
+    async def set_channel(self, i: discord.Interaction, channel: discord.TextChannel = None):
         if not await self.allowed(i): return
         from config_store import update_config
         update_config(i.guild_id, "calendar_channel_id", str(channel.id) if channel else None)
@@ -201,7 +207,7 @@ class Calendar(commands.Cog):
 
     @calendar.command(name="manager", description="Add/remove calendar manager roles")
     @app_commands.choices(action=[app_commands.Choice(name="add", value="add"), app_commands.Choice(name="remove", value="remove")])
-    async def manager(self, i, role: discord.Role, action: str):
+    async def manager(self, i: discord.Interaction, role: discord.Role, action: str):
         if not await self.allowed(i): return
         if not i.user.guild_permissions.administrator or role.is_default():
             await i.response.send_message("Admins only; @everyone cannot be a manager role.", ephemeral=True); return
