@@ -283,6 +283,32 @@ def test_ticket_panel_lookup(nexus):
     assert nexus._find_ticket_panel(cfg, "missing") is None
 
 
+def test_ticket_topic_update_preserves_panel_metadata(nexus):
+    topic = "nexus-ticket|opener:123|panel:abc|support:222|archive:333"
+    updated = nexus._ticket_topic_update(topic, "priority", "urgent")
+    assert updated == topic + "|priority:urgent"
+    assert nexus._ticket_topic_parts(updated) == ("123", "abc", "222", "333")
+    assert "priority:urgent" in updated
+
+
+def test_ticket_topic_update_replaces_existing_priority(nexus):
+    topic = "nexus-ticket|opener:123|priority:low"
+    updated = nexus._ticket_topic_update(topic, "priority", "high")
+    assert updated == "nexus-ticket|opener:123|priority:high"
+
+
+def test_ticket_topic_update_migrates_legacy_topic(nexus):
+    assert nexus._ticket_topic_update("123456789", "priority", "normal") == (
+        "nexus-ticket|opener:123456789|priority:normal"
+    )
+
+
+def test_ticket_priority_command_is_registered(nexus):
+    config_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
+    ticket_group = next(c for c in config_group.commands if c.name == "ticket")
+    assert "priority" in {command.name for command in ticket_group.commands}
+
+
 
 def test_ticket_transcript_escapes_user_content_and_renders_attachments(nexus):
     from types import SimpleNamespace

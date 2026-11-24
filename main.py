@@ -2361,7 +2361,48 @@ async def config_ticket_panel_remove(interaction: discord.Interaction, panel_id:
         await interaction.response.send_message("Panel ID not found. Run /config ticket panel list.", ephemeral=True)
         return
     update_config(interaction.guild_id, "ticket_panels", remaining)
+
     await interaction.response.send_message("Panel removed. Existing tickets are unaffected; delete its posted message manually.", ephemeral=True)
+
+
+@ticket_group.command(name="priority", description="Set the priority of the current ticket")
+@app_commands.choices(priority=[
+    app_commands.Choice(name="Low", value="low"),
+    app_commands.Choice(name="Normal", value="normal"),
+    app_commands.Choice(name="High", value="high"),
+    app_commands.Choice(name="Urgent", value="urgent"),
+])
+async def config_ticket_priority(interaction: discord.Interaction, priority: app_commands.Choice[str]):
+    channel = interaction.channel
+    if not isinstance(channel, discord.TextChannel):
+        await interaction.response.send_message("Use this command inside a ticket channel.", ephemeral=True)
+        return
+    opener_id, panel_id, topic_support_role_id, _ = _ticket_topic_parts(channel.topic)
+    if not opener_id:
+        await interaction.response.send_message("This channel isn't a recognized Nexus ticket.", ephemeral=True)
+        return
+    cfg = get_config(interaction.guild_id)
+    panel = _find_ticket_panel(cfg, panel_id)
+    support_role_id = (panel or {}).get("support_role_id") or topic_support_role_id or cfg.get("ticket_support_role_id")
+    support_role = interaction.guild.get_role(int(support_role_id or 0))
+    is_support = support_role is not None and support_role in interaction.user.roles
+    is_admin = interaction.user.guild_permissions.manage_channels
+    if not (is_support or is_admin):
+        await interaction.response.send_message("Only the ticket support team or server staff can change its priority.", ephemeral=True)
+        return
+    new_topic = _ticket_topic_update(channel.topic, "priority", priority.value)
+    try:
+        await channel.edit(topic=new_topic, reason=f"Ticket priority changed to {priority.value} by {interaction.user}")
+    except discord.HTTPException as exc:
+        await interaction.response.send_message(f"Couldn't update the ticket priority: {exc}", ephemeral=True)
+        return
+    labels = {"low": "🟢 Low", "normal": "🔵 Normal", "high": "🟠 High", "urgent": "🔴 Urgent"}
+    embed = discord.Embed(
+        title="Ticket priority updated",
+        description=f"Priority set to **{labels[priority.value]}** by {interaction.user.mention}.",
+        color={"low": 0x57F287, "normal": 0x5865F2, "high": 0xFEE75C, "urgent": 0xED4245}[priority.value],
+    )
+    await interaction.response.send_message(embed=embed)
 
 
 # Liste noire de domaines/liens — /config domains add|remove|list
@@ -3840,6 +3881,30 @@ def _find_ticket_panel(cfg, panel_id):
     return next((p for p in (cfg.get("ticket_panels") or []) if str(p.get("id")) == str(panel_id)), None)
 
 
+TICKET_PRIORITIES = {"low", "normal", "high", "urgent"}
+
+
+def _ticket_topic_update(topic, key, value):
+    """Update one metadata field without breaking legacy ticket topics."""
+    current = str(topic or "")
+    if current.startswith("nexus-ticket|"):
+        items = current.split("|")
+        found = False
+        for index in range(1, len(items)):
+            if items[index].split(":", 1)[0] == key:
+                items[index] = f"{key}:{value}"
+                found = True
+                break
+        if not found:
+            items.append(f"{key}:{value}")
+        return "|".join(items)
+    opener = current if current.isdigit() else ""
+    fields = [f"nexus-ticket|opener:{opener}"]
+    if key != "opener":
+        fields.append(f"{key}:{value}")
+    return "|".join(fields)
+
+
 class TicketCloseView(discord.ui.View):
     """Bouton persistant dans chaque ticket ouvert pour le fermer."""
     def __init__(self):
@@ -4002,7 +4067,7 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
         ticket_topic = (
             f"nexus-ticket|opener:{interaction.user.id}|panel:{panel_id}"
             f"|support:{support_role_id or ''}|archive:{archive_id if archive_id else 'none'}"
-            if panel_id else str(interaction.user.id)
+            "|priority:normal"
         )
         try:
             channel = await category.create_text_channel(
@@ -4022,6 +4087,7 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
             description=f"Hey {interaction.user.mention}! {discord.utils.escape_mentions(opening_message)}",
             color=0x3399ff,
         )
+        embed.add_field(name="Priority", value="🔵 Normal", inline=True)
         embed.add_field(name="What they need help with", value=self.reason.value[:1000], inline=False)
         await channel.send(
             content=support_role.mention if support_role else None,
