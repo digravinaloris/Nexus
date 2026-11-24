@@ -56,7 +56,7 @@ def test_expired_oauth_session_is_cleared_and_redirected(env):
         sess["access_token"] = "expired"
         sess["token_expires_at"] = 1
 
-    response = env.client.get("/dashboard")
+    response = env.client.get("/dashboard/111/calendar")
     assert response.status_code in (301, 302)
     assert response.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
