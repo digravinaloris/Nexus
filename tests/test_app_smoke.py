@@ -303,6 +303,18 @@ def test_ticket_topic_update_migrates_legacy_topic(nexus):
     )
 
 
+def test_ticket_topic_value_reads_assignment(nexus):
+    topic = "nexus-ticket|opener:123|panel:abc|assignee:456"
+    assert nexus._ticket_topic_value(topic, "assignee") == "456"
+    assert nexus._ticket_topic_value(topic, "missing") is None
+
+
+def test_ticket_assignment_commands_are_registered(nexus):
+    config_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
+    ticket_group = next(c for c in config_group.commands if c.name == "ticket")
+    assert {"assign", "unassign"} <= {command.name for command in ticket_group.commands}
+
+
 def test_ticket_priority_command_is_registered(nexus):
     config_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
     ticket_group = next(c for c in config_group.commands if c.name == "ticket")
