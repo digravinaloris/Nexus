@@ -253,16 +253,22 @@ def test_dashboard_pages_live_in_web_dashboard(nexus):
 
 
 def test_slash_command_groups_are_not_nested(nexus):
-    """Discord only supports one group level below a top-level command."""
+    """Discord allows one subgroup level, but never a group inside a subgroup."""
+    discord = __import__("discord")
     for top_level in nexus.bot.tree.get_commands():
-        if isinstance(top_level, __import__("discord").app_commands.Group):
+        if isinstance(top_level, discord.app_commands.Group):
             for child in top_level.commands:
-                assert not isinstance(child, __import__("discord").app_commands.Group), (
-                    f"Nested slash-command group found: /{top_level.name} {child.name}"
-                )
-    ticket_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "ticket")
+                if isinstance(child, discord.app_commands.Group):
+                    for grandchild in child.commands:
+                        assert not isinstance(grandchild, discord.app_commands.Group), (
+                            f"Too many slash-command group levels: /{top_level.name} {child.name} {grandchild.name}"
+                        )
+    config_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
+    ticket_group = next(c for c in config_group.commands if c.name == "ticket")
     ticket_names = {c.name for c in ticket_group.commands}
     assert {"setup", "disable", "panel-create", "panel-list", "panel-remove"} <= ticket_names
+    for group_name in ("template", "rolemenu", "verification", "sticky", "badwords", "domains"):
+        assert any(c.name == group_name for c in config_group.commands), f"/config {group_name} missing"
 
 
 def test_ticket_topic_parsing(nexus):
