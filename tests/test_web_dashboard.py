@@ -76,11 +76,24 @@ def dash(env, monkeypatch):
             sess.clear()
             sess["access_token"] = "AT"
             sess["dash_user"] = {"id": user_id, "username": name}
+            sess["csrf_token"] = "test-csrf-token-for-dashboard"
 
     env.login = login
     env.url = lambda path="": f"/dashboard/{GID}{path}"
     env.cfg = lambda: __import__("config_store").get_config(GID)
     env.audit = lambda: [d["action"] for d in env.col.audit.find({"guild_id": GID})]
+    # Existing tests simulate valid browser form submissions.
+    original_post = env.client.post
+    def post_with_csrf(*args, **kwargs):
+        data = kwargs.get("data")
+        if isinstance(data, dict) and "csrf_token" not in data:
+            data = dict(data)
+            with env.client.session_transaction() as sess:
+                data["csrf_token"] = sess.get("csrf_token", "")
+            kwargs["data"] = data
+        return original_post(*args, **kwargs)
+    env.client.post = post_with_csrf
+    env.raw_post = original_post
     login()
     return env
 
