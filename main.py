@@ -2274,6 +2274,96 @@ async def config_ticket_disable(interaction: discord.Interaction):
     await interaction.response.send_message("🎫 Ticket system disabled. Existing open tickets are unaffected.", ephemeral=True)
 
 
+
+# Multiple independently configured ticket panels
+ticket_panel_group = app_commands.Group(name="panel", description="Manage multiple ticket panels for this server", parent=ticket_group)
+
+
+@ticket_panel_group.command(name="create", description="Create an additional ticket panel — server owner only")
+@app_commands.describe(
+    name="Panel name, e.g. Support, Reports or Partnerships",
+    panel_channel="Channel where this panel will be posted",
+    category="Category where tickets from this panel will be created",
+    support_role="Role that can view and manage these tickets",
+    archive_category="Optional category for closed tickets",
+    opening_message="Optional message shown inside newly created tickets",
+)
+@has_owner()
+async def config_ticket_panel_create(
+    interaction: discord.Interaction,
+    name: str,
+    panel_channel: discord.TextChannel,
+    category: discord.CategoryChannel,
+    support_role: discord.Role,
+    archive_category: discord.CategoryChannel = None,
+    opening_message: str = None,
+):
+    clean_name = name.strip()
+    if not clean_name or len(clean_name) > 40:
+        await interaction.response.send_message("Panel name must contain 1–40 characters.", ephemeral=True)
+        return
+    cfg = get_config(interaction.guild_id)
+    panels = list(cfg.get("ticket_panels") or [])
+    if any(str(p.get("name", "")).casefold() == clean_name.casefold() for p in panels):
+        await interaction.response.send_message("A ticket panel with that name already exists.", ephemeral=True)
+        return
+    panel_id = secrets.token_hex(4)
+    panel = {
+        "id": panel_id, "name": clean_name, "category_id": category.id,
+        "support_role_id": support_role.id,
+        "archive_category_id": archive_category.id if archive_category else None,
+        "opening_message": (opening_message or "").strip()[:1000],
+        "panel_channel_id": panel_channel.id,
+    }
+    panels.append(panel)
+    update_config(interaction.guild_id, "ticket_panels", panels)
+    embed = discord.Embed(title=f"🎫 {clean_name}", description="Click the button below to open a private ticket.", color=0x3399ff)
+    embed.set_footer(text=f"nexus-ticket-panel:{panel_id}")
+    try:
+        await panel_channel.send(embed=embed, view=TicketPanelView())
+    except discord.HTTPException as e:
+        update_config(interaction.guild_id, "ticket_panels", [p for p in panels if p.get("id") != panel_id])
+        await interaction.response.send_message(f"Couldn't post the panel: {e}", ephemeral=True)
+        return
+    await interaction.response.send_message(
+        f"Panel {clean_name} created in {panel_channel.mention}. Tickets route to {category.name} and {support_role.mention}.",
+        ephemeral=True,
+    )
+
+
+@ticket_panel_group.command(name="list", description="List configured ticket panels — server owner only")
+@has_owner()
+async def config_ticket_panel_list(interaction: discord.Interaction):
+    panels = get_config(interaction.guild_id).get("ticket_panels") or []
+    if not panels:
+        await interaction.response.send_message("No additional ticket panels configured. Use /config ticket panel create.", ephemeral=True)
+        return
+    lines = []
+    for panel in panels:
+        channel = interaction.guild.get_channel(int(panel.get("panel_channel_id") or 0))
+        category = interaction.guild.get_channel(int(panel.get("category_id") or 0))
+        lines.append(
+            f"• **{discord.utils.escape_markdown(str(panel.get('name', 'Unnamed')))}** "
+            f"— panel: {channel.mention if channel else 'missing channel'}, "
+            f"category: {category.name if category else 'missing category'} ({panel.get('id', '?')})"
+        )
+    await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
+@ticket_panel_group.command(name="remove", description="Remove a ticket panel by its ID — server owner only")
+@app_commands.describe(panel_id="ID shown by /config ticket panel list")
+@has_owner()
+async def config_ticket_panel_remove(interaction: discord.Interaction, panel_id: str):
+    cfg = get_config(interaction.guild_id)
+    panels = list(cfg.get("ticket_panels") or [])
+    remaining = [p for p in panels if str(p.get("id")) != panel_id.strip()]
+    if len(remaining) == len(panels):
+        await interaction.response.send_message("Panel ID not found. Run /config ticket panel list.", ephemeral=True)
+        return
+    update_config(interaction.guild_id, "ticket_panels", remaining)
+    await interaction.response.send_message("Panel removed. Existing tickets are unaffected; delete its posted message manually.", ephemeral=True)
+
+
 # Liste noire de domaines/liens — /config domains add|remove|list
 domains_group = app_commands.Group(
     name="domains",
@@ -3661,6 +3751,25 @@ body {{ font-family: sans-serif; background: #171a24; color: #eceef5; padding: 2
     return html
 
 
+def _ticket_topic_parts(topic):
+    """Read legacy opener-only topics and the panel-aware topic format."""
+    value = str(topic or "")
+    if value.startswith("nexus-ticket|"):
+        parts = {}
+        for item in value.split("|")[1:]:
+            if ":" in item:
+                key, val = item.split(":", 1)
+                parts[key] = val
+        return parts.get("opener"), parts.get("panel")
+    return (value if value.isdigit() else None), None
+
+
+def _find_ticket_panel(cfg, panel_id):
+    if not panel_id:
+        return None
+    return next((p for p in (cfg.get("ticket_panels") or []) if str(p.get("id")) == str(panel_id)), None)
+
+
 class TicketCloseView(discord.ui.View):
     """Bouton persistant dans chaque ticket ouvert pour le fermer."""
     def __init__(self):
@@ -3670,8 +3779,11 @@ class TicketCloseView(discord.ui.View):
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = interaction.channel
         cfg = get_config(interaction.guild_id)
-        support_role = interaction.guild.get_role(cfg.get("ticket_support_role_id") or 0)
-        is_opener = channel.topic and str(interaction.user.id) == channel.topic
+        opener_id, panel_id = _ticket_topic_parts(channel.topic)
+        panel = _find_ticket_panel(cfg, panel_id)
+        support_role_id = (panel or {}).get("support_role_id") or cfg.get("ticket_support_role_id")
+        support_role = interaction.guild.get_role(int(support_role_id or 0))
+        is_opener = opener_id is not None and str(interaction.user.id) == opener_id
         is_support = support_role is not None and support_role in interaction.user.roles
         is_admin = interaction.user.guild_permissions.manage_channels
         if not (is_opener or is_support or is_admin):
@@ -3688,7 +3800,6 @@ class TicketCloseView(discord.ui.View):
 
         # Note de satisfaction : DM à la personne qui a ouvert le ticket,
         # indépendamment de l'archivage ou de la suppression qui suit.
-        opener_id = channel.topic
         if opener_id and opener_id.isdigit():
             try:
                 opener_user = await bot.fetch_user(int(opener_id))
@@ -3723,7 +3834,7 @@ class TicketCloseView(discord.ui.View):
             log_json("error", "ticket_transcript_failed", channel_id=channel.id, guild_id=interaction.guild_id, error=str(e))
 
         archive_category = None
-        archive_category_id = cfg.get("ticket_archive_category_id")
+        archive_category_id = (panel or {}).get("archive_category_id") or cfg.get("ticket_archive_category_id")
         if archive_category_id:
             candidate = interaction.guild.get_channel(int(archive_category_id))
             if isinstance(candidate, discord.CategoryChannel):
@@ -3759,6 +3870,10 @@ class TicketCloseView(discord.ui.View):
 class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
     """Formulaire affiché au clic sur le bouton — la réponse est postée par
     le bot dans le salon du ticket dès sa création."""
+    def __init__(self, panel_config=None):
+        super().__init__()
+        self.panel_config = panel_config
+
     reason = discord.ui.TextInput(
         label="What do you need help with?",
         style=discord.TextStyle.paragraph,
@@ -3769,11 +3884,13 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
 
     async def on_submit(self, interaction: discord.Interaction):
         cfg = get_config(interaction.guild_id)
-        if not cfg.get("tickets_enabled"):
+        panel = self.panel_config
+        if not panel and not cfg.get("tickets_enabled"):
             await interaction.response.send_message("Tickets are currently disabled on this server.", ephemeral=True)
             return
 
-        category = interaction.guild.get_channel(cfg.get("ticket_category_id") or 0)
+        category_id = (panel or {}).get("category_id") or cfg.get("ticket_category_id")
+        category = interaction.guild.get_channel(int(category_id or 0))
         if category is None or not isinstance(category, discord.CategoryChannel):
             await interaction.response.send_message(
                 "Ticket system isn't configured properly. Ask an admin to run `/config ticket setup` again.",
@@ -3783,7 +3900,8 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
 
         # Re-vérifié ici (pas juste au clic du bouton) : le formulaire prend
         # du temps à remplir, un doublon a pu être ouvert entre-temps.
-        existing = discord.utils.get(category.text_channels, topic=str(interaction.user.id))
+        existing = next((ch for ch in interaction.guild.text_channels
+                         if _ticket_topic_parts(ch.topic)[0] == str(interaction.user.id)), None)
         if existing:
             await interaction.response.send_message(
                 f"You already have an open ticket: {existing.mention}", ephemeral=True
@@ -3795,25 +3913,32 @@ class TicketOpenModal(discord.ui.Modal, title="Open a Ticket"):
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
             interaction.guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
         }
-        support_role = interaction.guild.get_role(cfg.get("ticket_support_role_id") or 0)
+        support_role_id = (panel or {}).get("support_role_id") or cfg.get("ticket_support_role_id")
+        support_role = interaction.guild.get_role(int(support_role_id or 0))
         if support_role:
             overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
         safe_name = re.sub(r"[^a-z0-9-]", "", interaction.user.name.lower().replace(" ", "-"))[:20] or "user"
+        panel_id = str((panel or {}).get("id") or "")
+        panel_slug = re.sub(r"[^a-z0-9-]", "", str((panel or {}).get("name", "")).lower().replace(" ", "-"))[:16]
+        channel_name = f"{panel_slug}-{safe_name}" if panel_slug else f"ticket-{safe_name}"
+        ticket_topic = f"nexus-ticket|opener:{interaction.user.id}|panel:{panel_id}" if panel_id else str(interaction.user.id)
         try:
             channel = await category.create_text_channel(
-                name=f"ticket-{safe_name}",
+                name=channel_name[:100],
                 overwrites=overwrites,
-                topic=str(interaction.user.id),
+                topic=ticket_topic,
                 reason=f"Ticket opened by {interaction.user}",
             )
         except discord.HTTPException as e:
             await interaction.response.send_message(f"Couldn't create the ticket channel: {e}", ephemeral=True)
             return
 
+        opening_message = (panel or {}).get("opening_message") or "The support team will be with you shortly."
+        panel_name = (panel or {}).get("name") or "New Ticket"
         embed = discord.Embed(
-            title="🎫 New Ticket",
-            description=f"Hey {interaction.user.mention}! The support team will be with you shortly.",
+            title=f"🎫 {panel_name}",
+            description=f"Hey {interaction.user.mention}! {discord.utils.escape_mentions(opening_message)}",
             color=0x3399ff,
         )
         embed.add_field(name="What they need help with", value=self.reason.value[:1000], inline=False)
@@ -3918,13 +4043,14 @@ class TicketPanelView(discord.ui.View):
     @discord.ui.button(label="Open Ticket", style=discord.ButtonStyle.primary, emoji="🎫", custom_id="nexus_ticket_open")
     async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         cfg = get_config(interaction.guild_id)
-        if not cfg.get("tickets_enabled"):
-            await interaction.response.send_message(
-                "Tickets are currently disabled on this server.", ephemeral=True
-            )
+        footer = interaction.message.embeds[0].footer.text if interaction.message.embeds and interaction.message.embeds[0].footer else ""
+        panel_id = footer.split("nexus-ticket-panel:", 1)[1].strip() if "nexus-ticket-panel:" in footer else None
+        panel = _find_ticket_panel(cfg, panel_id)
+        if not panel and not cfg.get("tickets_enabled"):
+            await interaction.response.send_message("Tickets are currently disabled on this server.", ephemeral=True)
             return
-
-        category = interaction.guild.get_channel(cfg.get("ticket_category_id") or 0)
+        category_id = (panel or {}).get("category_id") or cfg.get("ticket_category_id")
+        category = interaction.guild.get_channel(int(category_id or 0))
         if category is None or not isinstance(category, discord.CategoryChannel):
             await interaction.response.send_message(
                 "Ticket system isn't configured properly. Ask an admin to run `/config ticket setup` again.",
@@ -3934,14 +4060,15 @@ class TicketPanelView(discord.ui.View):
 
         # Empêche un utilisateur d'ouvrir plusieurs tickets en même temps :
         # on stocke son id dans le topic du salon pour le retrouver.
-        existing = discord.utils.get(category.text_channels, topic=str(interaction.user.id))
+        existing = next((ch for ch in interaction.guild.text_channels
+                         if _ticket_topic_parts(ch.topic)[0] == str(interaction.user.id)), None)
         if existing:
             await interaction.response.send_message(
                 f"You already have an open ticket: {existing.mention}", ephemeral=True
             )
             return
 
-        await interaction.response.send_modal(TicketOpenModal())
+        await interaction.response.send_modal(TicketOpenModal(panel_config=panel))
 
 
 class ApplicationDecisionView(discord.ui.View):
