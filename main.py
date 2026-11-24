@@ -2372,7 +2372,6 @@ async def config_ticket_panel_remove(interaction: discord.Interaction, panel_id:
     app_commands.Choice(name="High", value="high"),
     app_commands.Choice(name="Urgent", value="urgent"),
 ])
-@has_admin()
 async def config_ticket_priority(interaction: discord.Interaction, priority: app_commands.Choice[str]):
     channel = interaction.channel
     if not isinstance(channel, discord.TextChannel):
