@@ -249,3 +249,15 @@ def test_dashboard_pages_live_in_web_dashboard(nexus):
     assert nexus._get_audit_records is audit_export._get_audit_records
     assert nexus._build_audit_csv_bytes is audit_export._build_audit_csv_bytes
     assert nexus._apply_template_base_config is template_ops._apply_template_base_config
+
+
+def test_ticket_topic_parsing(nexus):
+    assert nexus._ticket_topic_parts("123456789") == ("123456789", None)
+    assert nexus._ticket_topic_parts("nexus-ticket|opener:123456789|panel:abcd1234") == ("123456789", "abcd1234")
+    assert nexus._ticket_topic_parts(None) == (None, None)
+
+
+def test_ticket_panel_lookup(nexus):
+    cfg = {"ticket_panels": [{"id": "abcd1234", "name": "Support"}]}
+    assert nexus._find_ticket_panel(cfg, "abcd1234")["name"] == "Support"
+    assert nexus._find_ticket_panel(cfg, "missing") is None
