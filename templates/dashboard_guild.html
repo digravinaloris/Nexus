@@ -37,7 +37,7 @@
   </div>
   {% endif %}
 
-  <form method="POST" action="{{ url_for('dash_guild_page', guild_id=guild.id) }}">
+  <form method="POST" action="{{ url_for('dash_guild_page', guild_id=guild.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="panel" style="animation-delay:.02s">
       <div class="panel-head"><h2>{{ t('panel_logs_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
       <div class="desc">{{ t('panel_logs_desc') }}</div>
@@ -83,7 +83,7 @@
     // websocket -- le service Render tourne avec un seul worker, un dict en
     // mémoire suffit, pas besoin d'une dépendance type flask-socketio.
     function pollPresence() {
-      fetch("{{ url_for('dash_presence_ping', guild_id=guild.id) }}", { method: "POST" });
+      fetch("{{ url_for('dash_presence_ping', guild_id=guild.id) }}", { method: "POST", headers: { "X-CSRF-Token": "{{ csrf_token }}" } });
       fetch("{{ url_for('dash_presence_who', guild_id=guild.id) }}")
         .then(r => r.json())
         .then(data => {
@@ -103,7 +103,7 @@
     setInterval(pollPresence, 10000);
   </script>
 
-  <form method="POST" action="{{ url_for('dash_automod', guild_id=guild.id) }}">
+  <form method="POST" action="{{ url_for('dash_automod', guild_id=guild.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="panel" style="animation-delay:.06s">
       <div class="panel-head"><h2>{{ t('panel_automod_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
       <div class="desc">{{ t('panel_automod_desc') }}</div>
@@ -131,7 +131,7 @@
         {% for rid in role_ids %}
         <div class="chip">
           {{ role_names.get(rid, rid) }}
-          <form method="POST" action="{{ url_for('dash_permission_remove', guild_id=guild.id) }}">
+          <form method="POST" action="{{ url_for('dash_permission_remove', guild_id=guild.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="command" value="{{ cmd }}">
             <input type="hidden" name="role_id" value="{{ rid }}">
             <button type="submit" class="x" title="{{ t('remove_title') }}">&times;</button>
@@ -146,7 +146,7 @@
     {% endif %}
 
     <hr class="divider">
-    <form method="POST" action="{{ url_for('dash_permission_add', guild_id=guild.id) }}">
+    <form method="POST" action="{{ url_for('dash_permission_add', guild_id=guild.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>{{ t('label_commands') }}</label>
       <div class="cmd-toggle-row">
         <button type="button" class="ghost small" onclick="toggleAllCmds(true)">{{ t('btn_select_all') }}</button>
@@ -175,7 +175,7 @@
     </script>
 
     <hr class="divider">
-    <form method="POST" action="{{ url_for('dash_permission_template', guild_id=guild.id) }}">
+    <form method="POST" action="{{ url_for('dash_permission_template', guild_id=guild.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label for="template_id">{{ t('tmpl_quick_label') }}</label>
       <div class="row">
         <div>
@@ -221,7 +221,7 @@
     {% else %}
     <div class="no-perms">{{ t('no_key_yet') }}</div>
     {% endif %}
-    <form method="POST" action="{{ url_for('dash_apikey_regen', guild_id=guild.id) }}" onsubmit="return confirm('{{ t('confirm_regen') }}');">
+    <form method="POST" action="{{ url_for('dash_apikey_regen', guild_id=guild.id) }}" onsubmit="return confirm('{{ t('confirm_regen') }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="ghost">{{ t('btn_regenerate') }}</button>
     </form>
   </div>
@@ -232,7 +232,7 @@
       {% if is_locked %}{{ t('lockdown_desc_locked') }}
       {% else %}{{ t('lockdown_desc_unlocked') }}{% endif %}
     </div>
-    <form method="POST" action="{{ url_for('dash_toggle_lock', guild_id=guild.id) }}">
+    <form method="POST" action="{{ url_for('dash_toggle_lock', guild_id=guild.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {% if is_locked %}
       <button type="submit" class="warn">{{ t('btn_unlock') }}</button>
       {% else %}
