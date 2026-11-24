@@ -97,11 +97,11 @@ Every sanction (ban, kick, mute, warn, tempban, softban) DMs the person a case n
 | `/config ticket panel-list` | Server owner | List configured panels and their IDs |
 | `/config ticket panel-remove <panel_id>` | Server owner | Remove a panel without affecting existing tickets |
 
+Each additional panel routes tickets to its own category and support role. Panel IDs are stored in ticket channel topics so closing and archiving use the correct panel configuration. The legacy ticket setup remains supported. Clicking a panel opens the existing intake form and creates a private channel with a **Close Ticket** button. Closed tickets are archived when an archive category is configured, otherwise deleted. The existing satisfaction survey and HTML transcript delivery are preserved. Transcripts use a Discord-inspired layout with avatars, timestamps, bot labels, embeds and attachment previews.
+
 ### GitHub Release Announcements
 
 The bot owner can configure one announcement channel on their own server with `/updates channel <channel>`. Nexus checks its GitHub releases every 10 minutes and posts a Discord-style announcement when a new stable release is published. Use `/updates check` to publish the latest release immediately, `/updates status` to view the configuration, and `/updates disable` to turn it off. Only the Discord application owner who also owns the configured server can manage this feature.
-
-Each additional panel routes tickets to its own category and support role. Panel IDs are stored in ticket channel topics so closing and archiving use the correct panel configuration. The legacy ticket setup remains supported. Clicking a panel opens the existing intake form and creates a private channel with a **Close Ticket** button. Closed tickets are archived when an archive category is configured, otherwise deleted. The existing satisfaction survey and HTML transcript delivery are preserved. Transcripts use a Discord-inspired layout with avatars, timestamps, bot labels, embeds and attachment previews.
 
 ### Invites, Backups & Data
 | Command | Access | Description |
