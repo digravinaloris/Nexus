@@ -152,3 +152,26 @@ lbl_banned_domains: Blocked domains
 sec_language_title: Default dashboard language
 sec_language_desc: Language shown to admins of this server by default.
 lbl_language: Language
+
+# Calendar dashboard
+nav_calendar: Calendar
+dash_calendar_title: Calendar & events
+dash_calendar_desc: Manage server events, announcements, timezone and calendar manager roles.
+calendar_settings: Calendar settings
+calendar_timezone: Timezone (IANA, e.g. Europe/Paris)
+calendar_announce_channel: Announcement channel
+calendar_create_event: Create event
+calendar_title: Event title
+calendar_description: Description (optional)
+calendar_date: Date (YYYY-MM-DD)
+calendar_time: Time (optional HH:MM)
+calendar_role: Notification role
+calendar_source_channel: Announcement fallback channel
+calendar_upcoming: Upcoming events
+calendar_empty: No upcoming events.
+calendar_manager_roles: Calendar manager roles
+calendar_manager_add: Add manager role
+calendar_manager_remove: Remove
+calendar_save: Save calendar settings
+calendar_timezone_hint: Dates are entered in this timezone; reminders are sent automatically 24 hours and 1 hour before.
+calendar_delete_confirm: Delete this event?

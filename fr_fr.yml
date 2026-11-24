@@ -169,3 +169,26 @@ feat_auto_translate: Traduire un message via la réaction 🌐 (traduction envoy
 feat_remindme: Activer la commande /remindme
 feat_serverinfo_visual: Joindre un graphique d'activité sur 7 jours à /serverinfo
 feat_trap_channel: Tout message dans le salon piège donne un softban instantané (aucune analyse du contenu)
+
+# Calendrier dashboard
+nav_calendar: Calendrier
+dash_calendar_title: Calendrier et événements
+dash_calendar_desc: Gérer les événements, annonces, fuseau horaire et rôles gestionnaires.
+calendar_settings: Réglages du calendrier
+calendar_timezone: Fuseau horaire (IANA, ex. Europe/Paris)
+calendar_announce_channel: Salon d'annonce
+calendar_create_event: Créer un événement
+calendar_title: Nom de l'événement
+calendar_description: Description (optionnelle)
+calendar_date: Date (AAAA-MM-JJ)
+calendar_time: Heure (optionnelle HH:MM)
+calendar_role: Rôle à notifier
+calendar_source_channel: Salon de secours pour l'annonce
+calendar_upcoming: Événements à venir
+calendar_empty: Aucun événement à venir.
+calendar_manager_roles: Rôles gestionnaires du calendrier
+calendar_manager_add: Ajouter un rôle gestionnaire
+calendar_manager_remove: Retirer
+calendar_save: Enregistrer les réglages du calendrier
+calendar_timezone_hint: Dates saisies dans ce fuseau ; rappels automatiques 24 h et 1 h avant.
+calendar_delete_confirm: Supprimer cet événement ?

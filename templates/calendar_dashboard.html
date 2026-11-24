@@ -1,0 +1,24 @@
+{% extends "_dashboard.html" %}
+{% block page %}
+<div class="wrap">
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">← {{ guild.name }}</a>
+  <div class="eyebrow">{{ t('nav_calendar') }}</div><h1>{{ t('dash_calendar_title') }}</h1><p class="lead">{{ t('dash_calendar_desc') }}</p>
+  {% for cat, msg in get_flashed_messages(with_categories=true) %}{% if cat in ['calendar','error-calendar'] %}<div class="flash {{ 'error' if cat.startswith('error-') else '' }}">{{ msg }}</div>{% endif %}{% endfor %}
+  <div class="panel"><div class="panel-head"><h2>{{ t('calendar_settings') }}</h2></div><div class="desc">{{ t('calendar_timezone_hint') }}</div>
+    <form method="POST"><input type="hidden" name="action" value="settings">
+      <label for="calendar_timezone">{{ t('calendar_timezone') }}</label><input id="calendar_timezone" name="calendar_timezone" value="{{ timezone_name }}" maxlength="64" required>
+      <label for="calendar_channel_id">{{ t('calendar_announce_channel') }}</label><select id="calendar_channel_id" name="calendar_channel_id"><option value="none">{{ t('opt_not_set') }}</option>{% for c in channels %}<option value="{{ c.id }}" {% if cfg.get('calendar_channel_id')|string == c.id|string %}selected{% endif %}>#{{ c.name }}</option>{% endfor %}</select><button type="submit">{{ t('calendar_save') }}</button>
+    </form>
+  </div>
+  <div class="panel"><div class="panel-head"><h2>{{ t('calendar_create_event') }}</h2></div>
+    <form method="POST"><input type="hidden" name="action" value="create"><label for="title">{{ t('calendar_title') }}</label><input id="title" name="title" maxlength="100" required>
+      <label for="description">{{ t('calendar_description') }}</label><textarea id="description" name="description" maxlength="1000"></textarea>
+      <div class="row"><div class="field"><label for="date">{{ t('calendar_date') }}</label><input type="date" id="date" name="date" required></div><div class="field"><label for="time">{{ t('calendar_time') }}</label><input type="time" id="time" name="time"></div></div>
+      <label for="role_id">{{ t('calendar_role') }}</label><select id="role_id" name="role_id" required>{% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</select>
+      <label for="channel_id">{{ t('calendar_source_channel') }}</label><select id="channel_id" name="channel_id"><option value="none">{{ t('opt_not_set') }}</option>{% for c in channels %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select><button type="submit">{{ t('calendar_create_event') }}</button>
+    </form>
+  </div>
+  <div class="panel"><div class="panel-head"><h2>{{ t('calendar_upcoming') }}</h2></div>{% if events %}{% for event in events %}<div style="padding:12px 0;border-bottom:1px solid var(--line);"><strong>{{ event.title }}</strong><div class="desc">{{ event.display_when }}</div>{% if event.description %}<p>{{ event.description }}</p>{% endif %}<div class="hint">ID: <code>{{ event.id_str }}</code> · {{ t('calendar_role') }}: <code>{{ event.role_id }}</code></div><form method="POST" style="margin-top:8px;" onsubmit="return confirm('{{ t('calendar_delete_confirm') }}')"><input type="hidden" name="action" value="delete"><input type="hidden" name="event_id" value="{{ event.id_str }}"><button class="ghost" type="submit">{{ t('calendar_delete_confirm') }}</button></form></div>{% endfor %}{% else %}<div class="no-perms">{{ t('calendar_empty') }}</div>{% endif %}</div>
+  {% if is_owner %}<div class="panel"><div class="panel-head"><h2>{{ t('calendar_manager_roles') }}</h2><span class="badge owner">{{ t('badge_owner') }}</span></div>{% for r in manager_roles %}<form method="POST" class="row" style="align-items:center;margin-bottom:8px;"><input type="hidden" name="action" value="manager"><input type="hidden" name="manager_action" value="remove"><input type="hidden" name="role_id" value="{{ r.id }}"><span>{{ r.name }}</span><button class="ghost" type="submit">{{ t('calendar_manager_remove') }}</button></form>{% endfor %}<form method="POST"><input type="hidden" name="action" value="manager"><input type="hidden" name="manager_action" value="add"><label for="manager_role_id">{{ t('calendar_manager_add') }}</label><select id="manager_role_id" name="role_id">{% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</select><button type="submit">{{ t('calendar_manager_add') }}</button></form></div>{% endif %}
+</div>
+{% endblock %}

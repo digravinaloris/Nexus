@@ -20,6 +20,7 @@
     <a class="btn ghost" href="{{ url_for('dash_template_marketplace', guild_id=guild.id) }}">Templates</a>
     <a class="btn ghost" href="{{ url_for('dash_features_page', guild_id=guild.id) }}">{{ t('nav_features') }}</a>
     <a class="btn ghost" href="{{ url_for('dash_settings_page', guild_id=guild.id) }}">{{ t('nav_settings') }}</a>
+    <a class="btn ghost" href="{{ url_for('dash_calendar_page', guild_id=guild.id) }}">{{ t('nav_calendar') }}</a>
   </div>
 
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}

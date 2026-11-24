@@ -20,6 +20,7 @@ from audit_export import _build_audit_csv_bytes, _build_audit_pdf_bytes, _get_au
 from bridge import run_coroutine
 from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
 from config_store import add_command_role, get_config, remove_command_role, update_config
+from cogs.calendar import parse_event_datetime, make_embed, local_when, validate_timezone
 import core
 from core import col
 from discord_logging import log_dashboard_action
@@ -238,6 +239,113 @@ def dash_features_page(guild_id):
         needs = t(requirement[1]) if requirement and not all(cfg.get(k) for k in requirement[0]) else None
         rows.append({"key": key, "label": _t_or(f"feat_{key}", meta["label"]), "enabled": is_enabled(meta), "needs": needs})
     return render_template("features.html", guild=guild, rows=rows, user=session.get("dash_user"))
+
+
+@routes.route("/dashboard/<guild_id>/calendar", methods=["GET", "POST"])
+@dash_login_required
+@dash_guild_admin_required
+def dash_calendar_page(guild_id):
+    guild = core.bot.get_guild(int(guild_id))
+    if guild is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
+    cfg = get_config(guild_id)
+    collection = core.bot.db["calendar_events"]
+    timezone_name = cfg.get("calendar_timezone") or "Europe/Paris"
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "settings":
+            channel_raw = request.form.get("calendar_channel_id", "").strip()
+            channel_id = None
+            if channel_raw and channel_raw != "none":
+                if not channel_raw.isdigit() or int(channel_raw) not in {c.id for c in guild.text_channels}:
+                    flash("Invalid announcement channel." if current_lang() == "en" else "Salon d'annonce invalide.", "error-calendar")
+                    return redirect(url_for("dash_calendar_page", guild_id=guild_id))
+                channel_id = int(channel_raw)
+            try:
+                timezone_name = validate_timezone(request.form.get("calendar_timezone", ""))
+            except ValueError:
+                flash("Invalid timezone." if current_lang() == "en" else "Fuseau horaire invalide.", "error-calendar")
+                return redirect(url_for("dash_calendar_page", guild_id=guild_id))
+            update_config(guild_id, "calendar_timezone", timezone_name)
+            update_config(guild_id, "calendar_channel_id", channel_id)
+            dash_log_action(guild, guild_id, "Updated calendar settings", f"timezone={timezone_name}; channel={channel_id}")
+            flash("Calendar settings saved." if current_lang() == "en" else "Réglages du calendrier enregistrés.", "calendar")
+        elif action == "create":
+            title = request.form.get("title", "").strip()
+            description = request.form.get("description", "").strip()
+            role_raw = request.form.get("role_id", "")
+            if not title or len(title) > 100 or len(description) > 1000 or not role_raw.isdigit():
+                flash("Invalid event fields." if current_lang() == "en" else "Champs d'événement invalides.", "error-calendar")
+                return redirect(url_for("dash_calendar_page", guild_id=guild_id))
+            role = guild.get_role(int(role_raw))
+            if role is None or role.is_default():
+                flash("Choose a valid notification role." if current_lang() == "en" else "Choisis un rôle de notification valide.", "error-calendar")
+                return redirect(url_for("dash_calendar_page", guild_id=guild_id))
+            try:
+                starts_at = parse_event_datetime(request.form.get("date", ""), request.form.get("time", "") or None, timezone_name)
+            except ValueError as exc:
+                flash(str(exc), "error-calendar")
+                return redirect(url_for("dash_calendar_page", guild_id=guild_id))
+            event = {"guild_id": str(guild_id), "title": title, "role_id": str(role.id), "description": description,
+                "starts_at": starts_at, "timezone": timezone_name, "time_set": bool(request.form.get("time", "").strip()),
+                "channel_id": str(request.form.get("channel_id") or ""), "reminders_sent": [],
+                "created_by": str((session.get("dash_user") or {}).get("id", "")), "created_at": datetime.datetime.now(datetime.timezone.utc)}
+            if collection.find_one({"guild_id": str(guild_id), "title": title, "starts_at": starts_at}):
+                flash("Duplicate event." if current_lang() == "en" else "Événement en double.", "error-calendar")
+                return redirect(url_for("dash_calendar_page", guild_id=guild_id))
+            event["_id"] = collection.insert_one(event).inserted_id
+            target_id = cfg.get("calendar_channel_id") or event["channel_id"]
+            channel = guild.get_channel(int(target_id)) if str(target_id).isdigit() else None
+            if channel is None and event["channel_id"].isdigit():
+                channel = guild.get_channel(int(event["channel_id"]))
+            sent = False
+            if channel:
+                try:
+                    run_coroutine(channel.send(content=role.mention, embed=make_embed(event),
+                        allowed_mentions=discord.AllowedMentions(roles=[role], users=False, everyone=False)))
+                    sent = True
+                except discord.HTTPException:
+                    pass
+            dash_log_action(guild, guild_id, "Created calendar event", title)
+            flash(("Event created and announced." if sent else "Event saved; announcement could not be sent.") if current_lang() == "en"
+                  else ("Événement créé et annoncé." if sent else "Événement enregistré, annonce non envoyée."), "calendar")
+        elif action == "delete":
+            from bson import ObjectId
+            raw_id = request.form.get("event_id", "")
+            try:
+                oid = ObjectId(raw_id)
+            except Exception:
+                oid = None
+            result = collection.delete_one({"_id": oid, "guild_id": str(guild_id)}) if oid else None
+            if result and result.deleted_count:
+                dash_log_action(guild, guild_id, "Deleted calendar event", raw_id)
+                flash("Event deleted." if current_lang() == "en" else "Événement supprimé.", "calendar")
+            else:
+                flash("Event not found." if current_lang() == "en" else "Événement introuvable.", "error-calendar")
+        elif action == "manager":
+            role_raw = request.form.get("role_id", "")
+            role = guild.get_role(int(role_raw)) if role_raw.isdigit() else None
+            if role is None or role.is_default() or not dash_is_owner(guild):
+                flash("Only the server owner can manage calendar roles." if current_lang() == "en" else "Seul le propriétaire peut gérer les rôles du calendrier.", "error-calendar")
+                return redirect(url_for("dash_calendar_page", guild_id=guild_id))
+            manager_ids = set(str(x) for x in cfg.get("calendar_manager_role_ids", []))
+            if request.form.get("manager_action") == "remove": manager_ids.discard(str(role.id))
+            else: manager_ids.add(str(role.id))
+            update_config(guild_id, "calendar_manager_role_ids", sorted(manager_ids))
+            dash_log_action(guild, guild_id, "Updated calendar manager roles", role.name)
+            flash("Calendar manager roles saved." if current_lang() == "en" else "Rôles gestionnaires enregistrés.", "calendar")
+        else:
+            flash("Unknown action." if current_lang() == "en" else "Action inconnue.", "error-calendar")
+        return redirect(url_for("dash_calendar_page", guild_id=guild_id))
+    events = list(collection.find({"guild_id": str(guild_id), "starts_at": {"$gte": datetime.datetime.now(datetime.timezone.utc)}}).sort("starts_at", 1).limit(50))
+    for event in events:
+        event["display_when"] = local_when(event)
+        event["id_str"] = str(event.get("_id", ""))
+    manager_ids = [str(x) for x in cfg.get("calendar_manager_role_ids", [])]
+    manager_roles = [r for r in guild.roles if not r.is_default() and str(r.id) in manager_ids]
+    return render_template("calendar_dashboard.html", guild=guild, events=events, cfg=cfg, timezone_name=timezone_name,
+        channels=guild.text_channels, roles=[r for r in guild.roles if not r.is_default()], manager_roles=manager_roles,
+        is_owner=dash_is_owner(guild), user=session.get("dash_user"))
 
 
 @routes.route("/dashboard/<guild_id>/settings", methods=["GET"])

@@ -27,6 +27,7 @@ GOLDEN_ENDPOINTS = [
     ('dash_automod', '/dashboard/<guild_id>/automod', ('POST',)),
     ('dash_callback', '/callback', ('GET',)),
     ('dash_cases_page', '/dashboard/<guild_id>/cases', ('GET',)),
+    ('dash_calendar_page', '/dashboard/<guild_id>/calendar', ('GET', 'POST')),
     ('dash_export_audit_csv', '/dashboard/<guild_id>/audit/export.csv', ('GET',)),
     ('dash_export_audit_pdf', '/dashboard/<guild_id>/audit/export.pdf', ('GET',)),
     ('dash_features_page', '/dashboard/<guild_id>/features', ('GET', 'POST')),
