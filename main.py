@@ -2401,6 +2401,56 @@ async def config_ticket_panel_questions(
     )
 
 
+@ticket_group.command(name="reopen", description="Reopen an archived ticket")
+async def config_ticket_reopen(interaction: discord.Interaction):
+    channel = interaction.channel
+    if not isinstance(channel, discord.TextChannel):
+        await interaction.response.send_message("Use this command inside an archived ticket channel.", ephemeral=True)
+        return
+    opener_id, panel_id, topic_support_role_id, _ = _ticket_topic_parts(channel.topic)
+    if not opener_id or not channel.name.startswith("closed-"):
+        await interaction.response.send_message("This isn't an archived Nexus ticket.", ephemeral=True)
+        return
+    cfg = get_config(interaction.guild_id)
+    panel = _find_ticket_panel(cfg, panel_id)
+    support_role_id = (panel or {}).get("support_role_id") or topic_support_role_id or cfg.get("ticket_support_role_id")
+    support_role = interaction.guild.get_role(int(support_role_id or 0))
+    if not (interaction.guild_permissions.manage_channels or (support_role and support_role in interaction.user.roles)):
+        await interaction.response.send_message("Only ticket support staff or server staff can reopen tickets.", ephemeral=True)
+        return
+    category_id = (panel or {}).get("category_id") or cfg.get("ticket_category_id")
+    category = interaction.guild.get_channel(int(category_id or 0))
+    if not isinstance(category, discord.CategoryChannel):
+        await interaction.response.send_message("The original ticket category is missing. Reconfigure the ticket panel first.", ephemeral=True)
+        return
+    opener = interaction.guild.get_member(int(opener_id))
+    overwrites = {
+        interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        interaction.guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
+    }
+    if opener:
+        overwrites[opener] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+    if support_role:
+        overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+    assignee_id = _ticket_topic_value(channel.topic, "assignee")
+    assignee = interaction.guild.get_member(int(assignee_id)) if assignee_id and assignee_id.isdigit() else None
+    if assignee:
+        overwrites[assignee] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+    new_name = channel.name[len("closed-"):]
+    try:
+        await channel.edit(
+            category=category,
+            name=new_name,
+            overwrites=overwrites,
+            topic=_ticket_topic_update(channel.topic, "status", "open"),
+            reason=f"Ticket reopened by {interaction.user}",
+        )
+    except discord.HTTPException as exc:
+        await interaction.response.send_message(f"Couldn't reopen this ticket: {exc}", ephemeral=True)
+        return
+    await interaction.response.send_message(f"🔓 Ticket reopened by {interaction.user.mention}.", allowed_mentions=discord.AllowedMentions(users=True))
+
+
 @ticket_group.command(name="assign", description="Assign the current ticket to a staff member")
 @app_commands.describe(member="Staff member responsible for this ticket")
 async def config_ticket_assign(interaction: discord.Interaction, member: discord.Member):
@@ -4126,6 +4176,7 @@ class TicketCloseView(discord.ui.View):
                     category=archive_category,
                     name=new_name,
                     sync_permissions=True,
+                    topic=_ticket_topic_update(channel.topic, "status", "closed"),
                     reason=f"Ticket archived by {interaction.user}",
                 )
                 await interaction.followup.send(
