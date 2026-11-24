@@ -32,7 +32,11 @@ GUILD_ID_RE = re.compile(r"^\d{17,19}$")  # valide un vrai snowflake Discord
 def dash_login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        if "access_token" not in session:
+        expires_at = session.get("token_expires_at")
+        if "access_token" not in session or (
+            isinstance(expires_at, (int, float)) and time.time() >= expires_at
+        ):
+            session.clear()
             return redirect(url_for("dash_login"))
         return f(*args, **kwargs)
     return wrapper
