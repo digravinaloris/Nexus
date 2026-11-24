@@ -91,14 +91,14 @@ Every sanction (ban, kick, mute, warn, tempban, softban) DMs the person a case n
 ### Tickets
 | Command | Access | Description |
 |---|---|---|
-| `/config ticket setup <panel_channel> <category> <support_role> [archive_category]` | Server owner | Post the "Open Ticket" button and configure where tickets go |
-| `/config ticket disable` | Server owner | Turn off the legacy/default ticket panel |
-| `/config ticket panel-create` | Server owner | Create another panel with its own channel, category, support role, archive category and opening message |
-| `/config ticket panel-list` | Server owner | List configured panels and their IDs |
-| `/config ticket panel-remove <panel_id>` | Server owner | Remove a panel without affecting existing tickets |
-| `/config ticket priority <priority>` | Ticket support role or staff | Set the current ticket to Low, Normal, High or Urgent |\n| `/config ticket assign <member>` | Ticket support role or staff | Assign the current ticket to a staff member |\n| `/config ticket unassign` | Ticket support role or staff | Remove the current ticket assignment |
+| `/ticket setup <panel_channel> <category> <support_role> [archive_category]` | Server owner | Post the "Open Ticket" button and configure where tickets go |
+| `/ticket disable` | Server owner | Turn off the legacy/default ticket panel |
+| `/ticket panel-create` | Server owner | Create another panel with its own channel, category, support role, archive category and opening message |
+| `/ticket panel-list` | Server owner | List configured panels and their IDs |
+| `/ticket panel-remove <panel_id>` | Server owner | Remove a panel without affecting existing tickets |
+| `/ticket priority <priority>` | Ticket support role or staff | Set the current ticket to Low, Normal, High or Urgent |\n| `/ticket assign <member>` | Ticket support role or staff | Assign the current ticket to a staff member |\n| `/ticket unassign` | Ticket support role or staff | Remove the current ticket assignment |
 
-Ticket priorities and staff assignments are stored in the channel topic and remain attached to the ticket. Use `/config ticket assign @member` to assign a ticket to a support-role member or staff member with Manage Channels; the assignee receives explicit access to the ticket. Use `/config ticket unassign` to remove the assignment and its member-specific channel access.  Support staff or members with Manage Channels can change them from inside the ticket using `/config ticket priority`. Each additional panel routes tickets to its own category and support role. Panel IDs are stored in ticket channel topics so closing and archiving use the correct panel configuration. The legacy ticket setup remains supported. Clicking a panel opens the existing intake form and creates a private channel with a **Close Ticket** button. Closed tickets are archived when an archive category is configured, otherwise deleted. The existing satisfaction survey and HTML transcript delivery are preserved. Transcripts use a Discord-inspired layout with avatars, timestamps, bot labels, embeds and attachment previews.
+Ticket priorities and staff assignments are stored in the channel topic and remain attached to the ticket. Use `/ticket assign @member` to assign a ticket to a support-role member or staff member with Manage Channels; the assignee receives explicit access to the ticket. Use `/ticket unassign` to remove the assignment and its member-specific channel access.  Support staff or members with Manage Channels can change them from inside the ticket using `/ticket priority`. Each additional panel routes tickets to its own category and support role. Panel IDs are stored in ticket channel topics so closing and archiving use the correct panel configuration. The legacy ticket setup remains supported. Clicking a panel opens the existing intake form and creates a private channel with a **Close Ticket** button. Closed tickets are archived when an archive category is configured, otherwise deleted. The existing satisfaction survey and HTML transcript delivery are preserved. Transcripts use a Discord-inspired layout with avatars, timestamps, bot labels, embeds and attachment previews.
 
 ### GitHub Release Announcements
 
