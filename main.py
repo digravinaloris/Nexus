@@ -718,6 +718,27 @@ async def on_guild_remove(guild: discord.Guild):
     except Exception as e:
         print(f"on_guild_remove cleanup failed: {e}", flush=True)
 
+# /dashboard
+@bot.tree.command(name="dashboard", description="Open the Nexus web dashboard")
+async def dashboard(interaction: discord.Interaction):
+    """Send a private link to the Nexus web dashboard."""
+    dashboard_url = "https://nexus-1qqu.onrender.com/dashboard"
+    embed = discord.Embed(
+        title="⚙️ Nexus Dashboard",
+        description="Manage your server directly from the web dashboard.",
+        color=0x3399ff,
+    )
+    view = discord.ui.View()
+    view.add_item(
+        discord.ui.Button(
+            label="Open Dashboard",
+            style=discord.ButtonStyle.link,
+            url=dashboard_url,
+        )
+    )
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
 # /ban
 @bot.tree.command(name="ban", description="Ban a member")
 @app_commands.default_permissions(ban_members=True)
