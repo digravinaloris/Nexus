@@ -91,11 +91,11 @@ Every sanction (ban, kick, mute, warn, tempban, softban) DMs the person a case n
 ### Tickets
 | Command | Access | Description |
 |---|---|---|
-| `/ticket setup <panel_channel> <category> <support_role> [archive_category]` | Server owner | Post the "Open Ticket" button and configure where tickets go |
-| `/ticket disable` | Server owner | Turn off the legacy/default ticket panel |
-| `/ticket panel-create` | Server owner | Create another panel with its own channel, category, support role, archive category and opening message |
-| `/ticket panel-list` | Server owner | List configured panels and their IDs |
-| `/ticket panel-remove <panel_id>` | Server owner | Remove a panel without affecting existing tickets |
+| `/config ticket setup <panel_channel> <category> <support_role> [archive_category]` | Server owner | Post the "Open Ticket" button and configure where tickets go |
+| `/config ticket disable` | Server owner | Turn off the legacy/default ticket panel |
+| `/config ticket panel-create` | Server owner | Create another panel with its own channel, category, support role, archive category and opening message |
+| `/config ticket panel-list` | Server owner | List configured panels and their IDs |
+| `/config ticket panel-remove <panel_id>` | Server owner | Remove a panel without affecting existing tickets |
 
 Each additional panel routes tickets to its own category and support role. Panel IDs are stored in ticket channel topics so closing and archiving use the correct panel configuration. The legacy ticket setup remains supported. Clicking a panel opens the existing intake form and creates a private channel with a **Close Ticket** button. Closed tickets are archived when an archive category is configured, otherwise deleted. The existing satisfaction survey and HTML transcript delivery are preserved.
 
@@ -118,11 +118,11 @@ Each additional panel routes tickets to its own category and support role. Panel
 | `/config boostmessage <channel>` | Administrator | Where boost thank-you messages are posted |
 | `/config membercount <channel>` | Administrator | Voice channel that shows the live member count |
 | `/config antinuke <threshold>` | Administrator | Set the anti-nuke sensitivity (see [Feature Toggles](#feature-toggles) to turn it on) |
-| `/badwords add/remove/list` | Administrator | Manage the custom banned-words list |
-| `/badwords import <language>` | Administrator | Import a ready-made banned-words list |
-| `/domains add/remove/list` | Administrator | Manage the blocked-domains list |
-| `/sticky set/remove <channel>` | Administrator | A message that stays pinned to the bottom of a channel |
-| `/config-template set/list` | Server owner | Custom, reusable command-permission templates |
+| `/config badwords add/remove/list` | Administrator | Manage the custom banned-words list |
+| `/config badwords import <language>` | Administrator | Import a ready-made banned-words list |
+| `/config domains add/remove/list` | Administrator | Manage the blocked-domains list |
+| `/config sticky set/remove <channel>` | Administrator | A message that stays pinned to the bottom of a channel |
+| `/config template set/list` | Server owner | Custom, reusable command-permission templates |
 | `/config language <en/fr>` | Server owner | Default dashboard language for this server |
 | `/config apikey` | Administrator | Generate an API key for the mobile app |
 | `/config view` | Administrator | View the current configuration |
@@ -152,8 +152,8 @@ Each additional panel routes tickets to its own category and support role. Panel
 ### Bot Owner Only
 | Command | Description |
 |---|---|
-| `/killswitch status` | Check whether the bot is globally locked down |
-| `/killswitch resend` | Send a fresh emergency kill-switch email right now |
+| `/admin killswitch status` | Check whether the bot is globally locked down |
+| `/admin killswitch resend` | Send a fresh emergency kill-switch email right now |
 
 ---
 
