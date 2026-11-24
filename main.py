@@ -1952,7 +1952,7 @@ async def config_welcome(interaction: discord.Interaction, channel: discord.Text
         ephemeral=True)
 
 
-verification_group = app_commands.Group(name="verification", description="Set up member verification — admin only")
+verification_group = app_commands.Group(name="verification", description="Set up member verification — admin only", parent=config_group)
 
 
 @verification_group.command(name="setup", description="Create/assign the Verified and Unverified roles — admin only")
@@ -2336,7 +2336,7 @@ async def config_ticket_panel_create(
 async def config_ticket_panel_list(interaction: discord.Interaction):
     panels = get_config(interaction.guild_id).get("ticket_panels") or []
     if not panels:
-        await interaction.response.send_message("No additional ticket panels configured. Use /config ticket panel create.", ephemeral=True)
+        await interaction.response.send_message("No additional ticket panels configured. Use /config ticket panel-create.", ephemeral=True)
         return
     lines = []
     for panel in panels:
@@ -2351,7 +2351,7 @@ async def config_ticket_panel_list(interaction: discord.Interaction):
 
 
 @ticket_group.command(name="panel-remove", description="Remove a ticket panel by its ID — server owner only")
-@app_commands.describe(panel_id="ID shown by /config ticket panel list")
+@app_commands.describe(panel_id="ID shown by /config ticket panel-list")
 @has_owner()
 async def config_ticket_panel_remove(interaction: discord.Interaction, panel_id: str):
     cfg = get_config(interaction.guild_id)
@@ -2419,10 +2419,12 @@ bot.tree.add_command(config_group)
 
 # Kill-switch d'urgence : commandes réservées au vrai owner de l'app Discord
 # (jamais un rôle serveur, jamais un id codé en dur — voir is_bot_owner()).
+admin_group = app_commands.Group(name="admin", description="Bot owner only")
+
 killswitch_admin_group = app_commands.Group(
     name="killswitch",
     description="Manage the emergency kill-switch — bot owner only",
-    parent=config_group,
+    parent=admin_group,
 )
 
 
