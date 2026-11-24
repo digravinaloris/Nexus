@@ -572,7 +572,7 @@ async def setup_hook():
     # ils accèdent aux quelques helpers partagés via l'objet bot lui-même.
     bot.check_access = check_access
     bot.get_config = get_config
-    for extension in ("cogs.faq", "cogs.calendar"):
+    for extension in ("cogs.faq", "cogs.calendar", "cogs.github_updates"):
         try:
             await bot.load_extension(extension)
             print(f"[COGS] Loaded {extension}", flush=True)
