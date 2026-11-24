@@ -1,4 +1,12 @@
 import datetime as dt
+import sys
+from pathlib import Path
+
+# Ensure repo root is importable even when CI invokes pytest from tests/.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import pytest
 from cogs.calendar import parse_event_datetime, validate_timezone, UTC
 
