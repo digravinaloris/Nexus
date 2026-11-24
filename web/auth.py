@@ -119,8 +119,10 @@ def dash_callback():
         return jsonify({"error": "Invalid state"}), 403
 
     code = request.args.get("code")
-    if not code or len(code) > 2048:
-        return jsonify({"error": "Missing or invalid code"}), 400
+    if not code:
+        return jsonify({"error": "Missing code"}), 400
+    if len(code) > 2048:
+        return jsonify({"error": "Invalid code"}), 400
 
     # Consume the one-time state and discard any pre-authentication session data.
     # A fresh session is created only after Discord has authenticated the user.
