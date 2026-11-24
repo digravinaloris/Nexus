@@ -2365,6 +2365,89 @@ async def config_ticket_panel_remove(interaction: discord.Interaction, panel_id:
     await interaction.response.send_message("Panel removed. Existing tickets are unaffected; delete its posted message manually.", ephemeral=True)
 
 
+@ticket_group.command(name="assign", description="Assign the current ticket to a staff member")
+@app_commands.describe(member="Staff member responsible for this ticket")
+async def config_ticket_assign(interaction: discord.Interaction, member: discord.Member):
+    channel = interaction.channel
+    if not isinstance(channel, discord.TextChannel):
+        await interaction.response.send_message("Use this command inside a ticket channel.", ephemeral=True)
+        return
+    opener_id, panel_id, topic_support_role_id, _ = _ticket_topic_parts(channel.topic)
+    if not opener_id:
+        await interaction.response.send_message("This channel isn't a recognized Nexus ticket.", ephemeral=True)
+        return
+    cfg = get_config(interaction.guild_id)
+    panel = _find_ticket_panel(cfg, panel_id)
+    support_role_id = (panel or {}).get("support_role_id") or topic_support_role_id or cfg.get("ticket_support_role_id")
+    support_role = interaction.guild.get_role(int(support_role_id or 0))
+    is_support = support_role is not None and support_role in interaction.user.roles
+    if not (is_support or interaction.user.guild_permissions.manage_channels):
+        await interaction.response.send_message("Only the ticket support team or server staff can assign tickets.", ephemeral=True)
+        return
+    if member.bot or str(member.id) == opener_id:
+        await interaction.response.send_message("Choose a staff member, not a bot or the ticket opener.", ephemeral=True)
+        return
+    member_is_staff = (support_role is not None and support_role in member.roles) or member.guild_permissions.manage_channels
+    if not member_is_staff:
+        await interaction.response.send_message("The assigned member must have the ticket support role or Manage Channels permission.", ephemeral=True)
+        return
+    try:
+        await channel.set_permissions(
+            member,
+            view_channel=True,
+            send_messages=True,
+            read_message_history=True,
+            reason=f"Ticket assigned to {member} by {interaction.user}",
+        )
+        await channel.edit(topic=_ticket_topic_update(channel.topic, "assignee", str(member.id)))
+    except discord.HTTPException as exc:
+        await interaction.response.send_message(f"Couldn't assign this ticket: {exc}", ephemeral=True)
+        return
+    embed = discord.Embed(
+        title="Ticket assigned",
+        description=f"This ticket is now assigned to {member.mention}.",
+        color=0x5865F2,
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+@ticket_group.command(name="unassign", description="Remove the current ticket assignment")
+async def config_ticket_unassign(interaction: discord.Interaction):
+    channel = interaction.channel
+    if not isinstance(channel, discord.TextChannel):
+        await interaction.response.send_message("Use this command inside a ticket channel.", ephemeral=True)
+        return
+    opener_id, panel_id, topic_support_role_id, _ = _ticket_topic_parts(channel.topic)
+    if not opener_id:
+        await interaction.response.send_message("This channel isn't a recognized Nexus ticket.", ephemeral=True)
+        return
+    cfg = get_config(interaction.guild_id)
+    panel = _find_ticket_panel(cfg, panel_id)
+    support_role_id = (panel or {}).get("support_role_id") or topic_support_role_id or cfg.get("ticket_support_role_id")
+    support_role = interaction.guild.get_role(int(support_role_id or 0))
+    is_support = support_role is not None and support_role in interaction.user.roles
+    if not (is_support or interaction.user.guild_permissions.manage_channels):
+        await interaction.response.send_message("Only the ticket support team or server staff can unassign tickets.", ephemeral=True)
+        return
+    assignee_id = _ticket_topic_value(channel.topic, "assignee")
+    if not assignee_id or not assignee_id.isdigit():
+        await interaction.response.send_message("This ticket isn't assigned to anyone.", ephemeral=True)
+        return
+    assignee = interaction.guild.get_member(int(assignee_id))
+    try:
+        if assignee is not None:
+            await channel.set_permissions(
+                assignee,
+                overwrite=None,
+                reason=f"Ticket unassigned by {interaction.user}",
+            )
+        await channel.edit(topic=_ticket_topic_update(channel.topic, "assignee", ""))
+    except discord.HTTPException as exc:
+        await interaction.response.send_message(f"Couldn't unassign this ticket: {exc}", ephemeral=True)
+        return
+    await interaction.response.send_message("Ticket assignment removed.")
+
+
 @ticket_group.command(name="priority", description="Set the priority of the current ticket")
 @app_commands.choices(priority=[
     app_commands.Choice(name="Low", value="low"),
@@ -3873,6 +3956,19 @@ def _ticket_topic_parts(topic):
                 parts[key] = val
         return parts.get("opener"), parts.get("panel"), parts.get("support"), parts.get("archive")
     return (value if value.isdigit() else None), None, None, None
+
+
+def _ticket_topic_value(topic, key):
+    """Return one metadata value from a Nexus ticket topic."""
+    value = str(topic or "")
+    if not value.startswith("nexus-ticket|"):
+        return None
+    for item in value.split("|")[1:]:
+        if ":" in item:
+            field, field_value = item.split(":", 1)
+            if field == key:
+                return field_value
+    return None
 
 
 def _find_ticket_panel(cfg, panel_id):
