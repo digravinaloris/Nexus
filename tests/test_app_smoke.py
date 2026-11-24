@@ -321,7 +321,7 @@ def test_ticket_topic_status_reads_closed_and_open(nexus):
 def test_ticket_reopen_uses_member_guild_permissions(nexus):
     import inspect
 
-    source = inspect.getsource(nexus.config_ticket_reopen)
+    source = inspect.getsource(nexus.config_ticket_reopen.callback)
     assert "interaction.user.guild_permissions.manage_channels" in source
     assert "interaction.guild_permissions.manage_channels" not in source
 
