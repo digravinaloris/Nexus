@@ -281,3 +281,44 @@ def test_ticket_panel_lookup(nexus):
     cfg = {"ticket_panels": [{"id": "abcd1234", "name": "Support"}]}
     assert nexus._find_ticket_panel(cfg, "abcd1234")["name"] == "Support"
     assert nexus._find_ticket_panel(cfg, "missing") is None
+
+
+
+def test_ticket_transcript_escapes_user_content_and_renders_attachments(nexus):
+    from types import SimpleNamespace
+    from datetime import datetime, timezone
+
+    author = SimpleNamespace(
+        display_name='<script>alert("x")</script>',
+        display_avatar=SimpleNamespace(url='https://cdn.example/avatar.png?a=1&b=2'),
+        bot=False,
+    )
+    message = SimpleNamespace(
+        author=author,
+        created_at=datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc),
+        edited_at=None,
+        content='<img src=x onerror=alert(1)>\nHello & welcome',
+        attachments=[
+            SimpleNamespace(
+                filename='proof <1>.png',
+                url='https://cdn.example/proof.png?a=1&b=2',
+                content_type='image/png',
+            ),
+            SimpleNamespace(
+                filename='report.pdf',
+                url='https://cdn.example/report.pdf',
+                content_type='application/pdf',
+            ),
+        ],
+        embeds=[],
+    )
+
+    rendered = nexus._render_ticket_transcript('support<&', [message])
+    assert '<script>' not in rendered
+    assert '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;' in rendered
+    assert '&lt;img src=x onerror=alert(1)&gt;' in rendered
+    assert 'support&lt;&amp;' in rendered
+    assert 'proof &lt;1&gt;.png' in rendered
+    assert 'report.pdf' in rendered
+    assert 'image-attachment' in rendered
+    assert 'rel="noopener noreferrer"' in rendered
