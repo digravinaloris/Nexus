@@ -251,6 +251,21 @@ def test_dashboard_pages_live_in_web_dashboard(nexus):
     assert nexus._apply_template_base_config is template_ops._apply_template_base_config
 
 
+
+def test_slash_command_groups_are_not_nested(nexus):
+    """Discord only supports one group level below a top-level command."""
+    for top_level in nexus.bot.tree.get_commands():
+        if isinstance(top_level, __import__("discord").app_commands.Group):
+            for child in top_level.commands:
+                assert not isinstance(child, __import__("discord").app_commands.Group), (
+                    f"Nested slash-command group found: /{top_level.name} {child.name}"
+                )
+    ticket = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
+    ticket_group = next(c for c in ticket.commands if c.name == "ticket")
+    ticket_names = {c.name for c in ticket_group.commands}
+    assert {"panel-create", "panel-list", "panel-remove"} <= ticket_names
+
+
 def test_ticket_topic_parsing(nexus):
     assert nexus._ticket_topic_parts("123456789") == ("123456789", None, None, None)
     assert nexus._ticket_topic_parts("nexus-ticket|opener:123456789|panel:abcd1234|support:222|archive:333") == ("123456789", "abcd1234", "222", "333")
