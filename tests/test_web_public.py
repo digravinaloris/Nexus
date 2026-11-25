@@ -142,7 +142,7 @@ def _fake_requests(monkeypatch, token_status=200, guilds=None, user=None):
         calls.append(("GET", url))
         if url.endswith("/users/@me/guilds"):
             return Resp(200, guilds if guilds is not None else [])
-        return Resp(200, user or {"id": "42", "username": "bob"})
+        return Resp(200, user or {"id": "12345678901234567", "username": "bob"})
 
     monkeypatch.setattr(requests_module, "post", post)
     monkeypatch.setattr(requests_module, "get", get)
@@ -168,14 +168,14 @@ def test_callback_token_exchange_failure(env, monkeypatch):
 
 
 def test_callback_success_stores_session_and_redirects(env, monkeypatch):
-    calls = _fake_requests(monkeypatch, user={"id": "42", "username": "bob"})
+    calls = _fake_requests(monkeypatch, user={"id": "12345678901234567", "username": "bob"})
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "s"
     resp = env.client.get("/callback?state=s&code=c")
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/dashboard")
     with env.client.session_transaction() as sess:
         assert sess["access_token"] == "AT" and sess["refresh_token"] == "RT"
-        assert sess["dash_user"] == {"id": "42", "username": "bob"}
+        assert sess["dash_user"] == {"id": "12345678901234567", "username": "bob"}
         assert "oauth_state" not in sess  # état consommé (usage unique)
     assert [c[0] for c in calls] == ["POST", "GET"]
 
