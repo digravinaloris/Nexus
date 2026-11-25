@@ -115,7 +115,8 @@ def dash_login():
 @routes.route("/callback")
 def dash_callback():
     state = request.args.get("state")
-    if not state or state != session.pop("oauth_state", None):
+    expected_state = session.pop("oauth_state", None)
+    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
         return jsonify({"error": "Invalid state"}), 403
 
     code = request.args.get("code")
