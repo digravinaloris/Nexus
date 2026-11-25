@@ -15,6 +15,7 @@ def get_config(guild_id):
             "logs_channel": "logs",
             "autorole": None,
             "allowed_roles": [],
+            "automod_exempt_role_ids": [],
             "command_roles": {},
             "command_templates": {},
             "language": None,

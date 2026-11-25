@@ -1801,6 +1801,35 @@ async def config_automod(
     await interaction.response.send_message(f"🛡️ Updated: {', '.join(changes)}.", ephemeral=True)
 
 
+@config_group.command(name="automodexempt", description="Add or remove a role exempt from AutoMod checks — admin only")
+@app_commands.choices(action=[
+    app_commands.Choice(name="Add exemption", value="add"),
+    app_commands.Choice(name="Remove exemption", value="remove"),
+])
+@app_commands.describe(role="Role that should bypass AutoMod", action="Add or remove this exemption")
+@has_admin()
+async def config_automodexempt(interaction: discord.Interaction, role: discord.Role, action: str):
+    if role.is_default():
+        await interaction.response.send_message("❌ @everyone cannot be exempted from AutoMod.", ephemeral=True)
+        return
+    from config_store import get_config, update_config
+    exempt_roles = set(map(str, get_config(interaction.guild_id).get("automod_exempt_role_ids", [])))
+    role_id = str(role.id)
+    if action == "add":
+        if role_id in exempt_roles:
+            await interaction.response.send_message(f"{role.mention} is already exempt from AutoMod.", ephemeral=True)
+            return
+        exempt_roles.add(role_id)
+    else:
+        if role_id not in exempt_roles:
+            await interaction.response.send_message(f"{role.mention} is not currently exempt from AutoMod.", ephemeral=True)
+            return
+        exempt_roles.remove(role_id)
+    update_config(interaction.guild_id, "automod_exempt_role_ids", sorted(exempt_roles))
+    state = "now exempt from" if action == "add" else "no longer exempt from"
+    await interaction.response.send_message(f"🛡️ {role.mention} is {state} AutoMod checks.", ephemeral=True)
+
+
 @config_group.command(name="warnescalation", description="Auto-mute/kick members once they reach a certain number of warnings — admin only")
 @app_commands.describe(
     enabled="Turn auto-escalation on or off",
@@ -4596,7 +4625,8 @@ def is_automod_exempt(member, cfg):
     member_roles = {role.id for role in member.roles}
     if member_roles & allowed:
         return True
-    return False
+    exempt_roles = {int(r) for r in cfg.get("automod_exempt_role_ids", []) if str(r).isdigit()}
+    return bool(member_roles & exempt_roles)
 
 
 def check_spam(guild_id, user_id, cfg=None):

@@ -69,6 +69,19 @@ def test_api_routes_are_registered(nexus):
     assert "/dashboard/<guild_id>/calendar" in rules
 
 
+def test_automod_exempt_roles_command_is_registered(nexus):
+    config = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
+    assert any(command.name == "automodexempt" for command in config.commands)
+
+
+def test_automod_exempt_roles_bypass_only_when_configured(nexus):
+    member = type("Member", (), {"guild_permissions": type("Permissions", (), {"manage_messages": False})(),
+                                  "roles": [type("Role", (), {"id": 77})()]})()
+    assert nexus.is_automod_exempt(member, {"automod_exempt_role_ids": ["77"]})
+    assert not nexus.is_automod_exempt(member, {"automod_exempt_role_ids": ["78"]})
+    assert not nexus.is_automod_exempt(member, {})
+
+
 def test_all_feature_toggles_present(nexus):
     assert len(nexus.FEATURE_TOGGLES) >= 17
 
