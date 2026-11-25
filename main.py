@@ -4350,17 +4350,18 @@ class VerificationView(discord.ui.View):
         if verified_role and verified_role in interaction.user.roles:
             await interaction.response.send_message("✅ You're already verified.", ephemeral=True)
             return
-        # Méthode « turnstile » : le bouton ne donne PAS le rôle, il envoie un lien personnel vers la
-        # page de vérification (voir verification.py). Si Turnstile n'est pas configuré on REFUSE, on ne
-        # retombe jamais silencieusement sur « rôle donné sans contrôle ».
-        if cfg.get("verification_method", "button") == "turnstile":
-            if not turnstile_configured():
-                await interaction.response.send_message("❌ Web verification is temporarily unavailable. Please try again later or contact a moderator.", ephemeral=True)
-                return
-            days_left = account_days_left(interaction.user, get_verification_settings(interaction.guild_id)["verification_min_account_days"])
-            if days_left > 0:
-                await interaction.response.send_message(f"❌ Your Discord account is too new to verify on this server yet. Please try again in {days_left} day(s), or contact a moderator.", ephemeral=True)
-                return
+        # Turnstile doit rester configuré : jamais de fallback silencieux vers un clic simple.
+        turnstile = cfg.get("verification_method", "button") == "turnstile"
+        if turnstile and not turnstile_configured():
+            await interaction.response.send_message("❌ Web verification is temporarily unavailable. Please try again later or contact a moderator.", ephemeral=True)
+            return
+        # L'âge minimum s'applique à TOUS les modes, y compris le bouton one-click :
+        # sinon un membre trop jeune pourrait contourner la règle en changeant de méthode.
+        days_left = account_days_left(interaction.user, get_verification_settings(interaction.guild_id)["verification_min_account_days"])
+        if days_left > 0:
+            await interaction.response.send_message(f"❌ Your Discord account is too new to verify on this server yet. Please try again in {days_left} day(s), or contact a moderator.", ephemeral=True)
+            return
+        if turnstile:
             token = create_challenge(interaction.guild_id, interaction.user.id)
             link_view = discord.ui.View()
             link_view.add_item(discord.ui.Button(label="Open verification page", style=discord.ButtonStyle.link, url=verification_url(token)))
