@@ -537,3 +537,37 @@ def test_faq_crud_and_toggle(env):
     assert env.client.delete(url(f"/faq/{entry_id}"), headers=h).get_json() == {"success": True}
     assert env.client.get(url("/faq"), headers=h).get_json()["entries"] == []
     assert env.client.delete(url("/faq/x", OTHER_GUILD), headers=h).status_code == 404
+
+
+def test_master_api_key_uses_constant_time_comparison(env, monkeypatch):
+    import web.rest_api as rest_module
+
+    original = rest_module.secrets.compare_digest
+    calls = []
+
+    def tracked(provided, expected):
+        calls.append((provided, expected))
+        return original(provided, expected)
+
+    monkeypatch.setattr(rest_module.secrets, "compare_digest", tracked)
+    response = env.client.get("/api/health", headers=MASTER)
+    assert response.status_code == 200
+    assert ("master-key", "master-key") in calls
+
+
+def test_guild_api_key_uses_constant_time_comparison(env, monkeypatch):
+    import web.rest_api as rest_module
+    from config_store import update_config
+
+    update_config(GUILD, "api_key", "guild-key")
+    original = rest_module.secrets.compare_digest
+    calls = []
+
+    def tracked(provided, expected):
+        calls.append((provided, expected))
+        return original(provided, expected)
+
+    monkeypatch.setattr(rest_module.secrets, "compare_digest", tracked)
+    response = env.client.get(url("/features"), headers={"X-API-Key": "guild-key"})
+    assert response.status_code == 200
+    assert ("guild-key", "guild-key") in calls

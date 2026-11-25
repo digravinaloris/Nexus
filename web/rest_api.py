@@ -29,6 +29,11 @@ bp = Blueprint("rest_api", __name__)
 API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à définir sur Render
 
 
+def _api_key_matches(provided, expected):
+    """Compare API keys in constant time, ignoring malformed stored values."""
+    return isinstance(expected, str) and secrets.compare_digest(provided, expected)
+
+
 def require_api_key(f):
     """Décorateur : vérifie le header X-API-Key sur chaque requête protégée.
     Deux clés sont acceptées :
@@ -44,13 +49,13 @@ def require_api_key(f):
         key = request.headers.get("X-API-Key")
         if not key:
             return jsonify({"error": "Missing X-API-Key header"}), 401
-        if API_KEY and key == API_KEY:
+        if API_KEY and _api_key_matches(key, API_KEY):
             g.auth_guild_id = None
             return f(*args, **kwargs)
         guild_id = kwargs.get("guild_id")
         if guild_id:
             cfg = get_config(guild_id)
-            if cfg.get("api_key") and key == cfg["api_key"]:
+            if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
                 g.auth_guild_id = str(guild_id)
                 return f(*args, **kwargs)
         elif core.bot.is_ready():

@@ -206,7 +206,7 @@ Every dashboard request fetches the user's current server permissions directly f
 
 ## Companion Android App
 
-Built with Kotlin + Jetpack Compose, connecting to the bot's REST API to let server admins moderate, check stats, and manage configuration from their phone. Each server gets its own API key via `/config apikey`.
+Built with Kotlin + Jetpack Compose, connecting to the bot's REST API to let server admins moderate, check stats, and manage configuration from their phone. Each server gets its own API key via `/config apikey`. API keys are checked using constant-time comparisons.
 
 ---
 
