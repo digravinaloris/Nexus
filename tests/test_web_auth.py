@@ -141,3 +141,82 @@ def test_dashboard_rejects_missing_or_invalid_session_expiry(env, expires_at):
     with env.client.session_transaction() as sess:
         assert "access_token" not in sess
         assert "token_expires_at" not in sess
+
+
+def test_dashboard_permissions_are_refetched_instead_of_using_cached_access(env, monkeypatch):
+    from flask import session
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return []
+
+    calls = []
+    monkeypatch.setattr(auth.requests, "get", lambda *args, **kwargs: calls.append((args, kwargs)) or Response())
+
+    with env.nexus.api.test_request_context("/dashboard"):
+        session["access_token"] = "valid-access-token"
+        session["admin_guilds_cache"] = [{"id": "123456789012345678", "permissions": "8"}]
+        session["admin_guilds_cache_at"] = 4102444700
+        assert auth.get_user_admin_guilds() == []
+
+    assert len(calls) == 1
+
+
+def test_dashboard_permissions_fail_closed_when_discord_is_unavailable(env, monkeypatch):
+    from flask import session
+
+    class Response:
+        status_code = 503
+
+    calls = []
+    monkeypatch.setattr(auth.requests, "get", lambda *args, **kwargs: calls.append(True) or Response())
+
+    with env.nexus.api.test_request_context("/dashboard"):
+        session["access_token"] = "valid-access-token"
+        session["admin_guilds_cache"] = [{"id": "123456789012345678", "permissions": "8"}]
+        session["admin_guilds_cache_at"] = 4102444700
+        assert auth.get_user_admin_guilds() is None
+
+    assert calls == [True]
+
+
+def test_dashboard_permissions_ignore_malformed_discord_guild_entries(env, monkeypatch):
+    from flask import session
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return [
+                {"id": "123456789012345678", "permissions": "not-a-number"},
+                {"id": "not-a-snowflake", "permissions": "8"},
+                {"id": "123456789012345679", "permissions": "8"},
+            ]
+
+    monkeypatch.setattr(auth.requests, "get", lambda *args, **kwargs: Response())
+
+    with env.nexus.api.test_request_context("/dashboard"):
+        session["access_token"] = "valid-access-token"
+        assert auth.get_user_admin_guilds() == [
+            {"id": "123456789012345679", "permissions": "8"}
+        ]
+
+
+def test_dashboard_request_returns_temporary_error_when_discord_is_unavailable(env, monkeypatch):
+    class Response:
+        status_code = 503
+
+    monkeypatch.setattr(auth.requests, "get", lambda *args, **kwargs: Response())
+    with env.client.session_transaction() as sess:
+        sess["access_token"] = "valid-access-token"
+        sess["token_expires_at"] = 4102444800
+        sess["admin_guilds_cache"] = [{"id": "123456789012345678", "permissions": "8"}]
+        sess["admin_guilds_cache_at"] = 4102444700
+
+    response = env.client.get("/dashboard/123456789012345678/calendar")
+    assert response.status_code == 503
+    assert response.get_json() == {
+        "error": "Unable to verify Discord server permissions. Please try again shortly."
+    }

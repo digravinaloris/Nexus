@@ -49,39 +49,57 @@ def dash_login_required(f):
 
 
 def get_user_admin_guilds():
-    """Revient chercher la vérité chez Discord, avec un court cache pour éviter
-    de spammer l'API à chaque clic (et donc de se reprendre un rate limit)."""
-    cached = session.get("admin_guilds_cache")
-    cached_at = session.get("admin_guilds_cache_at", 0)
-    if cached is not None and (time.time() - cached_at) < 120:
-        return cached
+    """Fetch current Discord permissions for every dashboard authorization check.
 
-    r = requests.get(
-        f"{DISCORD_API_BASE}/users/@me/guilds",
-        headers={"Authorization": f"Bearer {session['access_token']}"},
-        timeout=10,
-    )
-    if r.status_code == 401:
+    A cached guild list can keep a user authorized after they lose Administrator
+    access. If Discord cannot confirm the current list, fail closed instead of
+    falling back to stale permissions.
+    """
+    access_token = session.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        return None
+
+    try:
+        response = requests.get(
+            f"{DISCORD_API_BASE}/users/@me/guilds",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        return None
+
+    if response.status_code == 401:
         session.clear()
         return None
-    if r.status_code != 200:
-        # Discord a répondu autre chose qu'une liste de serveurs (rate limit,
-        # erreur temporaire...) : on ne plante pas, on retombe sur le cache
-        # précédent s'il existe, sinon on force un nouveau login.
-        if cached is not None:
-            return cached
+    if response.status_code != 200:
         return None
 
-    guilds = r.json()
+    try:
+        guilds = response.json()
+    except (TypeError, ValueError):
+        return None
     if not isinstance(guilds, list):
-        return cached if cached is not None else None
+        return None
 
-    admin_guilds = [
-        g_ for g_ in guilds
-        if isinstance(g_, dict) and int(g_.get("permissions", 0)) & ADMINISTRATOR_PERM == ADMINISTRATOR_PERM
-    ]
-    session["admin_guilds_cache"] = admin_guilds
-    session["admin_guilds_cache_at"] = time.time()
+    admin_guilds = []
+    for guild in guilds:
+        if not isinstance(guild, dict):
+            continue
+        guild_id = guild.get("id")
+        permissions = guild.get("permissions")
+        if not isinstance(guild_id, str) or not GUILD_ID_RE.fullmatch(guild_id):
+            continue
+        if isinstance(permissions, bool):
+            continue
+        if isinstance(permissions, str):
+            if not permissions.isdecimal():
+                continue
+            permissions = int(permissions)
+        elif not isinstance(permissions, int):
+            continue
+        if permissions & ADMINISTRATOR_PERM == ADMINISTRATOR_PERM:
+            admin_guilds.append(guild)
+
     return admin_guilds
 
 
@@ -93,6 +111,8 @@ def dash_guild_admin_required(f):
             return jsonify({"error": "Invalid guild id"}), 400
         admin_guilds = get_user_admin_guilds()
         if admin_guilds is None:
+            if session.get("access_token"):
+                return jsonify({"error": "Unable to verify Discord server permissions. Please try again shortly."}), 503
             return redirect(url_for("dash_login"))
         admin_guild_ids = {g_["id"] for g_ in admin_guilds}
         if guild_id not in admin_guild_ids:
