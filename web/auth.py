@@ -177,7 +177,11 @@ def dash_callback():
     return redirect(url_for("dash_home"))
 
 
-@routes.route("/logout")
+@routes.route("/logout", methods=["POST"])
 def dash_logout():
+    token = request.form.get("csrf_token", "")
+    expected = session.get("csrf_token", "")
+    if not token or not expected or not secrets.compare_digest(token, expected):
+        return jsonify({"error": "Invalid CSRF token"}), 403
     session.clear()
     return redirect(url_for("dash_login"))
