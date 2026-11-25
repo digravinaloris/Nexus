@@ -74,3 +74,11 @@ def test_run_api_falls_back_when_waitress_crashes_at_startup(nexus, monkeypatch)
     monkeypatch.setenv("PORT", "9125")
     nexus.run_api()
     assert calls == {"host": "0.0.0.0", "port": 9125}
+
+
+def test_baseline_security_headers_are_present(nexus):
+    response = nexus.api.test_client().get("/status")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
