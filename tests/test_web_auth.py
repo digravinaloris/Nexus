@@ -202,3 +202,21 @@ def test_dashboard_permissions_ignore_malformed_discord_guild_entries(env, monke
         assert auth.get_user_admin_guilds() == [
             {"id": "123456789012345679", "permissions": "8"}
         ]
+
+
+def test_dashboard_request_returns_temporary_error_when_discord_is_unavailable(env, monkeypatch):
+    class Response:
+        status_code = 503
+
+    monkeypatch.setattr(auth.requests, "get", lambda *args, **kwargs: Response())
+    with env.client.session_transaction() as sess:
+        sess["access_token"] = "valid-access-token"
+        sess["token_expires_at"] = 4102444800
+        sess["admin_guilds_cache"] = [{"id": "123456789012345678", "permissions": "8"}]
+        sess["admin_guilds_cache_at"] = 4102444700
+
+    response = env.client.get("/dashboard/123456789012345678/calendar")
+    assert response.status_code == 503
+    assert response.get_json() == {
+        "error": "Unable to verify Discord server permissions. Please try again shortly."
+    }
