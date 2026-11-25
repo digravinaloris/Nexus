@@ -68,3 +68,32 @@ def test_expired_oauth_session_is_cleared_and_redirected(env):
     assert response.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
         assert "access_token" not in sess
+
+
+
+def test_logout_rejects_get_requests(env):
+    response = env.client.get("/logout")
+    assert response.status_code == 405
+
+
+def test_logout_rejects_missing_or_invalid_csrf(env):
+    with env.client.session_transaction() as sess:
+        sess["access_token"] = "valid"
+        sess["csrf_token"] = "expected-token"
+
+    response = env.client.post("/logout", data={"csrf_token": "wrong-token"})
+    assert response.status_code == 403
+    with env.client.session_transaction() as sess:
+        assert sess["access_token"] == "valid"
+
+
+def test_logout_with_valid_csrf_clears_session(env):
+    with env.client.session_transaction() as sess:
+        sess["access_token"] = "valid"
+        sess["csrf_token"] = "expected-token"
+
+    response = env.client.post("/logout", data={"csrf_token": "expected-token"})
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+    with env.client.session_transaction() as sess:
+        assert not sess
