@@ -261,7 +261,7 @@ def test_callback_rejects_malformed_oauth_json_without_session(env, monkeypatch,
         assert "token_expires_at" not in sess
 
 
-@pytest.mark.parametrize("user_id", [None, "", "123", "not-a-snowflake", 123456789012345678])
+@pytest.mark.parametrize("user_id", [None, "", "123", "not-a-snowflake", "1234567890123456", "123456789012345678901", 123456789012345678])
 def test_callback_rejects_invalid_discord_user_id(env, monkeypatch, user_id):
     class TokenResponse:
         status_code = 200
