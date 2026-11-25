@@ -164,6 +164,7 @@ async def grant_verified(guild, user_id):
     """Donne Verified et retire Unverified. Retourne (ok, message d'erreur lisible par le membre)."""
     cfg = get_config(guild.id)
     verified_id, unverified_id = cfg.get("verified_role_id"), cfg.get("unverified_role_id")
+    autorole_id = cfg.get("verification_autorole_id")
     if not verified_id:
         return False, "Verification isn't configured on this server. Please contact a moderator."
     member = guild.get_member(int(user_id))
