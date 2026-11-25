@@ -75,6 +75,7 @@ def dash(env, monkeypatch):
         with env.client.session_transaction() as sess:
             sess.clear()
             sess["access_token"] = "AT"
+            sess["token_expires_at"] = 4102444800
             sess["dash_user"] = {"id": user_id, "username": name}
             sess["csrf_token"] = "test-csrf-token-for-dashboard"
 
