@@ -109,16 +109,18 @@ def flashes(client):
 
 def test_lang_and_theme_switch(env):
     c = env.client
-    resp = c.get("/dashboard/lang/fr?next=/status")
+    with c.session_transaction() as sess:
+        sess["csrf_token"] = "test-csrf-token"
+    resp = c.post("/dashboard/lang/fr?next=/status", data={"csrf_token": "test-csrf-token"})
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/status")
     with c.session_transaction() as sess:
         assert sess["lang"] == "fr"
-    c.get("/dashboard/lang/zz")  # langue inconnue : ignorée
+    c.post("/dashboard/lang/zz", data={"csrf_token": "test-csrf-token"})  # langue inconnue : ignorée
     with c.session_transaction() as sess:
         assert sess["lang"] == "fr"
-    resp = c.get("/dashboard/theme/light")
+    resp = c.post("/dashboard/theme/light", data={"csrf_token": "test-csrf-token"})
     assert resp.headers["Location"].endswith("/dashboard")  # sans ?next -> dashboard
-    c.get("/dashboard/theme/pink")
+    c.post("/dashboard/theme/pink", data={"csrf_token": "test-csrf-token"})
     with c.session_transaction() as sess:
         assert sess["theme"] == "light"
 
