@@ -34,8 +34,13 @@ def dash_login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         expires_at = session.get("token_expires_at")
-        if "access_token" not in session or (
-            isinstance(expires_at, (int, float)) and time.time() >= expires_at
+        if (
+            not isinstance(session.get("access_token"), str)
+            or not session.get("access_token")
+            or isinstance(expires_at, bool)
+            or not isinstance(expires_at, (int, float))
+            or not math.isfinite(expires_at)
+            or time.time() >= expires_at
         ):
             session.clear()
             return redirect(url_for("dash_login"))
