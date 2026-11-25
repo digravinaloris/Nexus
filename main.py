@@ -1556,11 +1556,13 @@ async def config_logs(interaction: discord.Interaction, channel: discord.TextCha
     embed = discord.Embed(title="✅ Logs Channel Updated", description=f"Logs will now be sent to {channel.mention}", color=0x00cc00)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@config_group.command(name="autorole", description="Set the auto-join role")
+@config_group.command(name="autorole", description="Set or disable the auto-join role")
+@app_commands.describe(role="Role given to new members; leave empty to disable")
 @has_admin()
-async def config_autorole(interaction: discord.Interaction, role: discord.Role):
-    update_config(interaction.guild_id, "autorole", role.id)
-    embed = discord.Embed(title="✅ Auto-Role Updated", description=f"New members will get {role.mention}", color=0x00cc00)
+async def config_autorole(interaction: discord.Interaction, role: discord.Role = None):
+    update_config(interaction.guild_id, "autorole", role.id if role else None)
+    description = f"New members will get {role.mention}" if role else "Auto-role disabled."
+    embed = discord.Embed(title="✅ Auto-Role Updated", description=description, color=0x00cc00)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @config_group.command(name="allow", description="Allow a role to use a specific command (e.g. ban, kick, roleadd) — server owner only")

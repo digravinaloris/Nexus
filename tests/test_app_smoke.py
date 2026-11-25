@@ -69,6 +69,11 @@ def test_api_routes_are_registered(nexus):
     assert "/dashboard/<guild_id>/calendar" in rules
 
 
+def test_config_autorole_command_is_registered_and_optional(nexus):
+    config = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
+    command = next(command for command in config.commands if command.name == "autorole")
+    assert command.parameters[0].required is False
+
 def test_automod_exempt_roles_command_is_registered(nexus):
     config = next(c for c in nexus.bot.tree.get_commands() if c.name == "config")
     assert any(command.name == "automodexempt" for command in config.commands)
