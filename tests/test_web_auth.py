@@ -106,3 +106,22 @@ def test_logout_with_valid_csrf_clears_session(env):
     assert response.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
         assert not sess
+
+
+def test_callback_rejects_missing_or_invalid_token_expiration(env, monkeypatch):
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "access", "refresh_token": "refresh"}
+
+    monkeypatch.setattr(auth.requests, "post", lambda *a, **k: FakeResponse())
+
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = "valid-state"
+
+    response = env.client.get("/callback?code=authorization-code&state=valid-state")
+    assert response.status_code == 502
+    with env.client.session_transaction() as sess:
+        assert "access_token" not in sess
+        assert "token_expires_at" not in sess
