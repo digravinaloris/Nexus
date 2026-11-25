@@ -136,7 +136,7 @@ def _fake_requests(monkeypatch, token_status=200, guilds=None, user=None):
 
     def post(url, **kw):
         calls.append(("POST", url))
-        return Resp(token_status, {"access_token": "AT", "refresh_token": "RT"})
+        return Resp(token_status, {"access_token": "AT", "refresh_token": "RT", "expires_in": 3600})
 
     def get(url, **kw):
         calls.append(("GET", url))
