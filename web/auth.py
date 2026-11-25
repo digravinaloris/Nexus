@@ -27,7 +27,7 @@ DASH_CLIENT_SECRET = os.environ["DISCORD_CLIENT_SECRET"]
 DASH_REDIRECT_URI = os.environ["DISCORD_REDIRECT_URI"]
 DISCORD_API_BASE = "https://discord.com/api"
 ADMINISTRATOR_PERM = 0x8
-GUILD_ID_RE = re.compile(r"^\d{17,19}$")  # valide un vrai snowflake Discord
+GUILD_ID_RE = re.compile(r"^\d{17,20}$")  # valide un vrai snowflake Discord
 
 
 def dash_login_required(f):

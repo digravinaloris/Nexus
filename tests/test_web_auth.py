@@ -288,3 +288,13 @@ def test_callback_rejects_invalid_discord_user_id(env, monkeypatch, user_id):
         assert "access_token" not in sess
         assert "refresh_token" not in sess
         assert "token_expires_at" not in sess
+
+
+@pytest.mark.parametrize("guild_id", ["12345678901234567", "1234567890123456789", "12345678901234567890"])
+def test_guild_id_validation_accepts_supported_snowflake_lengths(guild_id):
+    assert auth.GUILD_ID_RE.fullmatch(guild_id)
+
+
+@pytest.mark.parametrize("guild_id", ["1234567890123456", "123456789012345678901", "invalid", ""])
+def test_guild_id_validation_rejects_invalid_snowflake_lengths(guild_id):
+    assert not auth.GUILD_ID_RE.fullmatch(guild_id)
