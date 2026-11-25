@@ -259,3 +259,32 @@ def test_callback_rejects_malformed_oauth_json_without_session(env, monkeypatch,
         assert "access_token" not in sess
         assert "refresh_token" not in sess
         assert "token_expires_at" not in sess
+
+
+@pytest.mark.parametrize("user_id", [None, "", "123", "not-a-snowflake", 123456789012345678])
+def test_callback_rejects_invalid_discord_user_id(env, monkeypatch, user_id):
+    class TokenResponse:
+        status_code = 200
+
+
+        def json(self):
+            return {"access_token": "access", "refresh_token": "refresh", "expires_in": 3600}
+
+    class UserResponse:
+        status_code = 200
+
+        def json(self):
+            return {"id": user_id}
+
+    monkeypatch.setattr(auth.requests, "post", lambda *a, **k: TokenResponse())
+    monkeypatch.setattr(auth.requests, "get", lambda *a, **k: UserResponse())
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = "valid-state"
+
+    response = env.client.get("/callback?code=authorization-code&state=valid-state")
+    assert response.status_code == 502
+    assert response.get_json() == {"error": "Invalid Discord user response"}
+    with env.client.session_transaction() as sess:
+        assert "access_token" not in sess
+        assert "refresh_token" not in sess
+        assert "token_expires_at" not in sess
