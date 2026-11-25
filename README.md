@@ -179,7 +179,7 @@ Log in with Discord at the bot's URL (`/dashboard`) to manage any server where y
 - Server lockdown, mobile API key management
 - English and French, switchable per-session or set as a server default
 
-Every dashboard request fetches the user's current server permissions directly from Discord. If Discord cannot confirm them, dashboard access is denied rather than relying on stale cached permissions.
+Every dashboard request fetches the user's current server permissions directly from Discord. If Discord cannot confirm them, dashboard access is denied rather than relying on stale cached permissions. OAuth token and identity responses are validated; malformed responses are rejected without creating an authenticated session.
 
 ---
 

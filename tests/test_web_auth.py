@@ -220,3 +220,42 @@ def test_dashboard_request_returns_temporary_error_when_discord_is_unavailable(e
     assert response.get_json() == {
         "error": "Unable to verify Discord server permissions. Please try again shortly."
     }
+
+
+@pytest.mark.parametrize("endpoint", ["token", "identity"])
+def test_callback_rejects_malformed_oauth_json_without_session(env, monkeypatch, endpoint):
+    class MalformedResponse:
+        status_code = 200
+
+        def json(self):
+            raise ValueError("invalid JSON")
+
+    class ValidTokenResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "expires_in": 3600,
+            }
+
+    if endpoint == "token":
+        monkeypatch.setattr(auth.requests, "post", lambda *a, **k: MalformedResponse())
+        monkeypatch.setattr(auth.requests, "get", lambda *a, **k: pytest.fail("identity lookup must not run"))
+    else:
+        monkeypatch.setattr(auth.requests, "post", lambda *a, **k: ValidTokenResponse())
+        monkeypatch.setattr(auth.requests, "get", lambda *a, **k: MalformedResponse())
+
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = "valid-state"
+
+    response = env.client.get("/callback?code=authorization-code&state=valid-state")
+    assert response.status_code == 502
+    assert response.get_json() == {
+        "error": "Discord authentication is temporarily unavailable"
+    }
+    with env.client.session_transaction() as sess:
+        assert "access_token" not in sess
+        assert "refresh_token" not in sess
+        assert "token_expires_at" not in sess
