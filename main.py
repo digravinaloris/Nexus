@@ -4971,6 +4971,11 @@ async def on_member_join(member):
             if role:
                 await member.add_roles(role)
 
+    # Auto-role only when verification is disabled. When verification is enabled, grant_verified
+    # handles both Verified and the optional verification auto-role after successful verification.
+    if not quarantined and member.guild.id not in bot.locked_guilds and verified_flow and cfg.get("verification_autorole_id"):
+        pass  # deliberately not assigned before verification
+
     # Message de bienvenue (texte configurable) + bannière avec la seule photo de profil.
     if cfg.get("welcome_banner_enabled") and cfg.get("welcome_channel_id"):
         welcome_channel = member.guild.get_channel(int(cfg["welcome_channel_id"]))
