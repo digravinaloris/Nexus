@@ -52,7 +52,7 @@ def _safe_next_url(default):
     return default
 
 
-@routes.route("/dashboard/lang/<lang_code>")
+@routes.route("/dashboard/lang/<lang_code>", methods=["POST"])
 def dash_set_lang(lang_code):
     if lang_code in TRANSLATIONS:
         session["lang"] = lang_code
@@ -484,7 +484,7 @@ def dash_template_import(guild_id, code):
     )
 
 
-@routes.route("/dashboard/theme/<theme_name>")
+@routes.route("/dashboard/theme/<theme_name>", methods=["POST"])
 def dash_set_theme(theme_name):
     if theme_name in ("dark", "light"):
         session["theme"] = theme_name
