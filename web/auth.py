@@ -6,6 +6,7 @@ vient de `core.bot`). Les routes sont enregistrées sur l'app par main.py via
 `routes.register(api)` en gardant les noms d'endpoints d'origine (cf. web/routing.py).
 """
 from functools import wraps
+import math
 import os
 import re
 import secrets
@@ -150,6 +151,15 @@ def dash_callback():
         if not isinstance(access_token, str) or not access_token:
             return jsonify({"error": "Invalid token response"}), 502
 
+        expires_in = token_data.get("expires_in")
+        if (
+            isinstance(expires_in, bool)
+            or not isinstance(expires_in, (int, float))
+            or not math.isfinite(expires_in)
+            or expires_in <= 0
+        ):
+            return jsonify({"error": "Invalid token expiration"}), 502
+
         user_r = requests.get(
             f"{DISCORD_API_BASE}/users/@me",
             headers={"Authorization": f"Bearer {access_token}"},
@@ -169,9 +179,7 @@ def dash_callback():
     refresh_token = token_data.get("refresh_token")
     if isinstance(refresh_token, str) and refresh_token:
         session["refresh_token"] = refresh_token
-    expires_in = token_data.get("expires_in")
-    if isinstance(expires_in, (int, float)) and expires_in > 0:
-        session["token_expires_at"] = time.time() + min(expires_in, 60 * 60 * 24)
+    session["token_expires_at"] = time.time() + min(expires_in, 60 * 60 * 24)
     session["dash_user"] = user_data
     session["csrf_token"] = secrets.token_urlsafe(32)
 
