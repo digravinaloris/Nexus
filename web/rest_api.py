@@ -63,7 +63,7 @@ def require_api_key(f):
             # à quel serveur cette clé appartient parmi tous les serveurs du bot.
             for candidate_guild in core.bot.guilds:
                 cfg = get_config(candidate_guild.id)
-                if cfg.get("api_key") and key == cfg["api_key"]:
+                if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
                     g.auth_guild_id = str(candidate_guild.id)
                     return f(*args, **kwargs)
         return jsonify({"error": "Unauthorized"}), 401
