@@ -31,6 +31,9 @@ def test_next_param_never_redirects_off_site(nexus, path, nxt):
 
 @pytest.mark.parametrize("path", ["/dashboard/lang/fr", "/dashboard/theme/light"])
 def test_next_param_keeps_working_for_site_paths(nexus, path):
+    client = nexus.api.test_client()
+    with client.session_transaction() as sess:
+        sess["csrf_token"] = "test-csrf-token"
     # Les templates passent next=request.path (ex: /dashboard/123/settings)
     for nxt in ("/status", "/dashboard/123456789012345678/settings", "/dashboard?x=1"):
         resp = client.post(path, query_string={"next": nxt}, data={"csrf_token": "test-csrf-token"})
