@@ -34,7 +34,7 @@ GOLDEN_ENDPOINTS = [
     ('dash_guild_page', '/dashboard/<guild_id>', ('GET', 'POST')),
     ('dash_home', '/dashboard', ('GET',)),
     ('dash_login', '/login', ('GET',)),
-    ('dash_logout', '/logout', ('GET',)),
+    ('dash_logout', '/logout', ('POST',)),
     ('dash_permission_add', '/dashboard/<guild_id>/permissions/add', ('POST',)),
     ('dash_permission_remove', '/dashboard/<guild_id>/permissions/remove', ('POST',)),
     ('dash_permission_template', '/dashboard/<guild_id>/permissions/template', ('POST',)),
@@ -183,7 +183,8 @@ def test_callback_success_stores_session_and_redirects(env, monkeypatch):
 def test_logout_clears_session(env):
     with env.client.session_transaction() as sess:
         sess["access_token"] = "AT"
-    resp = env.client.get("/logout")
+        sess["csrf_token"] = "test-token"
+    resp = env.client.post("/logout", data={"csrf_token": "test-token"})
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
         assert "access_token" not in sess
