@@ -195,7 +195,7 @@ def dash_callback():
 
         user_data = user_r.json()
         user_id = user_data.get("id") if isinstance(user_data, dict) else None
-        if not isinstance(user_id, str) or not re.fullmatch(r"\\d{17,20}", user_id):
+        if not isinstance(user_id, str) or not re.fullmatch(r"\d{17,20}", user_id):
             return jsonify({"error": "Invalid Discord user response"}), 502
     except (requests.RequestException, ValueError):
         return jsonify({"error": "Discord authentication is temporarily unavailable"}), 502
