@@ -5254,6 +5254,10 @@ def add_security_headers(response):
         "Permissions-Policy",
         "camera=(), microphone=(), geolocation=()",
     )
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "base-uri 'self'; object-src 'none'; frame-ancestors 'none'",
+    )
     return response
 
 # ---------- Templates HTML ----------
