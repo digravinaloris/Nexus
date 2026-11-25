@@ -181,6 +181,13 @@ async def grant_verified(guild, user_id):
             await member.remove_roles(unverified_role, reason="Verified (Cloudflare Turnstile)")
         if verified_role not in member.roles:
             await member.add_roles(verified_role, reason="Verified (Cloudflare Turnstile)")
+        extra_role = guild.get_role(int(autorole_id)) if autorole_id else None
+        if extra_role is not None and extra_role != verified_role and extra_role not in member.roles:
+            try:
+                await member.add_roles(extra_role, reason="Extra role after verification")
+            except discord.HTTPException as e:
+                log_json("error", "verification_autorole_failed", guild_id=guild.id, user_id=user_id, role_id=extra_role.id, error=repr(e))
+
     except discord.HTTPException as e:
         log_json("error", "verification_role_update_failed", guild_id=guild.id, user_id=user_id, error=repr(e))
         return False, "I couldn't update your roles. Please contact a moderator."
