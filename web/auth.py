@@ -111,6 +111,8 @@ def dash_guild_admin_required(f):
             return jsonify({"error": "Invalid guild id"}), 400
         admin_guilds = get_user_admin_guilds()
         if admin_guilds is None:
+            if session.get("access_token"):
+                return jsonify({"error": "Unable to verify Discord server permissions. Please try again shortly."}), 503
             return redirect(url_for("dash_login"))
         admin_guild_ids = {g_["id"] for g_ in admin_guilds}
         if guild_id not in admin_guild_ids:
