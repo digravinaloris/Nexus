@@ -2007,6 +2007,15 @@ async def verification_setup(interaction: discord.Interaction, verified_role: di
     )
 
 
+@verification_group.command(name="autorole", description="Set an extra role granted after verification — admin only")
+@app_commands.describe(role="Extra role to give after successful verification; leave empty to disable")
+@has_admin()
+async def verification_autorole(interaction: discord.Interaction, role: discord.Role = None):
+    update_config(interaction.guild_id, "verification_autorole_id", role.id if role else None)
+    state = f"will be granted after verification: {role.mention}" if role else "disabled"
+    await interaction.response.send_message(f"✅ Verification auto-role {state}.", ephemeral=True)
+
+
 @verification_group.command(name="method", description="Choose how members verify: one-click button or Cloudflare Turnstile — admin only")
 @app_commands.describe(method="button = one click; turnstile = Cloudflare human check on a web page")
 @app_commands.choices(method=[
