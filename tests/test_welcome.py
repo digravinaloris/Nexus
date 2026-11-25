@@ -228,6 +228,20 @@ def test_on_member_join_posts_the_welcome_when_enabled(env, monkeypatch):
 
     asyncio.run(run())
     assert posted == [(member, channel, "Yo {user}")]
+
+    # Verification enabled: optional verification auto-role must not be assigned on join.
+    from config_store import update_config
+    roles_added = []
+    role = MagicMock()
+    role.id = 902
+    guild.get_role = lambda rid: role if rid == 902 else None
+    member.add_roles = AsyncMock(side_effect=lambda r, reason=None: roles_added.append(r.id))
+    update_config(111, "verification_enabled", True)
+    update_config(111, "unverified_role_id", 901)
+    update_config(111, "verification_autorole_id", 902)
+    update_config(111, "welcome_banner_enabled", False)
+    asyncio.run(env.nexus.on_member_join(member))
+    assert 902 not in roles_added  # only assigned after actual verification
     # désactivée -> rien n'est posté
     posted.clear()
     update_config(111, "welcome_banner_enabled", False)
