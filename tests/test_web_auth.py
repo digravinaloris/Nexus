@@ -25,6 +25,20 @@ def test_login_encodes_oauth_parameters_and_sets_state(env):
 
     with env.client.session_transaction() as sess:
         assert sess["oauth_state"] == query["state"][0]
+        assert isinstance(sess["oauth_state_created_at"], (int, float))
+
+
+def test_callback_rejects_expired_state_without_calling_discord(env, monkeypatch):
+    called = []
+    monkeypatch.setattr(auth.requests, "post", lambda *a, **k: called.append(True))
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = "expired-state"
+        sess["oauth_state_created_at"] = auth.time.time() - auth.OAUTH_STATE_MAX_AGE - 1
+    response = env.client.get("/callback?code=authorization-code&state=expired-state")
+    assert response.status_code == 403
+    assert called == []
+    with env.client.session_transaction() as sess:
+        assert "oauth_state" not in sess and "oauth_state_created_at" not in sess
 
 
 def test_callback_rejects_invalid_state_without_calling_discord(env, monkeypatch):
@@ -59,6 +73,8 @@ def test_callback_does_not_create_session_when_identity_lookup_fails(env, monkey
 
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "valid-state"
+
+        sess["oauth_state_created_at"] = auth.time.time()
         sess["old_data"] = "must be cleared"
 
     response = env.client.get("/callback?code=authorization-code&state=valid-state")
@@ -120,6 +136,8 @@ def test_callback_rejects_missing_or_invalid_token_expiration(env, monkeypatch):
 
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "valid-state"
+
+        sess["oauth_state_created_at"] = auth.time.time()
 
     response = env.client.get("/callback?code=authorization-code&state=valid-state")
     assert response.status_code == 502
@@ -250,6 +268,8 @@ def test_callback_rejects_malformed_oauth_json_without_session(env, monkeypatch,
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "valid-state"
 
+        sess["oauth_state_created_at"] = auth.time.time()
+
     response = env.client.get("/callback?code=authorization-code&state=valid-state")
     assert response.status_code == 502
     assert response.get_json() == {
@@ -280,6 +300,8 @@ def test_callback_rejects_invalid_discord_user_id(env, monkeypatch, user_id):
     monkeypatch.setattr(auth.requests, "get", lambda *a, **k: UserResponse())
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "valid-state"
+
+        sess["oauth_state_created_at"] = auth.time.time()
 
     response = env.client.get("/callback?code=authorization-code&state=valid-state")
     assert response.status_code == 502

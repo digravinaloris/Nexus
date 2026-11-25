@@ -27,6 +27,7 @@ DASH_CLIENT_SECRET = os.environ["DISCORD_CLIENT_SECRET"]
 DASH_REDIRECT_URI = os.environ["DISCORD_REDIRECT_URI"]
 DISCORD_API_BASE = "https://discord.com/api"
 ADMINISTRATOR_PERM = 0x8
+OAUTH_STATE_MAX_AGE = 600
 GUILD_ID_RE = re.compile(r"^\d{17,20}$")  # valide un vrai snowflake Discord
 
 
@@ -127,6 +128,7 @@ def dash_guild_admin_required(f):
 def dash_login():
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
+    session["oauth_state_created_at"] = time.time()
     params = {
         "client_id": DASH_CLIENT_ID,
         "redirect_uri": DASH_REDIRECT_URI,
@@ -142,7 +144,15 @@ def dash_login():
 def dash_callback():
     state = request.args.get("state")
     expected_state = session.pop("oauth_state", None)
-    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
+    state_created_at = session.pop("oauth_state_created_at", None)
+    now = time.time()
+    state_is_fresh = (
+        not isinstance(state_created_at, bool)
+        and isinstance(state_created_at, (int, float))
+        and math.isfinite(state_created_at)
+        and -30 <= now - state_created_at <= OAUTH_STATE_MAX_AGE
+    )
+    if not state or not expected_state or not state_is_fresh or not secrets.compare_digest(state, expected_state):
         return jsonify({"error": "Invalid state"}), 403
 
     code = request.args.get("code")
