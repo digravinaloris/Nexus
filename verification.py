@@ -164,6 +164,7 @@ async def grant_verified(guild, user_id):
     """Donne Verified et retire Unverified. Retourne (ok, message d'erreur lisible par le membre)."""
     cfg = get_config(guild.id)
     verified_id, unverified_id = cfg.get("verified_role_id"), cfg.get("unverified_role_id")
+    autorole_id = cfg.get("verification_autorole_id")
     if not verified_id:
         return False, "Verification isn't configured on this server. Please contact a moderator."
     member = guild.get_member(int(user_id))
@@ -181,6 +182,13 @@ async def grant_verified(guild, user_id):
             await member.remove_roles(unverified_role, reason="Verified (Cloudflare Turnstile)")
         if verified_role not in member.roles:
             await member.add_roles(verified_role, reason="Verified (Cloudflare Turnstile)")
+        extra_role = guild.get_role(int(autorole_id)) if autorole_id else None
+        if extra_role is not None and extra_role != verified_role and extra_role not in member.roles:
+            try:
+                await member.add_roles(extra_role, reason="Extra role after verification")
+            except discord.HTTPException as e:
+                log_json("error", "verification_autorole_failed", guild_id=guild.id, user_id=user_id, role_id=extra_role.id, error=repr(e))
+
     except discord.HTTPException as e:
         log_json("error", "verification_role_update_failed", guild_id=guild.id, user_id=user_id, error=repr(e))
         return False, "I couldn't update your roles. Please contact a moderator."

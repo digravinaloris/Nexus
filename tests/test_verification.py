@@ -162,11 +162,12 @@ class VGuild:
         self.id = GID
         self.name = "Test Guild"
         self.verified, self.unverified = VRole(900), VRole(901)
+        self.autorole = VRole(902)
         self.member = VMember(7, [self.unverified])
         self.fetchable = None
 
     def get_role(self, rid):
-        return {900: self.verified, 901: self.unverified}.get(rid)
+        return {900: self.verified, 901: self.unverified, 902: self.autorole}.get(rid)
 
     def get_member(self, uid):
         return self.member if uid == 7 else None
@@ -238,6 +239,15 @@ def test_cloudflare_outage_is_not_the_members_fault(vguild, keys, monkeypatch):
     assert resp.status_code == 503 and "unreachable" in resp.get_data(as_text=True)
     assert vguild.col.verification_challenges.find_one({"token": token})["attempts"] == 0
     assert vguild.vguild.member.calls == []  # échoue fermé
+
+
+def test_optional_autorole_is_added_after_verification(vguild):
+    from config_store import update_config
+    update_config(GID, "verification_autorole_id", 902)
+    result = asyncio.run(verification.grant_verified(vguild.vguild, 7))
+    assert result == (True, None)
+    assert vguild.vguild.member.calls == [("remove", 901), ("add", 900), ("add", 902)]
+    assert vguild.vguild.autorole in vguild.vguild.member.roles
 
 
 def test_successful_check_grants_roles_audits_and_burns_the_link(vguild, keys, monkeypatch):
