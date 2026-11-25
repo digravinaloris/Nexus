@@ -43,6 +43,7 @@ def get_config(guild_id):
             "welcome_banner_enabled": False,
             "verification_enabled": False,
             "verified_role_id": None,
+            "verification_autorole_id": None,
             "unverified_role_id": None,
             "quarantine_enabled": False,
             "quarantine_role_id": None,
