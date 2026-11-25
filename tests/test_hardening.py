@@ -20,7 +20,10 @@ EVIL = [
 @pytest.mark.parametrize("path", ["/dashboard/lang/fr", "/dashboard/theme/light"])
 @pytest.mark.parametrize("nxt", EVIL)
 def test_next_param_never_redirects_off_site(nexus, path, nxt):
-    resp = nexus.api.test_client().get(path, query_string={"next": nxt})
+    client = nexus.api.test_client()
+    with client.session_transaction() as sess:
+        sess["csrf_token"] = "test-csrf-token"
+    resp = client.post(path, query_string={"next": nxt}, data={"csrf_token": "test-csrf-token"})
     assert resp.status_code == 302
     location = resp.headers["Location"]
     assert location.endswith("/dashboard") and "evil" not in location and "javascript" not in location
@@ -30,9 +33,9 @@ def test_next_param_never_redirects_off_site(nexus, path, nxt):
 def test_next_param_keeps_working_for_site_paths(nexus, path):
     # Les templates passent next=request.path (ex: /dashboard/123/settings)
     for nxt in ("/status", "/dashboard/123456789012345678/settings", "/dashboard?x=1"):
-        resp = nexus.api.test_client().get(path, query_string={"next": nxt})
+        resp = client.post(path, query_string={"next": nxt}, data={"csrf_token": "test-csrf-token"})
         assert resp.status_code == 302 and resp.headers["Location"].endswith(nxt)
-    resp = nexus.api.test_client().get(path)  # sans next -> dashboard
+    resp = client.post(path, data={"csrf_token": "test-csrf-token"})  # sans next -> dashboard
     assert resp.headers["Location"].endswith("/dashboard")
 
 
