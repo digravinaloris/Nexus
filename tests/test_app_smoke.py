@@ -318,6 +318,14 @@ def test_ticket_topic_status_reads_closed_and_open(nexus):
         "nexus-ticket|opener:123|panel:abc|status:open"
     )
 
+def test_ticket_reopen_uses_member_guild_permissions(nexus):
+    import inspect
+
+    source = inspect.getsource(nexus.config_ticket_reopen.callback)
+    assert "interaction.user.guild_permissions.manage_channels" in source
+    assert "interaction.guild_permissions.manage_channels" not in source
+
+
 def test_ticket_assignment_commands_are_registered(nexus):
     ticket_group = next(c for c in nexus.bot.tree.get_commands() if c.name == "ticket")
     assert {"assign", "unassign"} <= {command.name for command in ticket_group.commands}

@@ -2415,7 +2415,7 @@ async def config_ticket_reopen(interaction: discord.Interaction):
     panel = _find_ticket_panel(cfg, panel_id)
     support_role_id = (panel or {}).get("support_role_id") or topic_support_role_id or cfg.get("ticket_support_role_id")
     support_role = interaction.guild.get_role(int(support_role_id or 0))
-    if not (interaction.guild_permissions.manage_channels or (support_role and support_role in interaction.user.roles)):
+    if not (interaction.user.guild_permissions.manage_channels or (support_role and support_role in interaction.user.roles)):
         await interaction.response.send_message("Only ticket support staff or server staff can reopen tickets.", ephemeral=True)
         return
     category_id = (panel or {}).get("category_id") or cfg.get("ticket_category_id")
