@@ -571,3 +571,22 @@ def test_guild_api_key_uses_constant_time_comparison(env, monkeypatch):
     response = env.client.get(url("/features"), headers={"X-API-Key": "guild-key"})
     assert response.status_code == 200
     assert ("guild-key", "guild-key") in calls
+
+
+
+def test_guild_key_fallback_uses_constant_time_comparison(env, monkeypatch):
+    import web.rest_api as rest_module
+    from config_store import update_config
+
+    update_config(GUILD, "api_key", "guild-key")
+    original = rest_module.secrets.compare_digest
+    calls = []
+
+    def tracked(provided, expected):
+        calls.append((provided, expected))
+        return original(provided, expected)
+
+    monkeypatch.setattr(rest_module.secrets, "compare_digest", tracked)
+    response = env.client.get("/api/guilds", headers={"X-API-Key": "guild-key"})
+    assert response.status_code == 200
+    assert ("guild-key", "guild-key") in calls
