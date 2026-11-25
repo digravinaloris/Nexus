@@ -81,6 +81,23 @@ def test_min_account_age_blocks_new_accounts_at_the_button(vguild, keys):
     assert press_verify(vguild)["view"] is not None  # 0 = aucune limite
 
 
+def test_min_account_age_also_blocks_one_click_method(vguild):
+    from config_store import update_config
+    update_config(GID, "verification_method", "button")
+    update_config(GID, "verification_min_account_days", 5)
+    member = vguild.vguild.member
+    member.created_at = now() - datetime.timedelta(days=2)
+    blocked = press_verify(vguild)
+    assert "too new" in blocked["text"] and "3 day(s)" in blocked["text"]
+    assert blocked["view"] is None and member.calls == []  # aucun rôle accordé en bypass
+
+    member.created_at = now() - datetime.timedelta(days=10)
+    allowed = press_verify(vguild)
+    assert "You're verified" in allowed["text"]
+    assert member.calls == [("remove", 901), ("add", 900)]
+
+
+
 def test_account_days_left_math():
     user = types.SimpleNamespace(created_at=now() - datetime.timedelta(days=2, hours=1))
     assert verification.account_days_left(user, 5) == 3
