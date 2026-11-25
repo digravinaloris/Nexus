@@ -173,6 +173,7 @@ def test_callback_success_stores_session_and_redirects(env, monkeypatch):
     calls = _fake_requests(monkeypatch, user={"id": "12345678901234567", "username": "bob"})
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "s"
+        sess["oauth_state_created_at"] = datetime.datetime.now(datetime.timezone.utc).timestamp()
     resp = env.client.get("/callback?state=s&code=c")
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/dashboard")
     with env.client.session_transaction() as sess:
