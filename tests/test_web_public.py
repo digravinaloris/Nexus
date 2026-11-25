@@ -200,6 +200,7 @@ def test_dashboard_guards(env, monkeypatch):
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
         sess["access_token"] = "AT"
+        sess["token_expires_at"] = 4102444800
         sess["dash_user"] = {"id": "42", "username": "bob"}
     # identifiant de serveur invalide -> 400
     assert env.client.get("/dashboard/12/cases").status_code == 400
@@ -216,6 +217,7 @@ def test_dashboard_guard_admin_but_bot_absent_or_not_ready(env, monkeypatch):
     _fake_requests(monkeypatch, guilds=[{"id": gid, "permissions": "8"}])
     with env.client.session_transaction() as sess:
         sess["access_token"] = "AT"
+        sess["token_expires_at"] = 4102444800
     env.ready = False
     resp = env.client.get(f"/dashboard/{gid}/cases")
     assert resp.status_code == 403 and resp.get_json() == {"error": "Bot not present on this server"}
@@ -238,6 +240,7 @@ def test_dashboard_guard_discord_401_forces_new_login(env, monkeypatch):
     monkeypatch.setattr(requests_module, "get", lambda *a, **k: R())
     with env.client.session_transaction() as sess:
         sess["access_token"] = "AT"
+        sess["token_expires_at"] = 4102444800
     resp = env.client.get(f"/dashboard/{'1' * 18}/cases")
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
@@ -251,6 +254,7 @@ def test_dashboard_page_renders_for_admin(env, monkeypatch):
     _fake_requests(monkeypatch, guilds=[{"id": gid, "permissions": "8"}])
     with env.client.session_transaction() as sess:
         sess["access_token"] = "AT"
+        sess["token_expires_at"] = 4102444800
         sess["dash_user"] = {"id": "42", "username": "bob"}
     from sanctions_store import log_sanction
     log_sanction(int(gid), 10, "ban", "spam-reason-xyz", "mobile_app")
