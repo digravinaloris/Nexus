@@ -1,3 +1,4 @@
+import pytest
 from urllib.parse import parse_qs, urlparse
 
 import os
@@ -122,6 +123,21 @@ def test_callback_rejects_missing_or_invalid_token_expiration(env, monkeypatch):
 
     response = env.client.get("/callback?code=authorization-code&state=valid-state")
     assert response.status_code == 502
+    with env.client.session_transaction() as sess:
+        assert "access_token" not in sess
+        assert "token_expires_at" not in sess
+
+
+@pytest.mark.parametrize("expires_at", [None, "never", True, float("nan"), float("inf"), 0])
+def test_dashboard_rejects_missing_or_invalid_session_expiry(env, expires_at):
+    with env.client.session_transaction() as sess:
+        sess["access_token"] = "must-not-authenticate"
+        if expires_at is not None:
+            sess["token_expires_at"] = expires_at
+
+    response = env.client.get("/dashboard/111/calendar")
+    assert response.status_code in (301, 302)
+    assert response.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
         assert "access_token" not in sess
         assert "token_expires_at" not in sess
