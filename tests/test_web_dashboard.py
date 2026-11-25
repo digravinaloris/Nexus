@@ -77,7 +77,7 @@ def dash(env, monkeypatch):
             sess["access_token"] = "AT"
             sess["token_expires_at"] = 4102444800
             sess["dash_user"] = {"id": user_id, "username": name}
-            sess["csrf_token"] = "test-csrf-token-for-dashboard"
+            sess["csrf_token"] = "csrf-test-token-012345678901234567890123456789"
 
     env.login = login
     env.url = lambda path="": f"/dashboard/{GID}{path}"
@@ -111,19 +111,28 @@ def flashes(client):
 def test_lang_and_theme_switch(env):
     c = env.client
     with c.session_transaction() as sess:
-        sess["csrf_token"] = "test-csrf-token"
-    resp = c.post("/dashboard/lang/fr?next=/status", data={"csrf_token": "test-csrf-token"})
+        sess["csrf_token"] = "csrf-test-token-012345678901234567890123456789"
+    resp = c.post("/dashboard/lang/fr?next=/status", data={"csrf_token": "csrf-test-token-012345678901234567890123456789"})
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/status")
     with c.session_transaction() as sess:
         assert sess["lang"] == "fr"
-    c.post("/dashboard/lang/zz", data={"csrf_token": "test-csrf-token"})  # langue inconnue : ignorée
+    c.post("/dashboard/lang/zz", data={"csrf_token": "csrf-test-token-012345678901234567890123456789"})  # langue inconnue : ignorée
     with c.session_transaction() as sess:
         assert sess["lang"] == "fr"
-    resp = c.post("/dashboard/theme/light", data={"csrf_token": "test-csrf-token"})
+    resp = c.post("/dashboard/theme/light", data={"csrf_token": "csrf-test-token-012345678901234567890123456789"})
     assert resp.headers["Location"].endswith("/dashboard")  # sans ?next -> dashboard
-    c.post("/dashboard/theme/pink", data={"csrf_token": "test-csrf-token"})
+    c.post("/dashboard/theme/pink", data={"csrf_token": "csrf-test-token-012345678901234567890123456789"})
     with c.session_transaction() as sess:
         assert sess["theme"] == "light"
+
+
+def test_dashboard_mutations_reject_weak_session_csrf_token(dash):
+    with dash.client.session_transaction() as sess:
+        sess["csrf_token"] = "short-token"
+    response = dash.raw_post(dash.url("/features"), data={
+        "feat__antinuke": "on", "csrf_token": "short-token"
+    })
+    assert response.status_code == 400
 
 
 def test_dashboard_mutations_reject_missing_or_invalid_csrf_tokens(dash):
