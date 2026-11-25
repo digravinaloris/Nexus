@@ -27,6 +27,7 @@ def validate_csrf_request():
     if (
         not isinstance(expected, str)
         or not isinstance(supplied, str)
+        or len(expected) < 32
         or not hmac.compare_digest(expected, supplied)
     ):
         abort(400, description="Invalid or missing CSRF token")
