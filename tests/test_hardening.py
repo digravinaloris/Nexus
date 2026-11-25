@@ -82,3 +82,11 @@ def test_baseline_security_headers_are_present(nexus):
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
     assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
+
+
+def test_baseline_security_headers_include_safe_csp_restrictions(nexus):
+    response = nexus.api.test_client().get("/status")
+    csp = response.headers["Content-Security-Policy"]
+    assert "base-uri 'self'" in csp
+    assert "object-src 'none'" in csp
+    assert "frame-ancestors 'none'" in csp
