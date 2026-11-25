@@ -34,6 +34,15 @@ def test_callback_rejects_invalid_state_without_calling_discord(env, monkeypatch
     assert called == []
 
 
+
+def test_callback_rejects_missing_state_without_calling_discord(env, monkeypatch):
+    called = []
+    monkeypatch.setattr(auth.requests, "post", lambda *a, **k: called.append(True))
+    response = env.client.get("/callback?code=authorization-code")
+    assert response.status_code == 403
+    assert called == []
+
+
 def test_callback_does_not_create_session_when_identity_lookup_fails(env, monkeypatch):
     class FakeResponse:
         status_code = 200
