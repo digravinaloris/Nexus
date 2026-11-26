@@ -405,3 +405,28 @@ def test_logout_rejects_malformed_csrf_strings_without_500(env, token, expected)
 
     response = env.client.post("/logout", data={"csrf_token": token})
     assert response.status_code == 403
+
+
+@pytest.mark.parametrize("refresh_token", ["bad token", "bad\\nvalue", "x" * 4097, 123])
+def test_callback_rejects_malformed_refresh_tokens_without_identity_lookup(env, monkeypatch, refresh_token):
+    class TokenResponse:
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "access", "refresh_token": refresh_token, "expires_in": 3600}
+
+    calls = []
+    monkeypatch.setattr(auth.requests, "post", lambda *a, **k: TokenResponse())
+    monkeypatch.setattr(auth.requests, "get", lambda *a, **k: calls.append(True))
+
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = "valid-state"
+        sess["oauth_code_verifier"] = "A" * 43
+        sess["oauth_state_created_at"] = auth.time.time()
+
+    response = env.client.get("/callback?code=authorization-code&state=valid-state")
+    assert response.status_code == 502
+    assert calls == []
+    with env.client.session_transaction() as sess:
+        assert "refresh_token" not in sess
+        assert "access_token" not in sess

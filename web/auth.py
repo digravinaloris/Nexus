@@ -220,6 +220,15 @@ def dash_callback():
         ):
             return jsonify({"error": "Invalid token response"}), 502
 
+        refresh_token = token_data.get("refresh_token")
+        if refresh_token is not None and (
+            not isinstance(refresh_token, str)
+            or not refresh_token
+            or len(refresh_token) > 4096
+            or re.fullmatch(r"[A-Za-z0-9._~+/=-]+", refresh_token) is None
+        ):
+            return jsonify({"error": "Invalid token response"}), 502
+
         expires_in = token_data.get("expires_in")
         if (
             isinstance(expires_in, bool)
