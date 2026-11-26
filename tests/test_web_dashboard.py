@@ -165,6 +165,14 @@ def test_guild_page_uses_overview_snapshot_dtos(dash, monkeypatch):
     import web.dashboard as dashboard_module
 
     class OverviewService:
+        def api_config_snapshot(self, guild_id):
+            return __import__("config_store").get_config(guild_id)
+
+        def api_update_config(self, guild_id, updates):
+            store = __import__("config_store")
+            for key, value in updates.items():
+                store.update_config(guild_id, key, value)
+
         def dashboard_overview_snapshot(self, guild_id, ticket_category_id=None):
             assert guild_id == GID and ticket_category_id is None
             return {
@@ -196,6 +204,14 @@ def test_guild_page_post_validates_roles_and_channels_from_snapshot(dash, monkey
     import web.dashboard as dashboard_module
 
     class OverviewService:
+        def api_config_snapshot(self, guild_id):
+            return __import__("config_store").get_config(guild_id)
+
+        def api_update_config(self, guild_id, updates):
+            store = __import__("config_store")
+            for key, value in updates.items():
+                store.update_config(guild_id, key, value)
+
         def dashboard_overview_snapshot(self, guild_id, ticket_category_id=None):
             return {
                 "id": GID, "name": "DTO Guild", "owner_id": OWNER_ID,
@@ -390,6 +406,14 @@ def test_calendar_page_uses_bot_service_snapshot_for_guild_data(dash, monkeypatc
     import web.dashboard as dashboard_module
 
     class SnapshotService:
+        def api_config_snapshot(self, guild_id):
+            return __import__("config_store").get_config(guild_id)
+
+        def api_update_config(self, guild_id, updates):
+            store = __import__("config_store")
+            for key, value in updates.items():
+                store.update_config(guild_id, key, value)
+
         def dashboard_settings_snapshot(self, guild_id):
             assert guild_id == GID
             return {
@@ -415,6 +439,14 @@ def test_calendar_manager_role_update_uses_snapshot_and_owner_service(dash, monk
     import web.dashboard as dashboard_module
 
     class SnapshotService:
+        def api_config_snapshot(self, guild_id):
+            return __import__("config_store").get_config(guild_id)
+
+        def api_update_config(self, guild_id, updates):
+            store = __import__("config_store")
+            for key, value in updates.items():
+                store.update_config(guild_id, key, value)
+
         def dashboard_settings_snapshot(self, guild_id):
             return {
                 "id": GID, "name": "Snapshot Guild", "owner_id": OWNER_ID,
@@ -703,6 +735,14 @@ def test_read_only_dashboard_pages_use_guild_name_service(dash, monkeypatch):
     import web.dashboard as dashboard_module
 
     class GuildNameService:
+        def api_config_snapshot(self, guild_id):
+            return __import__("config_store").get_config(guild_id)
+
+        def api_update_config(self, guild_id, updates):
+            store = __import__("config_store")
+            for key, value in updates.items():
+                store.update_config(guild_id, key, value)
+
         def guild_name(self, guild_id):
             assert guild_id == GID
             return "Service Guild Name"
@@ -718,6 +758,14 @@ def test_feature_and_template_marketplace_pages_use_guild_name_service(dash, mon
     import web.dashboard as dashboard_module
 
     class GuildNameService:
+        def api_config_snapshot(self, guild_id):
+            return __import__("config_store").get_config(guild_id)
+
+        def api_update_config(self, guild_id, updates):
+            store = __import__("config_store")
+            for key, value in updates.items():
+                store.update_config(guild_id, key, value)
+
         def guild_name(self, guild_id):
             assert guild_id == GID
             return "Service Guild Name"
