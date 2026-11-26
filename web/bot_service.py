@@ -12,12 +12,12 @@ import time
 
 import core
 import discord
-from config_store import get_config, update_config
+from config_store import add_command_role, get_config, remove_command_role, update_config
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
 from bridge import run_coroutine
 from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
-from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_sanction_stats, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns
+from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns
 import utils
 from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
 from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
@@ -143,6 +143,22 @@ class BotService:
 
     def dashboard_overview_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         """Return serializable data needed by the main dashboard page."""
+        raise NotImplementedError
+
+    def dashboard_add_command_role(self, guild_id: str, command: str, role_id: int) -> None:
+        """Add one command permission role."""
+        raise NotImplementedError
+
+    def dashboard_remove_command_role(self, guild_id: str, command: str, role_id: int) -> None:
+        """Remove one command permission role."""
+        raise NotImplementedError
+
+    def dashboard_sanction_stats_snapshot(self, guild_id: str, days: int = 30) -> List[object]:
+        """Return the dashboard sanction activity series."""
+        raise NotImplementedError
+
+    def dashboard_sanction_types_snapshot(self, guild_id: str) -> List[str]:
+        """Return the sanction types currently present for one guild."""
         raise NotImplementedError
 
     def api_handle_github_release(self, delivery_id: str, release: Dict[str, object]) -> str:
@@ -481,6 +497,18 @@ class InProcessBotService(BotService):
 
     def api_resolve_appeal(self, guild_id: str, token: str, status: str) -> bool:
         return resolve_sanction_appeal(guild_id, token, status)
+
+    def dashboard_add_command_role(self, guild_id: str, command: str, role_id: int) -> None:
+        add_command_role(guild_id, command, role_id)
+
+    def dashboard_remove_command_role(self, guild_id: str, command: str, role_id: int) -> None:
+        remove_command_role(guild_id, command, role_id)
+
+    def dashboard_sanction_stats_snapshot(self, guild_id: str, days: int = 30) -> List[object]:
+        return get_sanction_stats(guild_id, days=days)
+
+    def dashboard_sanction_types_snapshot(self, guild_id: str) -> List[str]:
+        return get_sanction_types(guild_id)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
