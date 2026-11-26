@@ -348,17 +348,22 @@ def dash_calendar_page(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_settings_page(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
+    if snapshot is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
     cfg = get_config(guild_id)
     values = {key: cfg.get(key, default) for key, default in SETTINGS_DEFAULTS.items()}
+    user_id = (session.get("dash_user") or {}).get("id")
     return render_template(
-        "settings.html", guild=guild, cfg=cfg, values=values,
-        text_channels=guild.text_channels, voice_channels=guild.voice_channels,
-        roles=[r for r in guild.roles if not r.is_default()],
+        "settings.html", guild=snapshot, cfg=cfg, values=values,
+        text_channels=snapshot["text_channels"],
+        voice_channels=snapshot["voice_channels"],
+        roles=snapshot["roles"],
         banned_words_text="\n".join(cfg.get("banned_words", [])),
         banned_domains_text="\n".join(cfg.get("banned_domains", [])),
         languages=sorted(TRANSLATIONS.keys()),
-        is_owner=dash_is_owner(guild), user=session.get("dash_user"),
+        is_owner=str(snapshot["owner_id"]) == str(user_id),
+        user=session.get("dash_user"),
     )
 
 

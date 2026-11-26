@@ -1251,3 +1251,59 @@ def test_api_log_dashboard_action_uses_guild_runtime(monkeypatch):
 def test_api_log_dashboard_action_fails_closed_when_runtime_missing(monkeypatch):
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_log_dashboard_action("123", "Admin", "Action") == (False, "Bot not ready")
+
+
+def test_dashboard_settings_snapshot_serializes_guild_data(monkeypatch):
+    class Channel:
+        def __init__(self, channel_id, name):
+            self.id = channel_id
+            self.name = name
+
+    class Role(Channel):
+        def __init__(self, role_id, name, default=False):
+            super().__init__(role_id, name)
+            self.default = default
+
+        def is_default(self):
+            return self.default
+
+    class Guild:
+        id = 123
+        name = "Test server"
+        owner_id = 456
+        text_channels = [Channel(10, "general")]
+        voice_channels = [Channel(11, "voice")]
+        roles = [Role(1, "@everyone", True), Role(2, "Moderator")]
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, guild_id):
+            return Guild() if guild_id == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert InProcessBotService().dashboard_settings_snapshot("123") == {
+        "id": "123",
+        "name": "Test server",
+        "owner_id": "456",
+        "text_channels": [{"id": "10", "name": "general"}],
+        "voice_channels": [{"id": "11", "name": "voice"}],
+        "roles": [{"id": "2", "name": "Moderator"}],
+    }
+
+
+def test_dashboard_settings_snapshot_fails_closed_when_guild_unavailable(monkeypatch):
+    service = InProcessBotService()
+    monkeypatch.setattr(core, "bot", None)
+    assert service.dashboard_settings_snapshot("123") is None
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, guild_id):
+            return None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert service.dashboard_settings_snapshot("123") is None
