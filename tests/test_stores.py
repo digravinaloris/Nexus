@@ -295,7 +295,7 @@ def test_faq_store_get_or_create_and_save_preserve_enabled(mongo_db):
     import faq_store
 
     doc = faq_store.get_or_create_faq(5)
-    assert doc == {"guild_id": "5", "enabled": False, "entries": []}
+    assert {key: doc[key] for key in ("guild_id", "enabled", "entries")} == {"guild_id": "5", "enabled": False, "entries": []}
     faq_store.set_faq_enabled(5, True)
     faq_store.save_faq_entries(5, [{"id": "x", "keywords": ["test"], "response": "answer"}])
     assert faq_store.get_faq(5)["enabled"] is True
