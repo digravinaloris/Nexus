@@ -13,7 +13,6 @@ from functools import wraps
 from flask import Blueprint, g, jsonify, request
 
 from audit import get_audit_log, record_audit
-from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from web.bot_service import get_bot_service
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from features import FEATURE_TOGGLES
@@ -581,9 +580,8 @@ def guild_feature_toggle_route(guild_id, feature_key):
 @bp.route('/api/guilds/<guild_id>/faq', methods=['GET'])
 @require_api_key
 def guild_faq_list_route(guild_id):
-    """Même collection Mongo que cogs/faq.py -- l'app lit/écrit directement
-    dedans, pas besoin de passer par le bot (pas d'accès discord.py requis ici)."""
-    doc = get_faq(guild_id)
+    """Return FAQ data through the bot service without exposing persistence details."""
+    doc = get_bot_service().api_faq_snapshot(guild_id)
     if not doc:
         return jsonify({"enabled": False, "entries": []})
     return jsonify({"enabled": bool(doc.get("enabled")), "entries": doc.get("entries", [])})
@@ -612,21 +610,21 @@ def guild_faq_add_route(guild_id):
     ):
         return jsonify({"error": "keywords must be a list of 1 to 25 strings (max 100 characters each) and response must be 1 to 2000 characters"}), 400
 
-    existing_doc = get_faq(guild_id) or {"guild_id": str(guild_id), "enabled": False, "entries": []}
+    existing_doc = get_bot_service().api_faq_snapshot(guild_id) or {"guild_id": str(guild_id), "enabled": False, "entries": []}
     existing_ids = {e["id"] for e in existing_doc["entries"]}
     entry_id = secrets.token_hex(16)
     while entry_id in existing_ids:
         entry_id = secrets.token_hex(16)
-    add_faq_entry(guild_id, {"id": entry_id, "keywords": keywords, "response": response_text})
+    get_bot_service().api_faq_add_entry(guild_id, {"id": entry_id, "keywords": keywords, "response": response_text})
     return jsonify({"success": True, "id": entry_id})
 
 
 @bp.route('/api/guilds/<guild_id>/faq/<entry_id>', methods=['DELETE'])
 @require_api_key
 def guild_faq_remove_route(guild_id, entry_id):
-    if not get_faq(guild_id):
+    if not get_bot_service().api_faq_snapshot(guild_id):
         return jsonify({"error": "No FAQ entries for this server"}), 404
-    if not remove_faq_entry(guild_id, entry_id):
+    if not get_bot_service().api_faq_remove_entry(guild_id, entry_id):
         return jsonify({"error": "Entry not found"}), 404
     return jsonify({"success": True})
 
@@ -640,5 +638,5 @@ def guild_faq_toggle_route(guild_id):
     enabled = data.get("enabled", True)
     if not isinstance(enabled, bool):
         return jsonify({"error": "enabled must be a boolean"}), 400
-    set_faq_enabled(guild_id, enabled)
+    get_bot_service().api_faq_set_enabled(guild_id, enabled)
     return jsonify({"success": True, "enabled": enabled})
