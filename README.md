@@ -110,6 +110,8 @@ The bot owner can configure one announcement channel on their own server with `/
 
 **Instant webhook setup (optional):** Set `GITHUB_RELEASE_WEBHOOK_SECRET` in the bot host's environment to a long, random secret. In the GitHub repository, open **Settings → Webhooks → Add webhook**, set the Payload URL to `https://YOUR_NEXUS_HOST/webhooks/github/releases`, Content type to `application/json`, and enter the same secret. Choose **Let me select individual events → Releases** and save the webhook. Configure the announcement channel first with `/updates channel`. Nexus verifies the signature and ignores drafts, prereleases, unrelated repositories, and duplicate delivery IDs.
 
+If delivery fails, see [GitHub release webhook troubleshooting](docs/github-release-webhook-troubleshooting.md).
+
 ### Invites, Backups & Data
 | Command | Access | Description |
 |---|---|---|
