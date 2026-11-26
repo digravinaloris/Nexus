@@ -526,3 +526,24 @@ def test_dashboard_mutations_reject_malformed_csrf_strings_without_500(dash, ses
         data={"csrf_token": supplied_token},
     )
     assert response.status_code == 400
+
+
+
+def test_dashboard_home_uses_bot_service_for_available_guild_ids(dash, monkeypatch):
+    from web import dashboard
+
+    dash.discord_guilds.append({
+        "id": "999999999999999999", "name": "Not In Bot", "permissions": "8"
+    })
+
+    class FakeBotService:
+        def available_guild_ids(self, candidate_ids):
+            assert candidate_ids == [GID, "999999999999999999"]
+            return [GID]
+
+    monkeypatch.setattr(dashboard, "get_bot_service", lambda: FakeBotService())
+    response = dash.client.get("/dashboard")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Managed Server" in body
+    assert "Not In Bot" not in body
