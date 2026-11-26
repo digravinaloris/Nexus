@@ -14,6 +14,7 @@ import core
 import discord
 import calendar_store
 from killswitch_store import get_killswitch_token, increment_killswitch_attempts, mark_killswitch_token_used
+from verification import get_valid_challenge, mark_used, record_failed_attempt
 from config_store import add_command_role, get_config, get_global_lock, remove_command_role, set_global_lock, update_config
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
@@ -134,6 +135,18 @@ class BotService:
 
     def public_submit_ban_appeal(self, token: str, appeal_text: str, submitted_at) -> bool:
         """Atomically submit a public ban appeal."""
+        raise NotImplementedError
+
+    def verify_get_valid_challenge(self, token: str) -> Optional[Dict[str, object]]:
+        """Return a live, unused verification challenge."""
+        raise NotImplementedError
+
+    def verify_record_failed_attempt(self, token: str) -> int:
+        """Atomically count one failed Turnstile verification."""
+        raise NotImplementedError
+
+    def verify_mark_used(self, token: str) -> bool:
+        """Atomically consume one verification challenge."""
         raise NotImplementedError
 
     def api_claim_appeal(self, guild_id: str, token: str) -> bool:
@@ -589,6 +602,15 @@ class InProcessBotService(BotService):
 
     def public_submit_ban_appeal(self, token: str, appeal_text: str, submitted_at) -> bool:
         return submit_ban_appeal(token, appeal_text, submitted_at)
+
+    def verify_get_valid_challenge(self, token: str) -> Optional[Dict[str, object]]:
+        return get_valid_challenge(token)
+
+    def verify_record_failed_attempt(self, token: str) -> int:
+        return record_failed_attempt(token)
+
+    def verify_mark_used(self, token: str) -> bool:
+        return mark_used(token)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
