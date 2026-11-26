@@ -12,7 +12,6 @@ from flask import jsonify, render_template, request, send_from_directory
 import pyotp
 
 from audit import record_audit
-from bridge import run_coroutine
 from config_store import get_global_lock, set_global_lock
 from core import col
 from sanctions_store import get_ban_appeal
