@@ -658,13 +658,15 @@ def dash_guild_page(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_automod(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    roles = get_bot_service().dashboard_roles_snapshot(guild_id)
+    if roles is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
     submitted = request.form.getlist("allowed_roles")
-    valid_role_ids = {r.id for r in guild.roles}
+    valid_role_ids = {int(role["id"]) for role in roles}
     # ne garde que des ids qui correspondent à de vrais rôles de CE serveur
     clean = [int(rid) for rid in submitted if rid.isdigit() and int(rid) in valid_role_ids]
     update_config(guild_id, "allowed_roles", clean)
-    role_names = ", ".join(f"@{r.name}" for r in guild.roles if r.id in clean) or "none"
+    role_names = ", ".join(f"@{role['name']}" for role in roles if int(role["id"]) in clean) or "none"
     dash_log_action(guild_id, "Updated anti-raid exemptions", f"exempt roles: {role_names}")
     flash("Anti-raid exemptions updated." if current_lang() == "en" else "Exemptions anti-raid mises à jour.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
@@ -675,21 +677,24 @@ def dash_automod(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_add(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    role_list = get_bot_service().dashboard_roles_snapshot(guild_id)
+    if role_list is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
+    roles = {int(role["id"]): role for role in role_list}
     commands = request.form.getlist("commands")
     role_id = request.form.get("role_id", "")
     valid_commands = [c for c in commands if c in MODERATION_COMMANDS]
     if valid_commands and role_id.isdigit():
-        role = guild.get_role(int(role_id))
+        role = roles.get(int(role_id))
         if role is not None:
             for cmd in valid_commands:
-                add_command_role(guild_id, cmd, role.id)
+                add_command_role(guild_id, cmd, int(role["id"]))
             cmd_list = ", ".join(f"/{c}" for c in valid_commands)
-            dash_log_action(guild_id, "Added command permissions", f"@{role.name}: {cmd_list}")
+            dash_log_action(guild_id, "Added command permissions", f"@{role['name']}: {cmd_list}")
             if current_lang() == "en":
-                flash(f"{role.name} can now use {len(valid_commands)} command(s): {cmd_list}.")
+                flash(f"{role['name']} can now use {len(valid_commands)} command(s): {cmd_list}.")
             else:
-                flash(f"{role.name} peut maintenant utiliser {len(valid_commands)} commande(s) : {cmd_list}.")
+                flash(f"{role['name']} peut maintenant utiliser {len(valid_commands)} commande(s) : {cmd_list}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -698,12 +703,15 @@ def dash_permission_add(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_template(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    role_list = get_bot_service().dashboard_roles_snapshot(guild_id)
+    if role_list is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
+    roles = {int(role["id"]): role for role in role_list}
     template_id = request.form.get("template_id", "")
     role_id = request.form.get("role_id", "")
     if not role_id.isdigit():
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
-    role = guild.get_role(int(role_id))
+    role = roles.get(int(role_id))
     if role is None:
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -724,12 +732,12 @@ def dash_permission_template(guild_id):
 
     if commands_list:
         for cmd in commands_list:
-            add_command_role(guild_id, cmd, role.id)
-        dash_log_action(guild_id, "Applied permission template", f"template « {label} » → @{role.name}")
+            add_command_role(guild_id, cmd, int(role["id"]))
+        dash_log_action(guild_id, "Applied permission template", f"template « {label} » → @{role['name']}")
         if current_lang() == "en":
-            flash(f"Template « {label} » applied to {role.name} ({len(commands_list)} commands).")
+            flash(f"Template « {label} » applied to {role['name']} ({len(commands_list)} commands).")
         else:
-            flash(f"Modèle « {label} » appliqué à {role.name} ({len(commands_list)} commandes).")
+            flash(f"Modèle « {label} » appliqué à {role['name']} ({len(commands_list)} commandes).")
 
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -739,7 +747,10 @@ def dash_permission_template(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_remove(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    role_list = get_bot_service().dashboard_roles_snapshot(guild_id)
+    if role_list is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
+    roles = {int(role["id"]): role for role in role_list}
     command = request.form.get("command", "")
     role_id = request.form.get("role_id", "")
     # Pas de whitelist ici : la commande vient d'un chip déjà affiché depuis
@@ -749,8 +760,8 @@ def dash_permission_remove(guild_id):
     # commande hors de notre liste curatée).
     if command and role_id.isdigit():
         remove_command_role(guild_id, command, int(role_id))
-        role = guild.get_role(int(role_id)) if guild else None
-        dash_log_action(guild_id, "Removed command permission", f"/{command} for {'@' + role.name if role else role_id}")
+        role = roles.get(int(role_id))
+        dash_log_action(guild_id, "Removed command permission", f"/{command} for {'@' + role['name'] if role else role_id}")
         flash(f"Permission removed for /{command}." if current_lang() == "en" else f"Permission retirée pour /{command}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
