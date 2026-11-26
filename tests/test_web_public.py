@@ -408,3 +408,19 @@ def test_public_responses_include_baseline_security_headers(env):
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
     assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
+
+
+
+def test_status_page_renders_transport_neutral_snapshot(env, monkeypatch):
+    from web import public
+
+    class FakeBotService:
+        def public_status_snapshot(self):
+            return {"online": True, "guild_count": 8, "latency_ms": 42, "uptime": "2h 4m"}
+
+    monkeypatch.setattr(public, "get_bot_service", lambda: FakeBotService())
+    response = env.client.get("/status")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "All systems operational" in body
+    assert "42" in body and "2h 4m" in body
