@@ -414,7 +414,9 @@ def test_template_import_unknown_get_and_apply(dash):
     assert resp.status_code == 302 and resp.headers["Location"].endswith(f"/dashboard/{GID}/templates")
     _template(dash)
     resp = dash.client.get(dash.url("/templates/import/abc12345"))
-    assert resp.status_code == 200 and "My preset" in resp.get_data(as_text=True)
+    page = resp.get_data(as_text=True)
+    assert resp.status_code == 200 and "My preset" in page
+    assert "Mods" in page and "@everyone" not in page
     resp = dash.client.post(dash.url("/templates/import/abc12345"), data={"map__0": "10", "map__1": "9"})
     # noms triés : ["Ghost", "Mods"] -> Ghost -> 10, Mods -> 9
     assert resp.status_code == 302 and resp.headers["Location"].endswith(f"/dashboard/{GID}")

@@ -1,7 +1,7 @@
 {% extends "_dashboard.html" %}
 {% block page %}
 <div class="wrap">
-  <a class="back" href="{{ url_for('dash_template_marketplace', guild_id=guild.id) }}">&larr; Marketplace</a>
+  <a class="back" href="{{ url_for('dash_template_marketplace', guild_id=guild_id) }}">&larr; Marketplace</a>
   <div class="eyebrow">Import Template</div>
   <h1>{{ tpl.name }}</h1>
   <p class="lead">From <strong>{{ tpl.created_guild_name }}</strong>. The base config (feature toggles, automod, warn escalation) applies automatically. Map any role-based command permissions below before confirming.</p>

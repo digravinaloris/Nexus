@@ -462,7 +462,9 @@ def dash_template_marketplace(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_template_import(guild_id, code):
-    guild = core.bot.get_guild(int(guild_id))
+    guild = get_bot_service().dashboard_settings_snapshot(guild_id)
+    if guild is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
     doc = col.templates.find_one({"code": code.strip()})
     if not doc:
         flash("No template found with that code." if current_lang() == "en" else "Aucun template trouvé avec ce code.")
@@ -489,8 +491,8 @@ def dash_template_import(guild_id, code):
         flash("Template applied." if current_lang() == "en" else "Template appliqué.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
-    return render_template("template_import.html", guild=guild, tpl=doc, distinct_names=distinct_names,
-        roles=[r for r in guild.roles if not r.is_default()], user=session.get("dash_user"),
+    return render_template("template_import.html", guild_id=guild_id, tpl=doc, distinct_names=distinct_names,
+        roles=guild["roles"], user=session.get("dash_user"),
     )
 
 
