@@ -4,7 +4,7 @@ Nexus is a hobby project maintained by a single developer. This document explain
 
 ## Supported Versions
 
-There are no version tags — only the code currently deployed from the `main` branch is supported. If you find an issue in an older commit that has since been changed, please check `main` first; it may already be fixed.
+The latest stable GitHub release and the current `main` branch are supported. Security fixes are developed against `main` and included in a subsequent stable release. If you use an older release, update to the latest stable version before reporting an issue.
 
 ## Reporting a Vulnerability
 
@@ -40,6 +40,8 @@ This is a solo-maintained hobby project, not a company with a security team, so 
 This isn't a claim of being bulletproof — it's a list of what's actually implemented, so reports can focus on what might still be missing.
 
 **Authentication & sessions**
+- Dashboard Discord OAuth uses PKCE and validates callback parameters, authorization codes, refresh tokens, session state, and CSRF tokens before creating or changing an authenticated session.
+- OAuth and dashboard responses are marked `no-store` to prevent sensitive pages and one-time callback data from being cached.
 - Dashboard login uses Discord OAuth2 with a signed, single-use `state` parameter to prevent CSRF on the login flow
 - Session cookies are `Secure`, `HttpOnly`, and `SameSite=Lax`
 - Access tokens are held server-side in the session only, never exposed to the client or logged
@@ -50,6 +52,8 @@ This isn't a claim of being bulletproof — it's a list of what's actually imple
 - A server only appears on a user's dashboard if the bot is actually present there and the user is genuinely an Administrator of that server
 
 **Input validation**
+- Mobile REST routes reject malformed guild and user snowflake IDs before database lookups or Discord operations; mute durations, FAQ payloads, feature toggles, and pagination limits are validated server-side.
+- Audit CSV exports escape formula-like cell values before returning them to spreadsheet software.
 - Guild, channel, and role IDs submitted through any form are re-validated against the real objects of the *target* server before anything is written — a forged or cross-server ID is rejected rather than trusted
 - Command-permission changes are checked against a fixed list of real bot commands
 - Mongo writes use parameterized field updates (`$set`, `$addToSet`, `$pull`); user input is never interpolated directly into a query
