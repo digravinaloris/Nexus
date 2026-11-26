@@ -543,7 +543,21 @@ def test_features_list_and_toggle(env):
 def test_faq_crud_and_toggle(env):
     h = MASTER
     assert env.client.get(url("/faq"), headers=h).get_json() == {"enabled": False, "entries": []}
-    assert env.client.post(url("/faq"), json={"keywords": [" "], "response": "x"}, headers=h).status_code == 400
+    invalid_payloads = [
+        {"keywords": "rules", "response": "answer"},
+        {"keywords": ["rules", None], "response": "answer"},
+        {"keywords": [], "response": "answer"},
+        {"keywords": [" "], "response": "answer"},
+        {"keywords": ["x" * 101], "response": "answer"},
+        {"keywords": ["rules"], "response": 123},
+        {"keywords": ["rules"], "response": " "},
+        {"keywords": ["rules"], "response": "x" * 2001},
+        {"keywords": ["rules"] * 26, "response": "answer"},
+    ]
+    for payload in invalid_payloads:
+        response = env.client.post(url("/faq"), json=payload, headers=h)
+        assert response.status_code == 400
+    assert env.col.faq.count_documents({"guild_id": str(GUILD)}) == 0
     resp = env.client.post(url("/faq"), json={"keywords": [" rules ", "règles"], "response": " Read #rules "}, headers=h)
     entry_id = resp.get_json()["id"]
     assert len(entry_id) == 4
