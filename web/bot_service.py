@@ -5,7 +5,7 @@ Discord's Gateway client directly. The first adapter deliberately preserves the
 existing in-process deployment; a signed HTTP adapter can implement the same
 contract in a later migration step without changing route response shapes.
 """
-from typing import Dict
+from typing import Dict, List
 
 import core
 
@@ -20,9 +20,20 @@ class BotService:
         """Return bot readiness and guild presence without exposing Discord objects."""
         raise NotImplementedError
 
+    def available_guild_ids(self, candidate_ids: List[str]) -> List[str]:
+        """Return candidate guild IDs currently available to the connected bot."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
+
+    def available_guild_ids(self, candidate_ids: List[str]) -> List[str]:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return []
+        available = {str(guild.id) for guild in bot.guilds}
+        return [guild_id for guild_id in candidate_ids if guild_id in available]
 
     def guild_presence(self, guild_id: str) -> Dict[str, bool]:
         bot = core.bot

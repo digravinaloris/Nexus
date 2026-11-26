@@ -89,3 +89,26 @@ def test_guild_presence_fails_closed_when_bot_is_not_ready_or_uninitialized(monk
         "bot_ready": False,
         "guild_present": False,
     }
+
+
+def test_available_guild_ids_filters_candidates_to_connected_bot(monkeypatch):
+    class Guild:
+        def __init__(self, guild_id):
+            self.id = guild_id
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        guilds = [Guild(123), Guild(456)]
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert InProcessBotService().available_guild_ids(["456", "789", "123"]) == ["456", "123"]
+
+
+def test_available_guild_ids_returns_empty_when_bot_is_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False, guilds=[1, 2]))
+    assert InProcessBotService().available_guild_ids(["1", "2"]) == []
+
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().available_guild_ids(["1", "2"]) == []
