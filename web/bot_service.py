@@ -17,6 +17,7 @@ from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn,
 from sanctions_store import get_warns, log_sanction, set_warns
 import utils
 from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
+from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
 
 
 class BotService:
@@ -123,6 +124,14 @@ class BotService:
 
     def api_post_appeal_for_review(self, guild_id: str, appeal: Dict[str, object], appeal_text: str):
         """Forward a submitted appeal to its configured Discord review channel."""
+        raise NotImplementedError
+
+    def notify_owner_bruteforce(self, ip: str):
+        """Send the owner a best-effort alert for a kill-switch brute-force attempt."""
+        raise NotImplementedError
+
+    def notify_owner_killswitch(self, locked: bool):
+        """Notify the owner when the global kill-switch changes state."""
         raise NotImplementedError
 
 
@@ -464,6 +473,12 @@ class InProcessBotService(BotService):
             return False, "Guild not found"
         run_coroutine(post_appeal_for_review(guild, appeal, appeal_text))
         return True, None
+
+    def notify_owner_bruteforce(self, ip: str):
+        return run_coroutine(notify_owner_bruteforce(ip))
+
+    def notify_owner_killswitch(self, locked: bool):
+        return run_coroutine(notify_owner_killswitch(locked))
 
     def api_announce_calendar_event(self, guild_id: str, channel_id: str, event: Dict[str, object]):
         bot = core.bot
