@@ -65,6 +65,14 @@ class BotService:
         """Persist validated API config updates inside the bot service."""
         raise NotImplementedError
 
+    def dashboard_add_command_role(self, guild_id: str, command_name: str, role_id: int) -> None:
+        """Add a command permission role through the bot service."""
+        raise NotImplementedError
+
+    def dashboard_remove_command_role(self, guild_id: str, command_name: str, role_id: int) -> None:
+        """Remove a command permission role through the bot service."""
+        raise NotImplementedError
+
     def api_faq_snapshot(self, guild_id: str) -> Optional[Dict[str, object]]:
         """Return a guild FAQ document for the mobile API."""
         raise NotImplementedError
@@ -432,6 +440,12 @@ class InProcessBotService(BotService):
         else:
             locked_guilds.discard(int(guild_id))
         return True
+
+    def dashboard_add_command_role(self, guild_id: str, command_name: str, role_id: int) -> None:
+        add_command_role(guild_id, command_name, role_id)
+
+    def dashboard_remove_command_role(self, guild_id: str, command_name: str, role_id: int) -> None:
+        remove_command_role(guild_id, command_name, role_id)
 
     def api_config_snapshot(self, guild_id: str) -> Dict[str, object]:
         return get_config(guild_id)
