@@ -96,3 +96,27 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 - New contract, Worker compatibility, security, and end-to-end tests cover success and failure paths.
 - The final documentation includes a complete configuration matrix and a tested rollback procedure.
 - Production remains on the existing host until a separate, explicit deployment approval.
+
+
+## Progress checkpoint (2026-11-26)
+
+### Completed groundwork
+
+- [x] Migration architecture, compatibility inventory, and bot-service contract documented.
+- [x] In-process bot-service adapter and REST service boundary introduced.
+- [x] REST health, guild discovery, guild configuration, channel/role/member snapshots, and guild stats routed through the service.
+- [x] REST moderation actions (lock/unlock, broadcast, mute/unmute, ban/kick, warn/unwarn) routed through the service.
+- [x] Appeals action flow moved behind the service, including notification delivery.
+- [x] API-key guild discovery no longer reads Discord guild objects from REST authentication.
+- [x] REST API module no longer imports the Discord transport or legacy coroutine bridge.
+
+### Remaining major blockers
+
+- [ ] Move REST read-only data queries (warning list, sanction cases, appeal list, FAQ, audit) into dedicated service/store contracts. The warning/case/submitted-appeal query extraction is currently under review in PR #115.
+- [ ] Remove direct database dependencies from dashboard/public/verification routes where those operations must become remote-service contracts.
+- [ ] Replace remaining direct Discord runtime access in dashboard and web routes with explicit service methods.
+- [ ] Add a Worker-compatible transport/client and signed request implementation only after route contracts are stable.
+- [ ] Validate WSGI/Pyodide dependency compatibility and stateful features before attempting Pages/Worker parity.
+
+
+This checkpoint records code-level progress only; no Cloudflare resources, secrets, DNS, production deployment, or traffic cutover have been performed.
