@@ -33,6 +33,10 @@ class BotService:
         """Return candidate guild IDs currently available to the connected bot."""
         raise NotImplementedError
 
+    def api_guild_id_candidates(self) -> List[str]:
+        """Return the connected guild IDs as strings for API-key lookup."""
+        raise NotImplementedError
+
     def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
         """Check ownership using the bot's current guild cache."""
         raise NotImplementedError
@@ -126,6 +130,12 @@ class InProcessBotService(BotService):
             return []
         available = {str(guild.id) for guild in bot.guilds}
         return [guild_id for guild_id in candidate_ids if guild_id in available]
+
+    def api_guild_id_candidates(self) -> List[str]:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return []
+        return [str(guild.id) for guild in bot.guilds]
 
     def guild_presence(self, guild_id: str) -> Dict[str, bool]:
         bot = core.bot
