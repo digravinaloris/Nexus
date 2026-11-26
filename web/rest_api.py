@@ -39,6 +39,22 @@ def _is_valid_snowflake(value):
     )
 
 
+def _get_json_object():
+    """Return a JSON object, allowing an omitted body for legacy default actions."""
+    data = request.get_json(silent=True)
+    if data is None and not request.data:
+        return {}
+    return data if isinstance(data, dict) else None
+
+
+def _validated_reason(data, default):
+    """Return a bounded moderation reason, or None for an invalid payload value."""
+    reason = data.get("reason", default)
+    if not isinstance(reason, str) or len(reason) > 512:
+        return None
+    return reason.strip() or default
+
+
 def _api_key_matches(provided, expected):
     """Compare API keys in constant time, ignoring malformed stored values."""
     return isinstance(expected, str) and secrets.compare_digest(provided, expected)
@@ -266,13 +282,19 @@ def broadcast_route(guild_id):
     if not guild:
         return jsonify({"error": "Guild not found"}), 404
 
-    data = request.get_json(silent=True) or {}
+    data = _get_json_object()
+    if data is None:
+        return jsonify({"error": "JSON body must be an object"}), 400
     message = data.get("message")
     channel_id = data.get("channel_id")
     mention = data.get("mention", "none")
 
-    if not message or not channel_id:
-        return jsonify({"error": "message and channel_id are required"}), 400
+    if not isinstance(message, str) or not message.strip() or len(message) > 4096:
+        return jsonify({"error": "message must be a non-empty string of at most 4096 characters"}), 400
+    if not _is_valid_snowflake(channel_id):
+        return jsonify({"error": "channel_id must be a valid Discord ID"}), 400
+    if not isinstance(mention, str) or len(mention) > 100:
+        return jsonify({"error": "mention must be a string of at most 100 characters"}), 400
 
     channel = guild.get_channel(int(channel_id))
     if not channel:
@@ -309,8 +331,12 @@ def ban_member_route(guild_id, user_id):
     if not guild:
         return jsonify({"error": "Guild not found"}), 404
 
-    data = request.get_json(silent=True) or {}
-    reason = data.get("reason", "Banned via mobile app")
+    data = _get_json_object()
+    if data is None:
+        return jsonify({"error": "JSON body must be an object"}), 400
+    reason = _validated_reason(data, "Banned via mobile app")
+    if reason is None:
+        return jsonify({"error": "reason must be a string of at most 512 characters"}), 400
 
     async def _ban():
         member = guild.get_member(int(user_id))
@@ -342,8 +368,12 @@ def kick_member_route(guild_id, user_id):
     if not guild:
         return jsonify({"error": "Guild not found"}), 404
 
-    data = request.get_json(silent=True) or {}
-    reason = data.get("reason", "Kicked via mobile app")
+    data = _get_json_object()
+    if data is None:
+        return jsonify({"error": "JSON body must be an object"}), 400
+    reason = _validated_reason(data, "Kicked via mobile app")
+    if reason is None:
+        return jsonify({"error": "reason must be a string of at most 512 characters"}), 400
 
     async def _kick():
         member = guild.get_member(int(user_id))
@@ -435,7 +465,12 @@ def mute_member_route(guild_id, user_id):
     if not guild:
         return jsonify({"error": "Guild not found"}), 404
 
-    data = request.get_json(silent=True) or {}
+    data = _get_json_object()
+    if data is None:
+        return jsonify({"error": "JSON body must be an object"}), 400
+    reason = _validated_reason(data, "Muted by mobile app")
+    if reason is None:
+        return jsonify({"error": "reason must be a string of at most 512 characters"}), 400
     raw_minutes = data.get("minutes", 10)
     if isinstance(raw_minutes, bool) or not (
         isinstance(raw_minutes, int)
@@ -445,7 +480,6 @@ def mute_member_route(guild_id, user_id):
     minutes = int(raw_minutes)
     if not 1 <= minutes <= 40320:
         return jsonify({"error": "minutes must be an integer between 1 and 40320"}), 400
-    reason = data.get("reason") or "Muted by mobile app"
 
     async def _mute():
         member = guild.get_member(int(user_id))
@@ -505,8 +539,12 @@ def warn_member_route(guild_id, user_id):
     if not guild:
         return jsonify({"error": "Guild not found"}), 404
 
-    data = request.get_json(silent=True) or {}
-    reason = data.get("reason") or "Warned by mobile app"
+    data = _get_json_object()
+    if data is None:
+        return jsonify({"error": "JSON body must be an object"}), 400
+    reason = _validated_reason(data, "Warned by mobile app")
+    if reason is None:
+        return jsonify({"error": "reason must be a string of at most 512 characters"}), 400
 
     member = guild.get_member(int(user_id))
     if not member:
