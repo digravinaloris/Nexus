@@ -268,7 +268,7 @@ def dash_calendar_page(guild_id):
             channel_raw = request.form.get("calendar_channel_id", "").strip()
             channel_id = None
             if channel_raw and channel_raw != "none":
-                if not channel_raw.isdigit() or int(channel_raw) not in {c.id for c in guild.text_channels}:
+                if not channel_raw.isdigit() or int(channel_raw) not in {c.id for c in guild["text_channels"]}:
                     flash("Invalid announcement channel." if current_lang() == "en" else "Salon d'annonce invalide.", "error-calendar")
                     return redirect(url_for("dash_calendar_page", guild_id=guild_id))
                 channel_id = int(channel_raw)
@@ -347,7 +347,7 @@ def dash_calendar_page(guild_id):
     manager_ids = [str(x) for x in cfg.get("calendar_manager_role_ids", [])]
     manager_roles = [r for r in guild.roles if not r.is_default() and str(r.id) in manager_ids]
     return render_template("calendar_dashboard.html", guild=guild, events=events, cfg=cfg, timezone_name=timezone_name,
-        channels=guild.text_channels, roles=[r for r in guild.roles if not r.is_default()], manager_roles=manager_roles,
+        channels=guild["text_channels"], roles=[r for r in guild.roles if not r.is_default()], manager_roles=manager_roles,
         is_owner=dash_is_owner(guild), user=session.get("dash_user"))
 
 
@@ -397,13 +397,13 @@ def dash_settings_save(guild_id, section):
             updates["warn_kick_threshold"] = max(mute_at + 1, kick_at)
         elif section == "channels":
             for key in TEXT_CHANNEL_SETTINGS:
-                updates[key] = _read_channel(key, guild.text_channels)
+                updates[key] = _read_channel(key, guild["text_channels"])
             for key in VOICE_CHANNEL_SETTINGS:
-                updates[key] = _read_channel(key, guild.voice_channels)
+                updates[key] = _read_channel(key, guild["voice_channels"])
         elif section == "quarantine":
             updates = _read_numbers(QUARANTINE_NUMBER_FIELDS)
             updates["quarantine_role_id"] = _read_role("quarantine_role_id", guild)
-            updates["quarantine_channel_id"] = _read_channel("quarantine_channel_id", guild.text_channels)
+            updates["quarantine_channel_id"] = _read_channel("quarantine_channel_id", guild["text_channels"])
         elif section == "verification":
             verified = _read_role("verified_role_id", guild)
             unverified = _read_role("unverified_role_id", guild)
@@ -567,7 +567,7 @@ def dash_guild_page(guild_id):
         logs_channel_id = request.form.get("logs_channel", "")
         if logs_channel_id.isdigit():
             channel = guild.get_channel(int(logs_channel_id))
-            if channel is not None and channel in guild.text_channels:
+            if channel is not None and channel in guild["text_channels"]:
                 update_config(guild_id, "logs_channel", channel.name)
                 changes.append(f"logs channel → #{channel.name}")
 
@@ -607,7 +607,7 @@ def dash_guild_page(guild_id):
 
     # Checklist d'onboarding : ce qui n'est pas encore configuré.
     onboarding_missing = []
-    if not discord.utils.get(guild.text_channels, name=cfg.get("logs_channel", "logs")):
+    if not discord.utils.get(guild["text_channels"], name=cfg.get("logs_channel", "logs")):
         onboarding_missing.append(t("onboard_logs"))
     if not cfg.get("autorole"):
         onboarding_missing.append(t("onboard_autorole"))
@@ -634,7 +634,7 @@ def dash_guild_page(guild_id):
     return render_template("dashboard_guild.html",
         guild=guild,
         cfg=cfg,
-        channels=guild.text_channels,
+        channels=guild["text_channels"],
         roles=[r for r in guild.roles if not r.is_default()],
         role_names=role_names,
         moderation_commands=MODERATION_COMMANDS,
