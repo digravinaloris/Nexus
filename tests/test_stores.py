@@ -236,3 +236,25 @@ def test_i18n_t_follows_session_language_with_fallbacks():
         flask.session["theme"] = "light"
         assert i18n.current_lang() == "fr" and i18n.current_theme() == "light"
         assert i18n.t(en_key) == i18n.TRANSLATIONS["fr"].get(en_key, i18n.TRANSLATIONS["en"][en_key])
+
+
+
+def test_rest_sanction_query_helpers_are_guild_scoped_and_sorted(mongo_db):
+    sanctions_store.set_warns(1, 42, 2)
+    sanctions_store.set_warns(1, 43, 0)
+    sanctions_store.set_warns(2, 44, 5)
+    assert [(d["user_id"], d["count"]) for d in sanctions_store.get_warnlist(1)] == [("42", 2)]
+
+    older = sanctions_store.log_sanction(1, 42, "warn", "older", 7)
+    newer = sanctions_store.log_sanction(1, 43, "ban", "newer", 7)
+    sanctions_store.log_sanction(2, 44, "warn", "other guild", 7)
+    assert sanctions_store.get_sanction_cases(1, limit=1)[0]["case_id"] == newer
+    assert [c["case_id"] for c in sanctions_store.get_sanction_cases(1, "warn", 10)] == [older]
+
+    sanctions_store.create_sanction_appeal(1, 1, "ban", 42, "Bob", "r", "pending")
+    mongo_db["ban_appeals"].update_one({"token": "pending"}, {"$set": {"status": "submitted", "submitted_at": datetime.datetime.now(UTC)}})
+    sanctions_store.create_sanction_appeal(1, 2, "ban", 43, "Alice", "r", "other")
+    mongo_db["ban_appeals"].update_one({"token": "other"}, {"$set": {"status": "submitted", "submitted_at": datetime.datetime.now(UTC)}})
+    sanctions_store.create_sanction_appeal(2, 3, "ban", 44, "Carol", "r", "foreign")
+    mongo_db["ban_appeals"].update_one({"token": "foreign"}, {"$set": {"status": "submitted", "submitted_at": datetime.datetime.now(UTC)}})
+    assert {a["token"] for a in sanctions_store.get_submitted_appeals(1)} == {"pending", "other"}
