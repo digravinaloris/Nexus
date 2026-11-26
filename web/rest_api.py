@@ -20,7 +20,8 @@ from web.bot_service import get_bot_service
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from features import FEATURE_TOGGLES
 from sanctions_store import (
-    claim_sanction_appeal, get_ban_appeal, get_sanction_stats, get_warns,
+    claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_submitted_appeals,
+    get_sanction_stats, get_warnlist, get_warns,
     log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns,
 )
 
@@ -334,7 +335,7 @@ def get_warnings_route(guild_id, user_id):
 @bp.route('/api/guilds/<guild_id>/warnlist', methods=['GET'])
 @require_api_key
 def warnlist_route(guild_id):
-    docs = list(col.warns.find({"guild_id": str(guild_id), "count": {"$gt": 0}}))
+    docs = get_warnlist(guild_id)
     result = [{"user_id": d["user_id"], "count": d["count"]} for d in docs]
     return jsonify(result)
 
@@ -486,10 +487,7 @@ def guild_cases_route(guild_id):
     filter_type = request.args.get("type", "")
     requested_limit = request.args.get("limit", default=50, type=int)
     limit = max(1, min(requested_limit if requested_limit is not None else 50, 200))
-    query = {"guild_id": str(guild_id)}
-    if filter_type:
-        query["type"] = filter_type
-    cases = list(col.sanctions.find(query).sort("timestamp", -1).limit(limit))
+    cases = get_sanction_cases(guild_id, filter_type, limit)
     return jsonify([{
         "case_id": c.get("case_id"),
         "user_id": c.get("user_id"),
@@ -505,7 +503,7 @@ def guild_cases_route(guild_id):
 def guild_appeals_route(guild_id):
     """Appels de sanction en attente de revue, pour l'app mobile -- mêmes
     entrées que la page /dashboard/<guild_id>/appeals côté web."""
-    appeals = list(col.ban_appeals.find({"guild_id": str(guild_id), "status": "submitted"}).sort("submitted_at", -1))
+    appeals = get_submitted_appeals(guild_id)
     return jsonify([{
         "token": a["token"],
         "case_id": a.get("case_id"),
