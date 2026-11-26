@@ -13,7 +13,7 @@ import time
 import core
 import discord
 from bridge import run_coroutine
-from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
+from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from sanctions_store import get_warns, log_sanction, set_warns
 import utils
 from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
@@ -120,6 +120,10 @@ class BotService:
 
     def api_grant_verified(self, guild_id: str, user_id: str):
         """Apply verification roles without exposing Discord guild/member objects to web routes."""
+        raise NotImplementedError
+
+    def api_log_dashboard_action(self, guild_id: str, actor_name: str, action: str, details: str = ""):
+        """Best-effort post of a dashboard audit event to the configured Discord log channel."""
         raise NotImplementedError
 
     def api_post_appeal_for_review(self, guild_id: str, appeal: Dict[str, object], appeal_text: str):
@@ -463,6 +467,18 @@ class InProcessBotService(BotService):
             return False, "Guild not found"
         from verification import grant_verified
         return run_coroutine(grant_verified(guild, user_id))
+
+    def api_log_dashboard_action(self, guild_id: str, actor_name: str, action: str, details: str = ""):
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return False, "Bot not ready"
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return False, "Guild not found"
+        coro = log_dashboard_action(guild, actor_name, action, details)
+        if coro is not None:
+            run_coroutine(coro)
+        return True, None
 
     def api_post_appeal_for_review(self, guild_id: str, appeal: Dict[str, object], appeal_text: str):
         bot = core.bot
