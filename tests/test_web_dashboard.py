@@ -466,3 +466,19 @@ def test_appeals_review_accept_and_deny(dash):
     resp = dash.client.post(dash.url("/appeals/t1/accept"))
     assert resp.status_code == 302
     assert any("no longer available" in m for _, m in flashes(dash.client))
+
+
+@pytest.mark.parametrize("session_token, supplied_token", [
+    ("csrf-test-token-012345678901234567890123456789", "é" * 40),
+    ("é" * 40, "é" * 40),
+    ("csrf-test-token-012345678901234567890123456789", "x" * 257),
+])
+def test_dashboard_mutations_reject_malformed_csrf_strings_without_500(dash, session_token, supplied_token):
+    with dash.client.session_transaction() as sess:
+        sess["csrf_token"] = session_token
+
+    response = dash.client.post(
+        dash.url("/lang/fr"),
+        data={"csrf_token": supplied_token},
+    )
+    assert response.status_code == 400
