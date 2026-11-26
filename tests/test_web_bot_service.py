@@ -1223,3 +1223,31 @@ def test_killswitch_owner_notifications_are_delegated_to_runtime(monkeypatch):
     service.notify_owner_bruteforce("203.0.113.5")
     service.notify_owner_killswitch(True)
     assert calls == [("bruteforce", "203.0.113.5"), ("killswitch", True)]
+
+
+def test_api_log_dashboard_action_uses_guild_runtime(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    guild = object()
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, guild_id):
+            return guild if guild_id == 123 else None
+
+    calls = []
+    async def fake_log(target_guild, actor_name, action, details):
+        calls.append((target_guild, actor_name, action, details))
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    monkeypatch.setattr(service_module, "log_dashboard_action", fake_log)
+    service = InProcessBotService()
+    assert service.api_log_dashboard_action("123", "Admin", "Updated settings", "x") == (True, None)
+    assert calls == [(guild, "Admin", "Updated settings", "x")]
+
+
+def test_api_log_dashboard_action_fails_closed_when_runtime_missing(monkeypatch):
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_log_dashboard_action("123", "Admin", "Action") == (False, "Bot not ready")
