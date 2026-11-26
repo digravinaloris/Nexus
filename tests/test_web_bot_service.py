@@ -384,3 +384,27 @@ def test_api_members_snapshot_returns_none_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().api_members_snapshot("123") is None
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_members_snapshot("123") is None
+
+
+def test_set_guild_locked_adds_and_removes_ids(monkeypatch):
+    class LockBot:
+        def is_ready(self):
+            return True
+
+        locked_guilds = set()
+
+    bot = LockBot()
+    monkeypatch.setattr(core, "bot", bot)
+    service = InProcessBotService()
+    assert service.set_guild_locked("123", True) is True
+    assert bot.locked_guilds == {123}
+    assert service.set_guild_locked("123", False) is True
+    assert bot.locked_guilds == set()
+    assert service.set_guild_locked("456", False) is True
+
+
+def test_set_guild_locked_fails_when_bot_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().set_guild_locked("123", True) is False
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().set_guild_locked("123", False) is False
