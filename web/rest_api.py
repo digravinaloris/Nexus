@@ -17,8 +17,7 @@ from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn,
 from features import FEATURE_TOGGLES
 from sanctions_store import (
     claim_sanction_appeal, get_ban_appeal, get_submitted_appeals,
-    get_warnlist, get_warns,
-    log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns,
+    release_sanction_appeal_claim, resolve_sanction_appeal,
 )
 
 bp = Blueprint("rest_api", __name__)
@@ -312,14 +311,14 @@ def kick_member_route(guild_id, user_id):
 @bp.route('/api/guilds/<guild_id>/members/<user_id>/warnings', methods=['GET'])
 @require_api_key
 def get_warnings_route(guild_id, user_id):
-    count = get_warns(guild_id, user_id)
+    count = get_bot_service().api_member_warnings(guild_id, user_id)
     return jsonify({"user_id": user_id, "warnings": count})
 
 
 @bp.route('/api/guilds/<guild_id>/warnlist', methods=['GET'])
 @require_api_key
 def warnlist_route(guild_id):
-    docs = get_warnlist(guild_id)
+    docs = get_bot_service().api_warnlist_snapshot(guild_id)
     result = [{"user_id": d["user_id"], "count": d["count"]} for d in docs]
     return jsonify(result)
 

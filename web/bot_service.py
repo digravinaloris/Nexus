@@ -17,7 +17,7 @@ from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
 from bridge import run_coroutine
 from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
-from sanctions_store import get_sanction_cases, get_sanction_stats, get_warns, log_sanction, set_warns
+from sanctions_store import get_sanction_cases, get_sanction_stats, get_warnlist, get_warns, log_sanction, set_warns
 import utils
 from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
 from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
@@ -91,6 +91,14 @@ class BotService:
 
     def api_record_audit(self, guild_id: str, actor_id: str, actor_name: str, action: str, details: str = "") -> None:
         """Persist a mobile API audit event."""
+        raise NotImplementedError
+
+    def api_member_warnings(self, guild_id: str, user_id: str) -> int:
+        """Return the persisted warning count for one member."""
+        raise NotImplementedError
+
+    def api_warnlist_snapshot(self, guild_id: str) -> List[Dict[str, object]]:
+        """Return members with active warnings for the mobile API."""
         raise NotImplementedError
 
     def api_guild_list_snapshot(self, guild_id: str = None) -> Optional[List[Dict[str, object]]]:
@@ -432,6 +440,12 @@ class InProcessBotService(BotService):
 
     def api_record_audit(self, guild_id: str, actor_id: str, actor_name: str, action: str, details: str = "") -> None:
         record_audit(guild_id, actor_id, actor_name, action, details)
+
+    def api_member_warnings(self, guild_id: str, user_id: str) -> int:
+        return get_warns(guild_id, user_id)
+
+    def api_warnlist_snapshot(self, guild_id: str) -> List[Dict[str, object]]:
+        return get_warnlist(guild_id)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
