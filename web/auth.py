@@ -205,7 +205,13 @@ def dash_callback():
 
         token_data = token_r.json()
         access_token = token_data.get("access_token") if isinstance(token_data, dict) else None
-        if not isinstance(access_token, str) or not access_token:
+        # Discord's bearer token is opaque, but it must be bounded and safe for
+        # an HTTP Authorization header. Reject whitespace and control characters.
+        if (
+            not isinstance(access_token, str)
+            or len(access_token) > 4096
+            or re.fullmatch(r"[A-Za-z0-9._~+/=-]+", access_token) is None
+        ):
             return jsonify({"error": "Invalid token response"}), 502
 
         expires_in = token_data.get("expires_in")

@@ -144,6 +144,30 @@ def test_logout_with_valid_csrf_clears_session(env):
         assert not sess
 
 
+@pytest.mark.parametrize("access_token", [" ", "token\\nInjected: yes", "token\\rvalue", "x" * 4097])
+def test_callback_rejects_malformed_access_tokens(env, monkeypatch, access_token):
+    class TokenResponse:
+        status_code = 200
+
+        def json(self):
+            return {"access_token": access_token, "expires_in": 3600}
+
+    calls = []
+    monkeypatch.setattr(auth.requests, "post", lambda *a, **k: TokenResponse())
+    monkeypatch.setattr(auth.requests, "get", lambda *a, **k: calls.append(True))
+
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = "valid-state"
+        sess["oauth_code_verifier"] = "A" * 43
+        sess["oauth_state_created_at"] = auth.time.time()
+
+    response = env.client.get("/callback?code=authorization-code&state=valid-state")
+    assert response.status_code == 502
+    assert calls == []
+    with env.client.session_transaction() as sess:
+        assert "access_token" not in sess
+
+
 def test_callback_rejects_missing_or_invalid_token_expiration(env, monkeypatch):
     class FakeResponse:
         status_code = 200
