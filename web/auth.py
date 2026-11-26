@@ -6,6 +6,8 @@ vient de `core.bot`). Les routes sont enregistrées sur l'app par main.py via
 `routes.register(api)` en gardant les noms d'endpoints d'origine (cf. web/routing.py).
 """
 from functools import wraps
+import base64
+import hashlib
 import math
 import os
 import re
@@ -127,14 +129,21 @@ def dash_guild_admin_required(f):
 @routes.route("/login")
 def dash_login():
     state = secrets.token_urlsafe(32)
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode("ascii")).digest()
+    ).rstrip(b"=").decode("ascii")
     session["oauth_state"] = state
     session["oauth_state_created_at"] = time.time()
+    session["oauth_code_verifier"] = code_verifier
     params = {
         "client_id": DASH_CLIENT_ID,
         "redirect_uri": DASH_REDIRECT_URI,
         "response_type": "code",
         "scope": "identify guilds",
         "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     query = urlencode(params)
     return redirect(f"{DISCORD_API_BASE}/oauth2/authorize?{query}")
@@ -145,6 +154,7 @@ def dash_callback():
     state = request.args.get("state")
     expected_state = session.pop("oauth_state", None)
     state_created_at = session.pop("oauth_state_created_at", None)
+    code_verifier = session.pop("oauth_code_verifier", None)
     now = time.time()
     state_is_fresh = (
         not isinstance(state_created_at, bool)
@@ -152,7 +162,18 @@ def dash_callback():
         and math.isfinite(state_created_at)
         and -30 <= now - state_created_at <= OAUTH_STATE_MAX_AGE
     )
-    if not state or not expected_state or not state_is_fresh or not secrets.compare_digest(state, expected_state):
+    verifier_is_valid = (
+        isinstance(code_verifier, str)
+        and 43 <= len(code_verifier) <= 128
+        and re.fullmatch(r"[A-Za-z0-9._~-]+", code_verifier) is not None
+    )
+    if (
+        not state
+        or not expected_state
+        or not state_is_fresh
+        or not secrets.compare_digest(state, expected_state)
+        or not verifier_is_valid
+    ):
         return jsonify({"error": "Invalid state"}), 403
 
     code = request.args.get("code")
@@ -174,6 +195,7 @@ def dash_callback():
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": DASH_REDIRECT_URI,
+                "code_verifier": code_verifier,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10,
