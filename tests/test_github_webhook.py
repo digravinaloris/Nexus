@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import io
 import json
 
 from flask import Flask
@@ -76,6 +77,30 @@ def test_payload_limit_returns_413(monkeypatch):
     monkeypatch.setenv("GITHUB_RELEASE_WEBHOOK_SECRET", SECRET)
     response = app().post("/webhooks/github/releases", data=b"x" * (github_webhook.MAX_PAYLOAD_BYTES + 1))
     assert response.status_code == 413
+
+
+def test_unknown_length_payload_read_is_bounded(monkeypatch):
+    monkeypatch.setenv("GITHUB_RELEASE_WEBHOOK_SECRET", SECRET)
+
+    class TrackingStream(io.BytesIO):
+        requested_size = None
+
+        def read(self, size=-1):
+            self.requested_size = size
+            return super().read(size)
+
+    stream = TrackingStream(b"x" * (github_webhook.MAX_PAYLOAD_BYTES + 100))
+    fake_request = type("FakeRequest", (), {
+        "content_length": None,
+        "headers": {},
+        "stream": stream,
+    })()
+    monkeypatch.setattr(github_webhook, "request", fake_request)
+
+    response = app().post("/webhooks/github/releases")
+    assert response.status_code == 413
+    assert stream.requested_size == github_webhook.MAX_PAYLOAD_BYTES + 1
+    assert stream.tell() == github_webhook.MAX_PAYLOAD_BYTES + 1
 
 
 def test_non_release_event_ignored_after_signature(monkeypatch):
