@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
 from audit import build_sparkline_svg
-from audit_export import _build_audit_csv_bytes, _build_audit_pdf_bytes, _get_audit_records
+from audit_export import _build_audit_csv_bytes, _build_audit_pdf_bytes
 from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
 from cogs.calendar import parse_event_datetime, make_embed, local_when, validate_timezone
 from features import FEATURE_TOGGLES
@@ -767,7 +767,7 @@ def dash_apikey_regen(guild_id):
 @dash_owner_required
 def dash_export_audit_csv(guild_id):
     from flask import Response
-    records = _get_audit_records(guild_id)
+    records = get_bot_service().dashboard_audit_export_records(guild_id)
     return Response(
         _build_audit_csv_bytes(records),
         mimetype="text/csv",
@@ -782,7 +782,7 @@ def dash_export_audit_csv(guild_id):
 def dash_export_audit_pdf(guild_id):
     from flask import Response
     guild_name = get_bot_service().guild_name(guild_id)
-    records = _get_audit_records(guild_id)
+    records = get_bot_service().dashboard_audit_export_records(guild_id)
     return Response(
         _build_audit_pdf_bytes(records, guild_name if guild_name != "the server" else guild_id),
         mimetype="application/pdf",
