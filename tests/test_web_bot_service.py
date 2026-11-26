@@ -1204,3 +1204,22 @@ def test_api_post_appeal_for_review_fails_closed_without_runtime(monkeypatch):
     service = InProcessBotService()
     monkeypatch.setattr(core, "bot", None)
     assert service.api_post_appeal_for_review("123", {}, "details") == (False, "Bot not ready")
+
+
+def test_killswitch_owner_notifications_are_delegated_to_runtime(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    calls = []
+    async def fake_bruteforce(ip):
+        calls.append(("bruteforce", ip))
+    async def fake_killswitch(locked):
+        calls.append(("killswitch", locked))
+
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    monkeypatch.setattr(service_module, "notify_owner_bruteforce", fake_bruteforce)
+    monkeypatch.setattr(service_module, "notify_owner_killswitch", fake_killswitch)
+    service = InProcessBotService()
+    service.notify_owner_bruteforce("203.0.113.5")
+    service.notify_owner_killswitch(True)
+    assert calls == [("bruteforce", "203.0.113.5"), ("killswitch", True)]
