@@ -183,7 +183,7 @@ def dash_callback():
         not isinstance(code, str)
         or not code
         or len(code) > 2048
-        or re.search(r"[\\x00-\\x20\\x7f]", code) is not None
+        or re.search(r"[\x00-\x20\x7f]", code) is not None
     ):
         return jsonify({"error": "Invalid code"}), 400
 
