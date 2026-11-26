@@ -430,3 +430,56 @@ def test_callback_rejects_malformed_refresh_tokens_without_identity_lookup(env, 
     with env.client.session_transaction() as sess:
         assert "refresh_token" not in sess
         assert "access_token" not in sess
+
+
+
+@pytest.mark.parametrize(
+    "presence",
+    [
+        {"bot_ready": False, "guild_present": False},
+        {"bot_ready": True, "guild_present": False},
+    ],
+)
+def test_dashboard_guild_guard_uses_bot_service_and_fails_closed(env, monkeypatch, presence):
+    from flask import session
+
+    class FakeBotService:
+        def guild_presence(self, guild_id):
+            assert guild_id == "123456789012345678"
+            return presence
+
+    monkeypatch.setattr(auth, "get_user_admin_guilds", lambda: [
+        {"id": "123456789012345678", "permissions": "8"}
+    ])
+    monkeypatch.setattr(auth, "get_bot_service", lambda: FakeBotService())
+
+    @auth.dash_guild_admin_required
+    def protected(guild_id):
+        return "allowed"
+
+    with env.nexus.api.test_request_context("/dashboard/123456789012345678"):
+        session["access_token"] = "valid-access-token"
+        response, status = protected("123456789012345678")
+        assert status == 403
+        assert response.get_json() == {"error": "Bot not present on this server"}
+
+
+def test_dashboard_guild_guard_allows_present_guild_through_bot_service(env, monkeypatch):
+    from flask import session
+
+    class FakeBotService:
+        def guild_presence(self, guild_id):
+            return {"bot_ready": True, "guild_present": True}
+
+    monkeypatch.setattr(auth, "get_user_admin_guilds", lambda: [
+        {"id": "123456789012345678", "permissions": "8"}
+    ])
+    monkeypatch.setattr(auth, "get_bot_service", lambda: FakeBotService())
+
+    @auth.dash_guild_admin_required
+    def protected(guild_id):
+        return "allowed"
+
+    with env.nexus.api.test_request_context("/dashboard/123456789012345678"):
+        session["access_token"] = "valid-access-token"
+        assert protected("123456789012345678") == "allowed"
