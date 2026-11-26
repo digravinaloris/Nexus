@@ -20,7 +20,7 @@ from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn,
 from features import FEATURE_TOGGLES
 from sanctions_store import (
     claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_submitted_appeals,
-    get_sanction_stats, get_warnlist, get_warns,
+    get_warnlist, get_warns,
     log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns,
 )
 
