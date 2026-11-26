@@ -659,6 +659,7 @@ def test_mobile_failed_appeal_reversal_releases_claim(env, monkeypatch):
 
 @pytest.mark.parametrize("action", ["accept", "deny"])
 def test_mobile_appeal_claim_prevents_concurrent_resolution(env, monkeypatch, action):
+    import web.rest_api as rest_module
     import web.bot_service as service_module
 
     token = f"race-{action}"
