@@ -20,6 +20,7 @@ from moderation_actions import post_appeal_for_review
 from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
 from sanctions_store import get_ban_appeal
 import utils
+from web.bot_service import get_bot_service
 from web.routing import Routes
 from web.bot_service import get_bot_service
 
@@ -177,13 +178,12 @@ _format_uptime = utils.format_uptime
 
 @routes.route("/status")
 def public_status_page():
-    online = core.bot.is_ready()
-    if not online:
+    snapshot = get_bot_service().public_status_snapshot()
+    if not snapshot["online"]:
         return render_template("status_page.html", online=False), 503
-    uptime = _format_uptime(time.time() - core.bot.start_time) if hasattr(core.bot, "start_time") else "unknown"
     return render_template("status_page.html",
         online=True,
-        guild_count=len(core.bot.guilds),
-        latency_ms=round(core.bot.latency * 1000) if core.bot.latency == core.bot.latency else "—",  # NaN check avant le premier heartbeat
-        uptime=uptime,
+        guild_count=snapshot["guild_count"],
+        latency_ms=snapshot["latency_ms"],
+        uptime=snapshot["uptime"],
     )
