@@ -487,9 +487,6 @@ def guild_cases_route(guild_id):
     filter_type = request.args.get("type", "")
     requested_limit = request.args.get("limit", default=50, type=int)
     limit = max(1, min(requested_limit if requested_limit is not None else 50, 200))
-    query = {"guild_id": str(guild_id)}
-    if filter_type:
-        query["type"] = filter_type
     cases = get_sanction_cases(guild_id, filter_type, limit)
     return jsonify([{
         "case_id": c.get("case_id"),
