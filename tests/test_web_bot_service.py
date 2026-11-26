@@ -493,7 +493,9 @@ def test_api_unmute_member_uses_service_and_logs(monkeypatch):
 
     monkeypatch.setattr(core, "bot", ReadyBot())
     monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
-    async def fake_log_unmute(g, m):\n        logged.append((g, m))\n    monkeypatch.setattr(service_module, "log_unmute", fake_log_unmute)
+    async def fake_log_unmute(g, m):
+        logged.append((g, m))
+    monkeypatch.setattr(service_module, "log_unmute", fake_log_unmute)
     assert InProcessBotService().api_unmute_member("123", "10") == (True, None)
     assert member.calls == [None]
     assert logged == [(guild, member)]
