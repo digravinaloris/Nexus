@@ -349,7 +349,7 @@ def dash_calendar_page(guild_id):
     manager_roles = [r for r in guild["roles"] if str(r["id"]) in manager_ids]
     return render_template("calendar_dashboard.html", guild=guild, events=events, cfg=cfg, timezone_name=timezone_name,
         channels=guild["text_channels"], roles=guild["roles"], manager_roles=manager_roles,
-        is_owner=get_bot_service().is_guild_owner(guild_id, (session.get("dash_user") or {}).get("id")), user=session.get("dash_user'))
+        is_owner=get_bot_service().is_guild_owner(guild_id, (session.get("dash_user") or {}).get("id")), user=session.get("dash_user"))
 
 
 @routes.route("/dashboard/<guild_id>/settings", methods=["GET"])
