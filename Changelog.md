@@ -21,7 +21,8 @@ All notable changes to Nexus are documented here.
 - Welcome-banner avatar downloads are streamed with a 5 MiB size cap and a timeout; a failed avatar download no longer prevents the plain-text welcome message.
 - Audit CSV exports neutralize spreadsheet formula-like cells to reduce formula-injection risk.
 - GitHub release announcements atomically claim release IDs to prevent duplicate posts when webhook and polling deliveries race.
-- Mobile API: validate guild/user snowflake IDs, mute durations, FAQ payloads and toggle booleans; use 128-bit FAQ entry IDs and bound audit/case pagination.
+- Mobile API: validate guild/user snowflake IDs, moderation reasons, broadcast payloads, mute durations, FAQ payloads and toggle booleans; use 128-bit FAQ entry IDs and bound audit/case pagination.
+- Sanction appeals: atomically claim submitted reviews across dashboard and mobile API to prevent concurrent accept/deny actions from applying the same reversal more than once.
 
 
 ### Added
