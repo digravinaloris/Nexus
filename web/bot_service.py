@@ -74,6 +74,10 @@ class BotService:
         """Remove a timeout from a member and log it; return success/error pair."""
         raise NotImplementedError
 
+    def api_broadcast(self, guild_id: str, channel_id: str, message: str, mention: str = "none"):
+        """Send a mobile-app broadcast; return a success/error pair."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
@@ -231,6 +235,34 @@ class InProcessBotService(BotService):
             return True, None
 
         return run_coroutine(unmute())
+
+    def api_broadcast(self, guild_id: str, channel_id: str, message: str, mention: str = "none"):
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return False, "Guild not found"
+        channel = guild.get_channel(int(channel_id))
+        if channel is None:
+            return False, "Channel not found"
+
+        if mention == "everyone":
+            ping = "@everyone"
+        elif mention == "here":
+            ping = "@here"
+        else:
+            role = discord.utils.get(guild.roles, name=mention)
+            ping = role.mention if role else None
+
+        embed = discord.Embed(description=message, color=0x3399ff)
+        embed.set_footer(text="📢 Sent from the mobile app")
+
+        async def send():
+            await channel.send(content=ping, embed=embed)
+
+        run_coroutine(send())
+        return True, None
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot

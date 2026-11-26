@@ -527,3 +527,71 @@ def test_api_unmute_member_returns_none_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().api_unmute_member("123", "10") is None
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_unmute_member("123", "10") is None
+
+
+def test_api_broadcast_service_sends_embed_and_mention(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Channel:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, content=None, embed=None):
+            self.sent.append((content, embed))
+
+    class Role:
+        name = "Mods"
+        mention = "<@&9>"
+
+    channel = Channel()
+
+    class Guild:
+        roles = [Role()]
+
+        def get_channel(self, cid):
+            return channel if cid == 5 else None
+
+    guild = Guild()
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    assert InProcessBotService().api_broadcast("123", "5", "Hello staff", "Mods") == (True, None)
+    content, embed = channel.sent[0]
+    assert content == "<@&9>"
+    assert embed.description == "Hello staff"
+    assert embed.footer.text == "📢 Sent from the mobile app"
+
+
+def test_api_broadcast_service_returns_not_found_for_missing_channel_or_guild(monkeypatch):
+    class Guild:
+        roles = []
+
+        def get_channel(self, cid):
+            return None
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return Guild() if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    service = InProcessBotService()
+    assert service.api_broadcast("123", "5", "hi") == (False, "Channel not found")
+    assert service.api_broadcast("456", "5", "hi") == (False, "Guild not found")
+
+
+def test_api_broadcast_service_returns_none_when_bot_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().api_broadcast("123", "5", "hi") is None
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_broadcast("123", "5", "hi") is None
