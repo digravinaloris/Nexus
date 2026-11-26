@@ -12,7 +12,6 @@ import secrets
 import time
 from urllib.parse import urlparse
 
-import calendar_store
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
 from audit import build_sparkline_svg
@@ -291,10 +290,10 @@ def dash_calendar_page(guild_id):
                 "starts_at": starts_at, "timezone": timezone_name, "time_set": bool(request.form.get("time", "").strip()),
                 "channel_id": str(request.form.get("channel_id") or ""), "reminders_sent": [],
                 "created_by": str((session.get("dash_user") or {}).get("id", "")), "created_at": datetime.datetime.now(datetime.timezone.utc)}
-            if calendar_store.find_duplicate_event(guild_id, title, starts_at):
+            if get_bot_service().dashboard_calendar_has_duplicate_event(guild_id, title, starts_at):
                 flash("Duplicate event." if current_lang() == "en" else "Événement en double.", "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-            event["_id"] = calendar_store.insert_event(event)
+            event["_id"] = get_bot_service().dashboard_calendar_insert_event(event)
             target_id = cfg.get("calendar_channel_id") or event["channel_id"]
             sent = False
             if str(target_id).isdigit():
@@ -309,7 +308,7 @@ def dash_calendar_page(guild_id):
                 oid = ObjectId(raw_id)
             except Exception:
                 oid = None
-            deleted = calendar_store.delete_event(guild_id, oid) if oid else False
+            deleted = get_bot_service().dashboard_calendar_delete_event(guild_id, oid) if oid else False
             if deleted:
                 dash_log_action(guild_id, "Deleted calendar event", raw_id)
                 flash("Event deleted." if current_lang() == "en" else "Événement supprimé.", "calendar")
@@ -331,7 +330,7 @@ def dash_calendar_page(guild_id):
         else:
             flash("Unknown action." if current_lang() == "en" else "Action inconnue.", "error-calendar")
         return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-    events = calendar_store.list_upcoming_events(guild_id, datetime.datetime.now(datetime.timezone.utc), limit=50)
+    events = get_bot_service().dashboard_calendar_upcoming_events(guild_id, datetime.datetime.now(datetime.timezone.utc), limit=50)
     for event in events:
         event["display_when"] = local_when(event)
         event["id_str"] = str(event.get("_id", ""))
