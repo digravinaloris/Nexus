@@ -300,17 +300,9 @@ def dash_calendar_page(guild_id):
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
             event["_id"] = calendar_store.insert_event(event)
             target_id = cfg.get("calendar_channel_id") or event["channel_id"]
-            channel = guild.get_channel(int(target_id)) if str(target_id).isdigit() else None
-            if channel is None and event["channel_id"].isdigit():
-                channel = guild.get_channel(int(event["channel_id"]))
             sent = False
-            if channel:
-                try:
-                    run_coroutine(channel.send(content=role.mention, embed=make_embed(event),
-                        allowed_mentions=discord.AllowedMentions(roles=[role], users=False, everyone=False)))
-                    sent = True
-                except discord.HTTPException:
-                    pass
+            if str(target_id).isdigit():
+                sent, _error = get_bot_service().api_announce_calendar_event(guild_id, str(target_id), event)
             dash_log_action(guild, guild_id, "Created calendar event", title)
             flash(("Event created and announced." if sent else "Event saved; announcement could not be sent.") if current_lang() == "en"
                   else ("Événement créé et annoncé." if sent else "Événement enregistré, annonce non envoyée."), "calendar")

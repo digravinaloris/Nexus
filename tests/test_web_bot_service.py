@@ -1085,3 +1085,55 @@ def test_set_guild_locked_fails_closed_when_runtime_is_unavailable(monkeypatch):
 
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().set_guild_locked("123", True) is False
+
+
+def test_api_announce_calendar_event_sends_role_limited_announcement(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+    from web.bot_service import InProcessBotService
+
+    sent = []
+    class Role:
+        id = 7
+        mention = "<@&7>"
+        def is_default(self):
+            return False
+    class Channel:
+        async def send(self, **kwargs):
+            sent.append(kwargs)
+    class Guild:
+        def get_channel(self, channel_id):
+            return Channel() if channel_id == 8 else None
+        def get_role(self, role_id):
+            return Role() if role_id == 7 else None
+    guild = Guild()
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, guild_id):
+            return guild if guild_id == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    monkeypatch.setattr("cogs.calendar.make_embed", lambda event: "calendar-embed")
+    event = {"role_id": "7", "title": "Maintenance"}
+    assert InProcessBotService().api_announce_calendar_event("123", "8", event) == (True, None)
+    assert sent[0]["content"] == "<@&7>"
+    assert sent[0]["embed"] == "calendar-embed"
+    assert [role.id for role in sent[0]["allowed_mentions"].roles] == [7]
+
+
+def test_api_announce_calendar_event_fails_closed_for_missing_runtime_targets(monkeypatch):
+    from web.bot_service import InProcessBotService
+
+    service = InProcessBotService()
+    monkeypatch.setattr(core, "bot", None)
+    assert service.api_announce_calendar_event("123", "8", {"role_id": "7"}) == (False, "Bot not ready")
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, guild_id):
+            return None
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert service.api_announce_calendar_event("123", "8", {"role_id": "7"}) == (False, "Guild not found")
