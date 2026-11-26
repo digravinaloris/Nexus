@@ -14,9 +14,10 @@ import core
 import discord
 from config_store import get_config, update_config
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
+from audit import get_audit_log, record_audit
 from bridge import run_coroutine
 from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
-from sanctions_store import get_sanction_stats, get_warns, log_sanction, set_warns
+from sanctions_store import get_sanction_cases, get_sanction_stats, get_warns, log_sanction, set_warns
 import utils
 from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
 from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
@@ -78,6 +79,18 @@ class BotService:
 
     def api_faq_set_enabled(self, guild_id: str, enabled: bool) -> None:
         """Update the guild FAQ enabled state."""
+        raise NotImplementedError
+
+    def api_audit_snapshot(self, guild_id: str, limit: int = 20) -> List[Dict[str, object]]:
+        """Return the merged audit feed for the mobile API."""
+        raise NotImplementedError
+
+    def api_sanction_cases_snapshot(self, guild_id: str, filter_type: str = "", limit: int = 50) -> List[Dict[str, object]]:
+        """Return filtered sanction cases for the mobile API."""
+        raise NotImplementedError
+
+    def api_record_audit(self, guild_id: str, actor_id: str, actor_name: str, action: str, details: str = "") -> None:
+        """Persist a mobile API audit event."""
         raise NotImplementedError
 
     def api_guild_list_snapshot(self, guild_id: str = None) -> Optional[List[Dict[str, object]]]:
@@ -410,6 +423,15 @@ class InProcessBotService(BotService):
 
     def api_faq_set_enabled(self, guild_id: str, enabled: bool) -> None:
         set_faq_enabled(guild_id, enabled)
+
+    def api_audit_snapshot(self, guild_id: str, limit: int = 20) -> List[Dict[str, object]]:
+        return get_audit_log(guild_id, limit=limit)
+
+    def api_sanction_cases_snapshot(self, guild_id: str, filter_type: str = "", limit: int = 50) -> List[Dict[str, object]]:
+        return get_sanction_cases(guild_id, filter_type, limit)
+
+    def api_record_audit(self, guild_id: str, actor_id: str, actor_name: str, action: str, details: str = "") -> None:
+        record_audit(guild_id, actor_id, actor_name, action, details)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
