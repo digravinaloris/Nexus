@@ -22,10 +22,17 @@ def test_login_encodes_oauth_parameters_and_sets_state(env):
     assert query["redirect_uri"] == [auth.DASH_REDIRECT_URI]
     assert query["scope"] == ["identify guilds"]
     assert len(query["state"][0]) >= 32
+    assert query["code_challenge_method"] == ["S256"]
 
     with env.client.session_transaction() as sess:
         assert sess["oauth_state"] == query["state"][0]
         assert isinstance(sess["oauth_state_created_at"], (int, float))
+        verifier = sess["oauth_code_verifier"]
+        assert 43 <= len(verifier) <= 128
+        import base64
+        import hashlib
+        expected = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+        assert query["code_challenge"] == [expected]
 
 
 def test_callback_rejects_expired_state_without_calling_discord(env, monkeypatch):
@@ -73,6 +80,7 @@ def test_callback_does_not_create_session_when_identity_lookup_fails(env, monkey
 
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "valid-state"
+        sess["oauth_code_verifier"] = "A" * 43
 
         sess["oauth_state_created_at"] = auth.time.time()
         sess["old_data"] = "must be cleared"
