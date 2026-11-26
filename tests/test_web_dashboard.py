@@ -581,7 +581,6 @@ def test_dashboard_owner_guard_uses_bot_service(dash, monkeypatch, is_owner):
 def test_read_only_dashboard_pages_use_guild_name_service(dash, monkeypatch):
     import web.dashboard as dashboard_module
 
-    original = dashboard_module.get_bot_service()
     class GuildNameService:
         def guild_name(self, guild_id):
             assert guild_id == GID
