@@ -43,7 +43,7 @@ def mongo_db():
 
 # ---------------------------------------------------------------- hygiène
 
-MODULES = ["core", "config_store", "sanctions_store", "faq_store", "audit", "i18n", "utils"]
+MODULES = ["core", "config_store", "sanctions_store", "killswitch_store", "faq_store", "audit", "i18n", "utils"]
 
 
 @pytest.mark.parametrize("module", MODULES)
@@ -301,3 +301,39 @@ def test_faq_store_get_or_create_and_save_preserve_enabled(mongo_db):
     assert faq_store.get_faq(5)["enabled"] is True
     assert faq_store.get_faq(5)["entries"][0]["id"] == "x"
     assert mongo_db["faq"].count_documents({"guild_id": "5"}) == 1
+
+
+
+def test_sanctions_store_submits_only_pending_appeals(mongo_db):
+    sanctions_store.create_sanction_appeal(1, 7, "ban", 42, "Bob", "reason", "appeal-token")
+    submitted_at = datetime.datetime.now(UTC)
+    assert sanctions_store.submit_ban_appeal("appeal-token", "please review", submitted_at) is True
+    doc = mongo_db["ban_appeals"].find_one({"token": "appeal-token"})
+    assert doc["status"] == "submitted"
+    assert doc["appeal_text"] == "please review"
+    stored_at = doc["submitted_at"].replace(tzinfo=UTC)
+    expected_at = submitted_at.replace(microsecond=(submitted_at.microsecond // 1000) * 1000)
+    assert stored_at == expected_at
+    assert sanctions_store.submit_ban_appeal("appeal-token", "duplicate", submitted_at) is False
+
+
+def test_killswitch_store_token_lifecycle(mongo_db):
+    import killswitch_store
+
+    mongo_db["killswitch_tokens"].insert_one({"token": "one-time", "used": False, "attempts": 0})
+    assert killswitch_store.get_killswitch_token("one-time")["attempts"] == 0
+    assert killswitch_store.increment_killswitch_attempts("one-time") == 1
+    assert killswitch_store.mark_killswitch_token_used("one-time") is True
+    assert killswitch_store.mark_killswitch_token_used("one-time") is False
+    doc = killswitch_store.get_killswitch_token("one-time")
+    assert doc["attempts"] == 1 and doc["used"] is True
+    assert killswitch_store.get_killswitch_token("missing") is None
+
+
+def test_killswitch_store_stops_attempts_at_limit(mongo_db):
+    import killswitch_store
+
+    mongo_db["killswitch_tokens"].insert_one({"token": "limited", "used": False, "attempts": 4})
+    assert killswitch_store.increment_killswitch_attempts("limited") == 5
+    assert killswitch_store.increment_killswitch_attempts("limited") is None
+    assert killswitch_store.mark_killswitch_token_used("limited") is False
