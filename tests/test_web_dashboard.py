@@ -468,6 +468,32 @@ def test_appeals_review_accept_and_deny(dash):
     assert any("no longer available" in m for _, m in flashes(dash.client))
 
 
+@pytest.mark.parametrize("action", ["accept", "deny"])
+def test_dashboard_appeal_claim_prevents_concurrent_resolution(dash, monkeypatch, action):
+    import web.dashboard as dashboard_module
+
+    token = f"race-{action}"
+    _submitted(dash, token)
+    stale_appeal = dict(dash.col.ban_appeals.find_one({"token": token}))
+    dash.col.ban_appeals.update_one(
+        {"token": token}, {"$set": {"status": "processing"}}
+    )
+    monkeypatch.setattr(
+        dashboard_module, "get_ban_appeal",
+        lambda _token: {**stale_appeal, "status": "submitted"},
+    )
+    side_effects = []
+    monkeypatch.setattr(
+        dashboard_module, "run_coroutine",
+        lambda coroutine: side_effects.append(coroutine) or "unexpected",
+    )
+
+    response = dash.client.post(dash.url(f"/appeals/{token}/{action}"))
+    assert response.status_code == 302
+    assert dash.col.ban_appeals.find_one({"token": token})["status"] == "processing"
+    assert side_effects == []
+
+
 @pytest.mark.parametrize("session_token, supplied_token", [
     ("csrf-test-token-012345678901234567890123456789", "é" * 40),
     ("é" * 40, "é" * 40),

@@ -22,7 +22,10 @@ from core import col
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from features import FEATURE_TOGGLES
 from moderation_actions import _dm_user_appeal_result, reverse_sanction
-from sanctions_store import get_ban_appeal, get_sanction_stats, get_warns, log_sanction, set_warns
+from sanctions_store import (
+    claim_sanction_appeal, get_ban_appeal, get_sanction_stats, get_warns,
+    log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns,
+)
 
 bp = Blueprint("rest_api", __name__)
 
@@ -651,9 +654,17 @@ def guild_appeal_accept_route(guild_id, token):
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         return jsonify({"error": "Appeal not found or already resolved"}), 404
 
+    if not claim_sanction_appeal(guild_id, token):
+        return jsonify({"error": "Appeal not found or already resolved"}), 404
+
     sanction_type = appeal.get("sanction_type", "ban")
-    result = run_coroutine(reverse_sanction(guild, sanction_type, appeal["user_id"]))
-    col.ban_appeals.update_one({"token": token}, {"$set": {"status": "accepted", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
+    try:
+        result = run_coroutine(reverse_sanction(guild, sanction_type, appeal["user_id"]))
+    except Exception:
+        release_sanction_appeal_claim(guild_id, token)
+        return jsonify({"error": "Unable to resolve appeal"}), 500
+    if not resolve_sanction_appeal(guild_id, token, "accepted"):
+        return jsonify({"error": "Appeal resolution conflict"}), 409
     record_audit(guild_id, "mobile_app", "📱 Mobile App", "Accepted appeal (via mobile app)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
     try:
         run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], True, result))
@@ -674,7 +685,10 @@ def guild_appeal_deny_route(guild_id, token):
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         return jsonify({"error": "Appeal not found or already resolved"}), 404
 
-    col.ban_appeals.update_one({"token": token}, {"$set": {"status": "denied", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
+    if not claim_sanction_appeal(guild_id, token):
+        return jsonify({"error": "Appeal not found or already resolved"}), 404
+    if not resolve_sanction_appeal(guild_id, token, "denied"):
+        return jsonify({"error": "Appeal resolution conflict"}), 409
     record_audit(guild_id, "mobile_app", "📱 Mobile App", "Denied appeal (via mobile app)", f"Case #{appeal['case_id']}")
     try:
         run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], False, None))

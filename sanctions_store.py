@@ -95,6 +95,41 @@ def get_ban_appeal(token):
     return col.ban_appeals.find_one({"token": token})
 
 
+
+def claim_sanction_appeal(guild_id, token):
+    """Atomically claim a submitted appeal so only one reviewer can resolve it."""
+    result = col.ban_appeals.update_one(
+        {"token": token, "guild_id": str(guild_id), "status": "submitted"},
+        {"$set": {
+            "status": "processing",
+            "processing_at": datetime.datetime.now(datetime.timezone.utc),
+        }},
+    )
+    return result.modified_count == 1
+
+
+def resolve_sanction_appeal(guild_id, token, status):
+    """Finalize an appeal claimed by this workflow."""
+    if status not in ("accepted", "denied"):
+        raise ValueError("Invalid appeal resolution status")
+    result = col.ban_appeals.update_one(
+        {"token": token, "guild_id": str(guild_id), "status": "processing"},
+        {"$set": {
+            "status": status,
+            "resolved_at": datetime.datetime.now(datetime.timezone.utc),
+        }, "$unset": {"processing_at": ""}},
+    )
+    return result.modified_count == 1
+
+
+def release_sanction_appeal_claim(guild_id, token):
+    """Return a claimed appeal to submitted if its resolution action failed."""
+    result = col.ban_appeals.update_one(
+        {"token": token, "guild_id": str(guild_id), "status": "processing"},
+        {"$set": {"status": "submitted"}, "$unset": {"processing_at": ""}},
+    )
+    return result.modified_count == 1
+
 def get_ban_appeal_by_case(guild_id, case_id):
     return col.ban_appeals.find_one({"guild_id": str(guild_id), "case_id": case_id})
 

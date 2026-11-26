@@ -636,6 +636,34 @@ def test_appeals_list_accept_deny(env):
     assert "Denied appeal (via mobile app)" in audit_actions
 
 
+@pytest.mark.parametrize("action", ["accept", "deny"])
+def test_mobile_appeal_claim_prevents_concurrent_resolution(env, monkeypatch, action):
+    import web.rest_api as rest_module
+
+    token = f"race-{action}"
+    _submitted_appeal(env, "ban", token)
+    stale_appeal = dict(env.col.ban_appeals.find_one({"token": token}))
+    env.col.ban_appeals.update_one(
+        {"token": token}, {"$set": {"status": "processing"}}
+    )
+    monkeypatch.setattr(
+        rest_module, "get_ban_appeal",
+        lambda _token: {**stale_appeal, "status": "submitted"},
+    )
+    side_effects = []
+    monkeypatch.setattr(
+        rest_module, "run_coroutine",
+        lambda coroutine: side_effects.append(coroutine) or "unexpected",
+    )
+
+    response = env.client.post(
+        url(f"/appeals/{token}/{action}"), headers=MASTER
+    )
+    assert response.status_code == 404
+    assert env.col.ban_appeals.find_one({"token": token})["status"] == "processing"
+    assert side_effects == []
+
+
 # ------------------------------------------------------------------ features
 
 def test_features_list_and_toggle(env):
