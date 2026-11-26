@@ -1137,3 +1137,41 @@ def test_api_announce_calendar_event_fails_closed_for_missing_runtime_targets(mo
             return None
     monkeypatch.setattr(core, "bot", ReadyBot())
     assert service.api_announce_calendar_event("123", "8", {"role_id": "7"}) == (False, "Guild not found")
+
+
+def test_api_grant_verified_applies_verification_through_service(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+    import verification
+
+    guild = object()
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, guild_id):
+            return guild if guild_id == 123 else None
+
+    calls = []
+    async def fake_grant(target_guild, user_id):
+        calls.append((target_guild, user_id))
+        return True, None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    monkeypatch.setattr(verification, "grant_verified", fake_grant)
+    assert InProcessBotService().api_grant_verified("123", "456") == (True, None)
+    assert calls == [(guild, "456")]
+
+
+def test_api_grant_verified_fails_closed_when_runtime_or_guild_is_missing(monkeypatch):
+    service = InProcessBotService()
+    monkeypatch.setattr(core, "bot", None)
+    assert service.api_grant_verified("123", "456") == (False, "Bot not ready")
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, guild_id):
+            return None
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert service.api_grant_verified("123", "456") == (False, "Guild not found")
