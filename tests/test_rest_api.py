@@ -539,7 +539,7 @@ def test_features_list_and_toggle(env):
     for invalid in ("false", "true", 0, 1, None, [], {}):
         response = env.client.post(url("/features/antinuke"), json={"enabled": invalid}, headers=MASTER)
         assert response.status_code == 400
-    assert env.client.get(url("/features"), headers=MASTER).get_json()[0]["enabled"] is False
+    assert {item["key"]: item["enabled"] for item in env.client.get(url("/features"), headers=MASTER).get_json()}["antinuke"] is True
 
 
 # ----------------------------------------------------------------------- faq
