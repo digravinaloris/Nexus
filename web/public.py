@@ -86,8 +86,9 @@ def killswitch_submit(token):
     valid = bool(totp_secret) and bool(code) and pyotp.TOTP(totp_secret).verify(code, valid_window=1)
 
     if not valid:
-        new_attempts = doc.get("attempts", 0) + 1
-        increment_killswitch_attempts(token)
+        new_attempts = increment_killswitch_attempts(token)
+        if new_attempts is None:
+            return render_template("killswitch_invalid.html"), 410
         attempts_left = max(0, 5 - new_attempts)
         record_audit("global", None, f"Unknown (IP {ip})", "Failed kill-switch code attempt", f"{new_attempts}/5 attempts used")
         if new_attempts >= 5:
@@ -100,7 +101,8 @@ def killswitch_submit(token):
 
     # Code correct : le token est consommé immédiatement (usage unique),
     # avant même de faire quoi que ce soit d'autre.
-    mark_killswitch_token_used(token)
+    if not mark_killswitch_token_used(token):
+        return render_template("killswitch_invalid.html"), 410
     new_state = not get_global_lock()
     set_global_lock(new_state)
     record_audit("global", None, f"Owner (email + authenticator, IP {ip})", "Locked bot globally" if new_state else "Unlocked bot globally")
@@ -150,7 +152,10 @@ def appeal_form_submit(token):
             ban_reason=appeal["ban_reason"] or "No reason provided",
         )
 
-    submit_ban_appeal(token, appeal_text, datetime.datetime.now(datetime.timezone.utc))
+    submitted = submit_ban_appeal(token, appeal_text, datetime.datetime.now(datetime.timezone.utc))
+    if not submitted:
+        title, message = APPEAL_STATUS_COPY["submitted"]
+        return render_template("appeal_status.html", title=title, message=message)
 
     try:
         posted, error = get_bot_service().api_post_appeal_for_review(
