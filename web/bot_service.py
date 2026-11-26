@@ -41,6 +41,33 @@ class BotService:
         """Check ownership using the bot's current guild cache."""
         raise NotImplementedError
 
+    def api_announce_calendar_event(self, guild_id: str, channel_id: str, event: Dict[str, object]):
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return False, "Bot not ready"
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return False, "Guild not found"
+        channel = guild.get_channel(int(channel_id))
+        if channel is None or not hasattr(channel, "send"):
+            return False, "Channel not found"
+        role_id = event.get("role_id")
+        role = guild.get_role(int(role_id)) if str(role_id or "").isdigit() else None
+        if role is None or role.is_default():
+            return False, "Role not found"
+        from cogs.calendar import make_embed
+        async def send():
+            await channel.send(
+                content=role.mention,
+                embed=make_embed(event),
+                allowed_mentions=discord.AllowedMentions(roles=[role], users=False, everyone=False),
+            )
+        try:
+            run_coroutine(send())
+        except discord.HTTPException:
+            return False, "Announcement could not be sent"
+        return True, None
+
     def public_status_snapshot(self) -> Dict[str, object]:
         """Return minimal public status data without leaking Discord client objects."""
         raise NotImplementedError
@@ -111,6 +138,10 @@ class BotService:
 
     def api_notify_appeal_result(self, guild_id: str, user_id: str, case_id: str, accepted: bool, result=None):
         """Best-effort DM the user after the appeal has been resolved."""
+        raise NotImplementedError
+
+    def api_announce_calendar_event(self, guild_id: str, channel_id: str, event: Dict[str, object]):
+        """Publish a calendar event through the bot runtime without exposing Discord objects."""
         raise NotImplementedError
 
 
