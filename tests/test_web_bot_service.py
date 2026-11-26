@@ -839,3 +839,64 @@ def test_api_kick_member_returns_none_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().api_kick_member("123", "10", "x") is None
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_kick_member("123", "10", "x") is None
+
+
+def test_api_warn_member_records_warning_and_attempts_discord_log(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Member:
+        pass
+
+    member = Member()
+    records = []
+    logs = []
+
+    class Guild:
+        def get_member(self, uid):
+            return member if uid == 10 else None
+
+    guild = Guild()
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "get_warns", lambda gid, uid: 3)
+    monkeypatch.setattr(service_module, "set_warns", lambda gid, uid, count: records.append((gid, uid, count)))
+    monkeypatch.setattr(service_module, "log_sanction", lambda *args: records.append(args))
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    async def fake_log_warn(g, m, reason, count):
+        logs.append((g, m, reason, count))
+    monkeypatch.setattr(service_module, "log_warn", fake_log_warn)
+
+    assert InProcessBotService().api_warn_member("123", "10", "spam") == (True, 4)
+    assert records == [("123", "10", 4), ("123", "10", "warn", "spam", "mobile_app")]
+    assert logs == [(guild, member, "spam", 4)]
+
+
+def test_api_warn_member_handles_missing_member_and_guild(monkeypatch):
+    class Guild:
+        def get_member(self, uid):
+            return None
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, gid):
+            return Guild() if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert InProcessBotService().api_warn_member("123", "10", "x") == (False, "Member not found")
+    assert InProcessBotService().api_warn_member("456", "10", "x") == (False, "Guild not found")
+
+
+def test_api_warn_member_returns_none_when_bot_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().api_warn_member("123", "10", "x") is None
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_warn_member("123", "10", "x") is None
