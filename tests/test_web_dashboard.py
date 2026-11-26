@@ -161,6 +161,72 @@ def test_dashboard_home_requires_login(env):
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
 
 
+def test_guild_page_uses_overview_snapshot_dtos(dash, monkeypatch):
+    import web.dashboard as dashboard_module
+
+    class OverviewService:
+        def dashboard_overview_snapshot(self, guild_id, ticket_category_id=None):
+            assert guild_id == GID and ticket_category_id is None
+            return {
+                "id": GID, "name": "DTO Guild", "owner_id": OWNER_ID,
+                "text_channels": [{"id": "56", "name": "logs"}],
+                "roles": [{
+                    "id": "9", "name": "Admins",
+                    "permissions": {"administrator": True},
+                }],
+                "role_names": {GID: "@everyone", "9": "Admins"},
+                "open_tickets": [{"id": "77", "name": "ticket-bob"}],
+            }
+
+        def is_guild_owner(self, guild_id, user_id):
+            return guild_id == GID and user_id == OWNER_ID
+
+        def api_health_snapshot(self, guild_id):
+            return {"locked": False}
+
+    monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: OverviewService())
+    response = dash.client.get(dash.url())
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "DTO Guild" in body and "ticket-bob" in body
+    assert "Admins" in body
+
+
+def test_guild_page_post_validates_roles_and_channels_from_snapshot(dash, monkeypatch):
+    import web.dashboard as dashboard_module
+
+    class OverviewService:
+        def dashboard_overview_snapshot(self, guild_id, ticket_category_id=None):
+            return {
+                "id": GID, "name": "DTO Guild", "owner_id": OWNER_ID,
+                "text_channels": [{"id": "56", "name": "logs"}],
+                "roles": [{
+                    "id": "9", "name": "Admins",
+                    "permissions": {"administrator": True},
+                }],
+                "role_names": {GID: "@everyone", "9": "Admins"},
+                "open_tickets": [],
+            }
+
+        def is_guild_owner(self, guild_id, user_id):
+            return guild_id == GID and user_id == OWNER_ID
+
+        def api_health_snapshot(self, guild_id):
+            return {"locked": False}
+
+    monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: OverviewService())
+    response = dash.client.post(dash.url(), data={
+        "logs_channel": "56", "autorole": "9", "log_dashboard_actions": "on",
+    })
+    assert response.status_code == 302
+    assert dash.cfg()["logs_channel"] == "logs" and dash.cfg()["autorole"] == 9
+    messages = [message for _, message in flashes(dash.client)]
+    assert any("Admins" in message and "sensitive permissions" in message for message in messages)
+
+    dash.client.post(dash.url(), data={"logs_channel": "999", "autorole": "999"})
+    assert dash.cfg()["logs_channel"] == "logs" and dash.cfg()["autorole"] == 9
+
+
 # ------------------------------------------------------------------ présence
 
 def test_presence_ping_and_who_with_ttl(dash, monkeypatch):

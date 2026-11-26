@@ -12,7 +12,6 @@ import secrets
 import time
 from urllib.parse import urlparse
 
-import discord
 import calendar_store
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
@@ -559,20 +558,22 @@ def dash_home():
 @dash_login_required
 @dash_guild_admin_required
 def dash_guild_page(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    cfg = get_config(guild_id)
+    service = get_bot_service()
+    guild = service.dashboard_overview_snapshot(guild_id, cfg.get("ticket_category_id"))
     if guild is None:
         return jsonify({"error": "Bot not present on this server"}), 403
+    channels_by_id = {int(channel["id"]): channel for channel in guild["text_channels"]}
+    roles_by_id = {int(role["id"]): role for role in guild["roles"]}
 
     if request.method == "POST":
-        # Toute valeur reçue est revalidée contre les objets réels de CE serveur
-        # (jamais de confiance sur un id envoyé par le formulaire).
         changes = []
         logs_channel_id = request.form.get("logs_channel", "")
         if logs_channel_id.isdigit():
-            channel = guild.get_channel(int(logs_channel_id))
-            if channel is not None and channel in guild.text_channels:
-                update_config(guild_id, "logs_channel", channel.name)
-                changes.append(f"logs channel → #{channel.name}")
+            channel = channels_by_id.get(int(logs_channel_id))
+            if channel is not None:
+                update_config(guild_id, "logs_channel", channel["name"])
+                changes.append(f"logs channel → #{channel['name']}")
 
         autorole_id = request.form.get("autorole", "none")
         risky_perms = ("administrator", "manage_guild", "ban_members", "kick_members", "manage_roles")
@@ -580,12 +581,12 @@ def dash_guild_page(guild_id):
             update_config(guild_id, "autorole", None)
             changes.append("autorole → none")
         elif autorole_id.isdigit():
-            role = guild.get_role(int(autorole_id))
+            role = roles_by_id.get(int(autorole_id))
             if role is not None:
-                update_config(guild_id, "autorole", role.id)
-                changes.append(f"autorole → @{role.name}")
-                if any(getattr(role.permissions, p) for p in risky_perms):
-                    flash(f"⚠️ {role.name}: " + ("sensitive permissions, given to every new member." if current_lang() == "en" else "permissions sensibles, donné à tout nouveau membre."))
+                update_config(guild_id, "autorole", int(role["id"]))
+                changes.append(f"autorole → @{role['name']}")
+                if any(role["permissions"].get(permission, False) for permission in risky_perms):
+                    flash(f"⚠️ {role['name']}: " + ("sensitive permissions, given to every new member." if current_lang() == "en" else "permissions sensibles, donné à tout nouveau membre."))
 
         log_toggle = request.form.get("log_dashboard_actions") == "on"
         if log_toggle != bool(get_config(guild_id).get("log_dashboard_actions")):
@@ -598,19 +599,17 @@ def dash_guild_page(guild_id):
         flash("Configuration updated." if current_lang() == "en" else "Configuration mise à jour.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
-    cfg = get_config(guild_id)
     # Si l'utilisateur n'a pas déjà choisi une langue pour sa session, on
     # applique la langue par défaut configurée pour CE serveur via
     # /config language (sans écraser un choix explicite déjà fait).
     if "lang" not in session and cfg.get("language") in TRANSLATIONS:
         session["lang"] = cfg["language"]
 
-    is_owner = dash_is_owner(guild)
-    role_names = {r.id: r.name for r in guild.roles}
+    is_owner = service.is_guild_owner(guild_id, (session.get("dash_user") or {}).get("id"))
+    role_names = {int(role_id): name for role_id, name in guild["role_names"].items()}
 
-    # Checklist d'onboarding : ce qui n'est pas encore configuré.
     onboarding_missing = []
-    if not discord.utils.get(guild.text_channels, name=cfg.get("logs_channel", "logs")):
+    if not any(channel["name"] == cfg.get("logs_channel", "logs") for channel in guild["text_channels"]):
         onboarding_missing.append(t("onboard_logs"))
     if not cfg.get("autorole"):
         onboarding_missing.append(t("onboard_autorole"))
@@ -621,15 +620,8 @@ def dash_guild_page(guild_id):
     if not cfg.get("antinuke_enabled"):
         onboarding_missing.append(t("onboard_antinuke"))
 
-    # Tickets actuellement ouverts (dans la catégorie ticket, hors archive).
-    open_tickets = []
-    ticket_category_id = cfg.get("ticket_category_id")
-    if ticket_category_id:
-        category = guild.get_channel(int(ticket_category_id))
-        if isinstance(category, discord.CategoryChannel):
-            open_tickets = list(category.text_channels)
+    open_tickets = guild["open_tickets"]
 
-    # Graphe d'activité : sanctions par jour sur les 30 derniers jours.
     stats_series = get_sanction_stats(guild_id, days=30)
     has_any_activity = any(v for _, v in stats_series)
     sanction_chart = build_sparkline_svg(stats_series) if has_any_activity else ""
@@ -637,8 +629,8 @@ def dash_guild_page(guild_id):
     return render_template("dashboard_guild.html",
         guild=guild,
         cfg=cfg,
-        channels=guild.text_channels,
-        roles=[r for r in guild.roles if not r.is_default()],
+        channels=guild["text_channels"],
+        roles=guild["roles"],
         role_names=role_names,
         moderation_commands=MODERATION_COMMANDS,
         templates=COMMAND_TEMPLATES,
@@ -650,7 +642,7 @@ def dash_guild_page(guild_id):
         chart_start=stats_series[0][0] if stats_series else "",
         chart_end=stats_series[-1][0] if stats_series else "",
         is_owner=is_owner,
-        is_locked=get_bot_service().api_health_snapshot(guild_id).get("locked", False),
+        is_locked=service.api_health_snapshot(guild_id).get("locked", False),
         user=session.get("dash_user"),
     )
 
