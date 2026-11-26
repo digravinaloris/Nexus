@@ -12,6 +12,7 @@ import time
 
 import core
 import discord
+from config_store import get_config, update_config
 from bridge import run_coroutine
 from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from sanctions_store import get_sanction_stats, get_warns, log_sanction, set_warns
@@ -52,6 +53,14 @@ class BotService:
 
     def api_health_snapshot(self, guild_id: str = None) -> Dict[str, object]:
         """Return the existing REST health response without exposing bot objects."""
+        raise NotImplementedError
+
+    def api_config_snapshot(self, guild_id: str) -> Dict[str, object]:
+        """Return the stored guild config for API auth and config routes."""
+        raise NotImplementedError
+
+    def api_update_config(self, guild_id: str, updates: Dict[str, object]) -> None:
+        """Persist validated API config updates inside the bot service."""
         raise NotImplementedError
 
     def api_guild_list_snapshot(self, guild_id: str = None) -> Optional[List[Dict[str, object]]]:
@@ -365,6 +374,13 @@ class InProcessBotService(BotService):
         else:
             locked_guilds.discard(int(guild_id))
         return True
+
+    def api_config_snapshot(self, guild_id: str) -> Dict[str, object]:
+        return get_config(guild_id)
+
+    def api_update_config(self, guild_id: str, updates: Dict[str, object]) -> None:
+        for key, value in updates.items():
+            update_config(guild_id, key, value)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot

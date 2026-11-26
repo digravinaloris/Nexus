@@ -13,7 +13,6 @@ from functools import wraps
 from flask import Blueprint, g, jsonify, request
 
 from audit import get_audit_log, record_audit
-from config_store import get_config, update_config
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from web.bot_service import get_bot_service
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
@@ -84,7 +83,7 @@ def require_api_key(f):
             return f(*args, **kwargs)
         guild_id = kwargs.get("guild_id")
         if guild_id:
-            cfg = get_config(guild_id)
+            cfg = get_bot_service().api_config_snapshot(guild_id)
             if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
                 g.auth_guild_id = str(guild_id)
                 return f(*args, **kwargs)
@@ -92,7 +91,7 @@ def require_api_key(f):
             # API endpoints without a guild ID resolve a per-guild key using
             # serializable service snapshots, never Discord objects in this route.
             for candidate_guild_id in get_bot_service().api_guild_id_candidates():
-                cfg = get_config(candidate_guild_id)
+                cfg = get_bot_service().api_config_snapshot(candidate_guild_id)
                 if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
                     g.auth_guild_id = candidate_guild_id
                     return f(*args, **kwargs)
@@ -124,7 +123,7 @@ def guild_stats(guild_id):
     if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
 
-    cfg = get_config(guild_id)
+    cfg = get_bot_service().api_config_snapshot(guild_id)
     try:
         snapshot = get_bot_service().api_guild_stats_snapshot(
             guild_id, cfg.get("ticket_category_id")
@@ -140,7 +139,7 @@ def guild_stats(guild_id):
 @bp.route('/api/guilds/<guild_id>/config', methods=['GET'])
 @require_api_key
 def get_guild_config(guild_id):
-    cfg = get_config(guild_id)
+    cfg = get_bot_service().api_config_snapshot(guild_id)
     cfg.pop("_id", None)
     cfg.pop("api_key", None)  # jamais renvoyée en clair
     return jsonify(cfg)
@@ -200,7 +199,7 @@ def update_guild_config(guild_id):
             return jsonify({"error": f"Invalid {key}"}), 400
 
     for key, value in updates.items():
-        update_config(guild_id, key, value)
+        get_bot_service().api_update_config(guild_id, {key: value})
 
     return jsonify({"success": True, "updated": updates})
 
@@ -556,7 +555,7 @@ def guild_appeal_deny_route(guild_id, token):
 @bp.route('/api/guilds/<guild_id>/features', methods=['GET'])
 @require_api_key
 def guild_features_route(guild_id):
-    cfg = get_config(guild_id)
+    cfg = get_bot_service().api_config_snapshot(guild_id)
     return jsonify([{
         "key": key,
         "label": meta["label"],
@@ -575,7 +574,7 @@ def guild_feature_toggle_route(guild_id, feature_key):
     enabled = data.get("enabled", True)
     if not isinstance(enabled, bool):
         return jsonify({"error": "enabled must be a boolean"}), 400
-    update_config(guild_id, FEATURE_TOGGLES[feature_key]["config_key"], enabled)
+    get_bot_service().api_update_config(guild_id, {FEATURE_TOGGLES[feature_key]["config_key"]: enabled})
     return jsonify({"success": True, "key": feature_key, "enabled": enabled})
 
 
