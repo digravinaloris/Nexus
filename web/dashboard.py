@@ -658,10 +658,9 @@ def dash_guild_page(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_automod(guild_id):
-    snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
-    if snapshot is None:
+    roles = get_bot_service().dashboard_roles_snapshot(guild_id)
+    if roles is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    roles = snapshot["roles"]
     submitted = request.form.getlist("allowed_roles")
     valid_role_ids = {int(role["id"]) for role in roles}
     # ne garde que des ids qui correspondent à de vrais rôles de CE serveur
@@ -678,10 +677,10 @@ def dash_automod(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_add(guild_id):
-    snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
-    if snapshot is None:
+    role_list = get_bot_service().dashboard_roles_snapshot(guild_id)
+    if role_list is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    roles = {int(role["id"]): role for role in snapshot["roles"]}
+    roles = {int(role["id"]): role for role in role_list}
     commands = request.form.getlist("commands")
     role_id = request.form.get("role_id", "")
     valid_commands = [c for c in commands if c in MODERATION_COMMANDS]
@@ -704,10 +703,10 @@ def dash_permission_add(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_template(guild_id):
-    snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
-    if snapshot is None:
+    role_list = get_bot_service().dashboard_roles_snapshot(guild_id)
+    if role_list is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    roles = {int(role["id"]): role for role in snapshot["roles"]}
+    roles = {int(role["id"]): role for role in role_list}
     template_id = request.form.get("template_id", "")
     role_id = request.form.get("role_id", "")
     if not role_id.isdigit():
@@ -748,10 +747,10 @@ def dash_permission_template(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_remove(guild_id):
-    snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
-    if snapshot is None:
+    role_list = get_bot_service().dashboard_roles_snapshot(guild_id)
+    if role_list is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    roles = {int(role["id"]): role for role in snapshot["roles"]}
+    roles = {int(role["id"]): role for role in role_list}
     command = request.form.get("command", "")
     role_id = request.form.get("role_id", "")
     # Pas de whitelist ici : la commande vient d'un chip déjà affiché depuis
