@@ -12,12 +12,11 @@ from functools import wraps
 
 from flask import Blueprint, g, jsonify, request
 
-from audit import get_audit_log, record_audit
 from web.bot_service import get_bot_service
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from features import FEATURE_TOGGLES
 from sanctions_store import (
-    claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_submitted_appeals,
+    claim_sanction_appeal, get_ban_appeal, get_submitted_appeals,
     get_warnlist, get_warns,
     log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns,
 )
@@ -455,7 +454,7 @@ def guild_audit_route(guild_id):
     dashboard web (get_audit_log), fusionne actions dashboard + sanctions."""
     requested_limit = request.args.get("limit", default=20, type=int)
     limit = max(1, min(requested_limit if requested_limit is not None else 20, 100))
-    entries = get_audit_log(guild_id, limit=limit)
+    entries = get_bot_service().api_audit_snapshot(guild_id, limit=limit)
     return jsonify([{
         "actor_name": e.get("actor_name", "Unknown"),
         "action": e.get("action", ""),
@@ -472,7 +471,7 @@ def guild_cases_route(guild_id):
     filter_type = request.args.get("type", "")
     requested_limit = request.args.get("limit", default=50, type=int)
     limit = max(1, min(requested_limit if requested_limit is not None else 50, 200))
-    cases = get_sanction_cases(guild_id, filter_type, limit)
+    cases = get_bot_service().api_sanction_cases_snapshot(guild_id, filter_type, limit)
     return jsonify([{
         "case_id": c.get("case_id"),
         "user_id": c.get("user_id"),
@@ -525,7 +524,7 @@ def guild_appeal_accept_route(guild_id, token):
         return jsonify({"error": result}), status_code
     if not resolve_sanction_appeal(guild_id, token, "accepted"):
         return jsonify({"error": "Appeal resolution conflict"}), 409
-    record_audit(guild_id, "mobile_app", "📱 Mobile App", "Accepted appeal (via mobile app)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
+    get_bot_service().api_record_audit(guild_id, "mobile_app", "📱 Mobile App", "Accepted appeal (via mobile app)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
     get_bot_service().api_notify_appeal_result(guild_id, appeal["user_id"], appeal["case_id"], True, result)
     return jsonify({"success": True, "result": result})
 
@@ -546,7 +545,7 @@ def guild_appeal_deny_route(guild_id, token):
         return jsonify({"error": "Appeal not found or already resolved"}), 404
     if not resolve_sanction_appeal(guild_id, token, "denied"):
         return jsonify({"error": "Appeal resolution conflict"}), 409
-    record_audit(guild_id, "mobile_app", "📱 Mobile App", "Denied appeal (via mobile app)", f"Case #{appeal['case_id']}")
+    get_bot_service().api_record_audit(guild_id, "mobile_app", "📱 Mobile App", "Denied appeal (via mobile app)", f"Case #{appeal['case_id']}")
     get_bot_service().api_notify_appeal_result(guild_id, appeal["user_id"], appeal["case_id"], False)
     return jsonify({"success": True})
 
