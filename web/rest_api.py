@@ -16,6 +16,7 @@ from flask import Blueprint, g, jsonify, request
 
 import core
 from audit import get_audit_log, record_audit
+from bridge import run_coroutine  # compatibility for existing route tests; actions use BotService
 from config_store import get_config, update_config
 from core import col
 from web.bot_service import get_bot_service
