@@ -27,7 +27,6 @@ from core import col
 from discord_logging import log_dashboard_action
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
-from moderation_actions import _dm_user_appeal_result, reverse_sanction
 from sanctions_store import (
     claim_sanction_appeal, get_ban_appeal, get_sanction_stats, get_sanction_cases,
     get_sanction_types, get_submitted_appeals, release_sanction_appeal_claim,
@@ -834,7 +833,6 @@ def dash_appeals_page(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_appeal_accept(guild_id, token):
-    guild = core.bot.get_guild(int(guild_id))
     appeal = get_ban_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         flash("This appeal is no longer available.")
@@ -864,7 +862,6 @@ def dash_appeal_accept(guild_id, token):
 @dash_login_required
 @dash_guild_admin_required
 def dash_appeal_deny(guild_id, token):
-    guild = core.bot.get_guild(int(guild_id))
     appeal = get_ban_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         flash("This appeal is no longer available.")
