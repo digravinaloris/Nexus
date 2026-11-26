@@ -468,6 +468,24 @@ def test_appeals_review_accept_and_deny(dash):
     assert any("no longer available" in m for _, m in flashes(dash.client))
 
 
+def test_dashboard_failed_appeal_reversal_releases_claim(dash, monkeypatch):
+    import web.dashboard as dashboard_module
+
+    _submitted(dash, "failed-accept")
+
+    def fail_reversal(coroutine):
+        coroutine.close()
+        raise RuntimeError("Discord temporarily unavailable")
+
+    monkeypatch.setattr(dashboard_module, "run_coroutine", fail_reversal)
+    with pytest.raises(RuntimeError, match="temporarily unavailable"):
+        dash.client.post(dash.url("/appeals/failed-accept/accept"))
+
+    appeal = dash.col.ban_appeals.find_one({"token": "failed-accept"})
+    assert appeal["status"] == "submitted"
+    assert "processing_at" not in appeal
+
+
 @pytest.mark.parametrize("action", ["accept", "deny"])
 def test_dashboard_appeal_claim_prevents_concurrent_resolution(dash, monkeypatch, action):
     import web.dashboard as dashboard_module
