@@ -28,8 +28,9 @@ from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from moderation_actions import _dm_user_appeal_result, reverse_sanction
 from sanctions_store import (
-    claim_sanction_appeal, get_ban_appeal, get_sanction_stats,
-    release_sanction_appeal_claim, resolve_sanction_appeal,
+    claim_sanction_appeal, get_ban_appeal, get_sanction_stats, get_sanction_cases,
+    get_sanction_types, get_submitted_appeals, release_sanction_appeal_claim,
+    resolve_sanction_appeal,
 )
 from template_ops import _apply_template_base_config
 from utils import normalize_banned_word, normalize_domain, parse_bounded_number, parse_lines_list
@@ -811,11 +812,8 @@ def dash_toggle_lock(guild_id):
 def dash_cases_page(guild_id):
     guild = core.bot.get_guild(int(guild_id))
     filter_type = request.args.get("type", "")
-    query = {"guild_id": str(guild_id)}
-    if filter_type:
-        query["type"] = filter_type
-    cases = list(col.sanctions.find(query).sort("timestamp", -1).limit(200))
-    all_types = col.sanctions.distinct("type", {"guild_id": str(guild_id)})
+    cases = get_sanction_cases(guild_id, filter_type, 200)
+    all_types = get_sanction_types(guild_id)
     return render_template("cases.html", guild=guild, cases=cases, all_types=all_types, filter_type=filter_type,
         user=session.get("dash_user"),
     )
@@ -826,7 +824,7 @@ def dash_cases_page(guild_id):
 @dash_guild_admin_required
 def dash_appeals_page(guild_id):
     guild = core.bot.get_guild(int(guild_id))
-    appeals = list(col.ban_appeals.find({"guild_id": str(guild_id), "status": "submitted"}).sort("submitted_at", -1))
+    appeals = get_submitted_appeals(guild_id)
     return render_template("appeals_review.html", guild=guild, appeals=appeals, user=session.get("dash_user"))
 
 
