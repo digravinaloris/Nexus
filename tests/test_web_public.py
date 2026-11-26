@@ -156,6 +156,7 @@ def test_callback_rejects_bad_state_and_missing_code(env, monkeypatch):
     assert resp.status_code == 403 and resp.get_json() == {"error": "Invalid state"}
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "good"
+        sess["oauth_code_verifier"] = "A" * 43
         sess["oauth_state_created_at"] = datetime.datetime.now(datetime.timezone.utc).timestamp()
     resp = env.client.get("/callback?state=good")
     assert resp.status_code == 400 and resp.get_json() == {"error": "Missing code"}
@@ -165,6 +166,7 @@ def test_callback_token_exchange_failure(env, monkeypatch):
     _fake_requests(monkeypatch, token_status=400)
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "s"
+        sess["oauth_code_verifier"] = "A" * 43
         sess["oauth_state_created_at"] = datetime.datetime.now(datetime.timezone.utc).timestamp()
     resp = env.client.get("/callback?state=s&code=c")
     assert resp.status_code == 400 and resp.get_json() == {"error": "Token exchange failed"}
@@ -174,6 +176,7 @@ def test_callback_success_stores_session_and_redirects(env, monkeypatch):
     calls = _fake_requests(monkeypatch, user={"id": "12345678901234567", "username": "bob"})
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "s"
+        sess["oauth_code_verifier"] = "A" * 43
         sess["oauth_state_created_at"] = datetime.datetime.now(datetime.timezone.utc).timestamp()
     resp = env.client.get("/callback?state=s&code=c")
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/dashboard")
