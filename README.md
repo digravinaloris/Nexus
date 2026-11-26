@@ -19,6 +19,8 @@ Built with Python (discord.py) + Flask, backed by MongoDB Atlas, hosted on Rende
 - **Anti-raid** — locks the server automatically if too many members join in a short window
 - **Anti-nuke** — watches Discord's own audit log for a burst of destructive actions (bans, kicks, channel/role deletions) by the same person and quarantines them automatically
 - **Account age gate** — optionally auto-kick accounts younger than a configurable number of days
+- **Cloudflare Turnstile verification** — personal, expiring verification links; Verified/Unverified roles; optional post-verification role; account-age checks and configurable cleanup of members who never verify
+- **Server calendar** — create events with role notifications, timezone-aware dates, and automatic 24-hour / 1-hour reminders; manage events in Discord or the dashboard
 - **Ticket system** — a button opens a private channel (with an optional intake form), a satisfaction survey DM after closing, and optional archiving instead of deletion
 - **Server backups** — snapshot roles, channels, and permissions; restore whatever's missing without ever deleting anything
 - **Global emergency kill-switch** — a daily email with a one-time link, gated behind a 6-digit authenticator code, to lock the bot across every server at once if something goes wrong
@@ -103,6 +105,28 @@ Every sanction (ban, kick, mute, warn, tempban, softban) DMs the person a case n
 | `/ticket unassign` | Ticket support role or staff | Remove the current ticket assignment |
 
 Ticket priorities and staff assignments are stored in the channel topic and remain attached to the ticket. Use `/ticket assign @member` to assign a ticket to a support-role member or staff member with Manage Channels; the assignee receives explicit access to the ticket. Use `/ticket unassign` to remove the assignment and its member-specific channel access. Support staff or members with Manage Channels can change them from inside the ticket using `/ticket priority`. Each additional panel routes tickets to its own category and support role. Panel IDs are stored in ticket channel topics so closing and archiving use the correct panel configuration. The legacy ticket setup remains supported. Clicking a panel opens its custom intake form (up to five required questions configured with `/ticket panel-questions`) and creates a private channel with a **Close Ticket** button. Answers are included in the ticket embed. Closed tickets are archived when an archive category is configured, otherwise deleted. Archived tickets can be reopened with `/ticket reopen` by support staff or server staff; reopening restores the original panel category and ticket access. The existing satisfaction survey and HTML transcript delivery are preserved. Transcripts use a Discord-inspired layout with avatars, timestamps, bot labels, embeds and attachment previews.
+
+### Member Verification
+
+Nexus can gate new members behind Cloudflare Turnstile. Configure the **Verified** and **Unverified** roles in the dashboard's **Settings → Verification** section, then configure the verification channel's Discord permissions yourself: keep Unverified members out of normal channels and allow them into the verification channel. Nexus manages roles, not channel visibility.
+
+In the verification channel, run `/config verification post`, then enable the feature with `/feature enable verification`. Members receive a personal verification link; links expire, are single-use, and have a limited number of attempts. After a successful Cloudflare check, Nexus grants Verified, removes Unverified, and can grant an additional configured role. Optional account-age limits and automatic kicks for members who remain unverified are configurable. Turnstile requires `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and a public base URL (or a valid `DISCORD_REDIRECT_URI` from which it can be derived). If Turnstile is unavailable or not configured, verification fails closed.
+
+### Server Calendar
+
+The `/calendar` command group manages upcoming server events. Calendar management is available to administrators, configured calendar-manager roles, and members granted the corresponding command permission.
+
+| Command | Description |
+|---|---|
+| `/calendar add <title> <role> <date> [time] [description]` | Create an event and announce it with a role mention |
+| `/calendar list` | List the next 15 upcoming events |
+| `/calendar edit <event_id>` | Edit an event's title, role, date, time, or description |
+| `/calendar delete <event_id>` | Delete an event |
+| `/calendar timezone <timezone>` | Set the server's IANA timezone (default: `Europe/Paris`) |
+| `/calendar channel [channel]` | Set or clear the announcement channel |
+| `/calendar manager <role> <add/remove>` | Manage calendar-manager roles (administrator only) |
+
+Events are stored per server. Nexus sends automatic reminders roughly 24 hours and 1 hour before an event. The dashboard also includes a calendar page for managing events.
 
 ### GitHub Release Announcements
 

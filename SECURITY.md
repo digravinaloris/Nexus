@@ -62,6 +62,9 @@ This isn't a claim of being bulletproof — it's a list of what's actually imple
 - Bot token, OAuth2 client secret, database URI, and Flask session secret are all read from environment variables — never hardcoded or committed
 - Two previously exposed tokens were purged from the entire git history (not just reverted) and rotated
 
+**Member verification**
+- Cloudflare Turnstile verification fails closed: role grants require server-side Siteverify success. Verification links are member- and guild-bound, short-lived, single-use, and attempt-limited.
+
 **Availability / abuse resistance**
 - Login retries back off with increasing delays after a Discord/Cloudflare rate limit instead of crash-looping and making the situation worse
 - Per-server API keys for the mobile app mean a leaked key only exposes one server, not the whole bot
