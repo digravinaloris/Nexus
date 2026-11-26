@@ -6,8 +6,11 @@ existing in-process deployment; a signed HTTP adapter can implement the same
 contract in a later migration step without changing route response shapes.
 """
 from typing import Dict, List
+import math
+import time
 
 import core
+import utils
 
 
 class BotService:
@@ -26,6 +29,10 @@ class BotService:
 
     def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
         """Check ownership using the bot's current guild cache."""
+        raise NotImplementedError
+
+    def public_status_snapshot(self) -> Dict[str, object]:
+        """Return minimal public status data without leaking Discord client objects."""
         raise NotImplementedError
 
 
@@ -51,6 +58,14 @@ class InProcessBotService(BotService):
         bot_ready = bool(bot is not None and bot.is_ready())
         guild_present = bool(bot_ready and bot.get_guild(int(guild_id)) is not None)
         return {"bot_ready": bot_ready, "guild_present": guild_present}
+
+    def public_status_snapshot(self) -> Dict[str, object]:
+        bot = core.bot
+        online = bool(bot is not None and bot.is_ready())
+        uptime = utils.format_uptime(time.time() - bot.start_time) if online and hasattr(bot, "start_time") else "unknown"
+        latency = getattr(bot, "latency", float("nan")) if online else float("nan")
+        latency_ms = round(latency * 1000) if isinstance(latency, (int, float)) and math.isfinite(latency) else "—"
+        return {"online": online, "guild_count": len(bot.guilds) if online else 0, "latency_ms": latency_ms, "uptime": uptime}
 
     def health_snapshot(self) -> Dict[str, object]:
         bot = core.bot
