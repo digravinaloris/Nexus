@@ -71,7 +71,9 @@ def github_release_webhook():
         return jsonify({"error": "Webhook is not configured"}), 503
     if request.content_length is not None and request.content_length > MAX_PAYLOAD_BYTES:
         return jsonify({"error": "Payload too large"}), 413
-    raw = request.get_data(cache=False)
+    # Read at most one byte beyond the limit so chunked or lengthless requests
+    # cannot force an unbounded body allocation before validation.
+    raw = request.stream.read(MAX_PAYLOAD_BYTES + 1)
     if len(raw) > MAX_PAYLOAD_BYTES:
         return jsonify({"error": "Payload too large"}), 413
     if not verify_signature(raw, request.headers.get("X-Hub-Signature-256"), secret):
