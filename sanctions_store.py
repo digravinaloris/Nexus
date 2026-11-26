@@ -193,35 +193,3 @@ def get_sanction_types(guild_id):
     """Return the sanction types recorded for a single guild."""
     return col.sanctions.distinct("type", {"guild_id": str(guild_id)})
 
-
-
-def get_faq(guild_id):
-    """Fetch one guild's FAQ document without creating defaults."""
-    return col.faq.find_one({"guild_id": str(guild_id)})
-
-
-
-def add_faq_entry(guild_id, entry):
-    """Append a prepared FAQ entry; initialize the document if necessary."""
-    doc = get_faq(guild_id) or {"guild_id": str(guild_id), "enabled": False, "entries": []}
-    entries = doc.get("entries", [])
-    entries.append(entry)
-    col.faq.update_one({"guild_id": str(guild_id)}, {"$set": {"entries": entries}}, upsert=True)
-
-
-def remove_faq_entry(guild_id, entry_id):
-    """Remove an FAQ entry and report whether it existed."""
-    doc = get_faq(guild_id)
-    if not doc:
-        return False
-    entries = doc.get("entries", [])
-    remaining = [entry for entry in entries if entry.get("id") != entry_id]
-    if len(remaining) == len(entries):
-        return False
-    col.faq.update_one({"guild_id": str(guild_id)}, {"$set": {"entries": remaining}})
-    return True
-
-
-def set_faq_enabled(guild_id, enabled):
-    """Set FAQ auto-help enabled state, creating a minimal document if absent."""
-    col.faq.update_one({"guild_id": str(guild_id)}, {"$set": {"enabled": enabled}}, upsert=True)
