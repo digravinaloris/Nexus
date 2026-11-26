@@ -16,8 +16,6 @@ from web.bot_service import get_bot_service
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from features import FEATURE_TOGGLES
 from sanctions_store import (
-    claim_sanction_appeal, get_ban_appeal, get_submitted_appeals,
-    release_sanction_appeal_claim, resolve_sanction_appeal,
 )
 
 bp = Blueprint("rest_api", __name__)
@@ -486,7 +484,7 @@ def guild_cases_route(guild_id):
 def guild_appeals_route(guild_id):
     """Appels de sanction en attente de revue, pour l'app mobile -- mêmes
     entrées que la page /dashboard/<guild_id>/appeals côté web."""
-    appeals = get_submitted_appeals(guild_id)
+    appeals = get_bot_service().api_submitted_appeals(guild_id)
     return jsonify([{
         "token": a["token"],
         "case_id": a.get("case_id"),
@@ -506,11 +504,11 @@ def guild_appeal_accept_route(guild_id, token):
         return jsonify({"error": "Bot not ready"}), 503
     if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
-    appeal = get_ban_appeal(token)
+    appeal = get_bot_service().api_get_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         return jsonify({"error": "Appeal not found or already resolved"}), 404
 
-    if not claim_sanction_appeal(guild_id, token):
+    if not get_bot_service().api_claim_appeal(guild_id, token):
         return jsonify({"error": "Appeal not found or already resolved"}), 404
 
     sanction_type = appeal.get("sanction_type", "ban")
@@ -518,10 +516,10 @@ def guild_appeal_accept_route(guild_id, token):
         guild_id, appeal["user_id"], sanction_type
     )
     if not success:
-        release_sanction_appeal_claim(guild_id, token)
+        get_bot_service().api_release_appeal_claim(guild_id, token)
         status_code = 503 if result == "Bot not ready" else 404 if result == "Guild not found" else 500
         return jsonify({"error": result}), status_code
-    if not resolve_sanction_appeal(guild_id, token, "accepted"):
+    if not get_bot_service().api_resolve_appeal(guild_id, token, "accepted"):
         return jsonify({"error": "Appeal resolution conflict"}), 409
     get_bot_service().api_record_audit(guild_id, "mobile_app", "📱 Mobile App", "Accepted appeal (via mobile app)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
     get_bot_service().api_notify_appeal_result(guild_id, appeal["user_id"], appeal["case_id"], True, result)
@@ -536,13 +534,13 @@ def guild_appeal_deny_route(guild_id, token):
         return jsonify({"error": "Bot not ready"}), 503
     if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
-    appeal = get_ban_appeal(token)
+    appeal = get_bot_service().api_get_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         return jsonify({"error": "Appeal not found or already resolved"}), 404
 
-    if not claim_sanction_appeal(guild_id, token):
+    if not get_bot_service().api_claim_appeal(guild_id, token):
         return jsonify({"error": "Appeal not found or already resolved"}), 404
-    if not resolve_sanction_appeal(guild_id, token, "denied"):
+    if not get_bot_service().api_resolve_appeal(guild_id, token, "denied"):
         return jsonify({"error": "Appeal resolution conflict"}), 409
     get_bot_service().api_record_audit(guild_id, "mobile_app", "📱 Mobile App", "Denied appeal (via mobile app)", f"Case #{appeal['case_id']}")
     get_bot_service().api_notify_appeal_result(guild_id, appeal["user_id"], appeal["case_id"], False)
