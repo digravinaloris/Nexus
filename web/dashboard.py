@@ -27,7 +27,10 @@ from discord_logging import log_dashboard_action
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from moderation_actions import _dm_user_appeal_result, reverse_sanction
-from sanctions_store import get_ban_appeal, get_sanction_stats
+from sanctions_store import (
+    claim_sanction_appeal, get_ban_appeal, get_sanction_stats,
+    release_sanction_appeal_claim, resolve_sanction_appeal,
+)
 from template_ops import _apply_template_base_config
 from utils import normalize_banned_word, normalize_domain, parse_bounded_number, parse_lines_list
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
@@ -836,9 +839,19 @@ def dash_appeal_accept(guild_id, token):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
 
+    if not claim_sanction_appeal(guild_id, token):
+        flash("This appeal is no longer available.")
+        return redirect(url_for("dash_appeals_page", guild_id=guild_id))
+
     sanction_type = appeal.get("sanction_type", "ban")
-    result = run_coroutine(reverse_sanction(guild, sanction_type, appeal["user_id"]))
-    col.ban_appeals.update_one({"token": token}, {"$set": {"status": "accepted", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
+    try:
+        result = run_coroutine(reverse_sanction(guild, sanction_type, appeal["user_id"]))
+    except Exception:
+        release_sanction_appeal_claim(guild_id, token)
+        raise
+    if not resolve_sanction_appeal(guild_id, token, "accepted"):
+        flash("This appeal is no longer available.")
+        return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
     record_audit(guild_id, actor_id, actor_name, "Accepted appeal (via dashboard)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
     try:
@@ -859,7 +872,12 @@ def dash_appeal_deny(guild_id, token):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
 
-    col.ban_appeals.update_one({"token": token}, {"$set": {"status": "denied", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}})
+    if not claim_sanction_appeal(guild_id, token):
+        flash("This appeal is no longer available.")
+        return redirect(url_for("dash_appeals_page", guild_id=guild_id))
+    if not resolve_sanction_appeal(guild_id, token, "denied"):
+        flash("This appeal is no longer available.")
+        return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
     record_audit(guild_id, actor_id, actor_name, "Denied appeal (via dashboard)", f"Case #{appeal['case_id']}")
     try:
