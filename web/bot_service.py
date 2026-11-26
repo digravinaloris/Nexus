@@ -13,8 +13,8 @@ import time
 import core
 import discord
 from bridge import run_coroutine
-from discord_logging import log_ban, log_kick, log_mute, log_unmute
-from sanctions_store import log_sanction
+from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_warn
+from sanctions_store import get_warns, log_sanction, set_warns
 import utils
 
 
@@ -90,6 +90,10 @@ class BotService:
 
     def api_kick_member(self, guild_id: str, user_id: str, reason: str):
         """Kick a member and write its existing sanction/log records."""
+        raise NotImplementedError
+
+    def api_warn_member(self, guild_id: str, user_id: str, reason: str):
+        """Record a member warning and attempt the existing Discord log."""
         raise NotImplementedError
 
 
@@ -341,6 +345,26 @@ class InProcessBotService(BotService):
             return True, None
 
         return run_coroutine(kick())
+
+    def api_warn_member(self, guild_id: str, user_id: str, reason: str):
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return False, "Guild not found"
+
+        member = guild.get_member(int(user_id))
+        if member is None:
+            return False, "Member not found"
+        count = get_warns(guild_id, user_id) + 1
+        set_warns(guild_id, user_id, count)
+        log_sanction(guild_id, user_id, "warn", reason, "mobile_app")
+        try:
+            run_coroutine(log_warn(guild, member, reason, count))
+        except Exception:
+            pass  # The warning is already recorded; Discord logging is secondary.
+        return True, count
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot
