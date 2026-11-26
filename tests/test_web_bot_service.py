@@ -1293,6 +1293,35 @@ def test_dashboard_settings_snapshot_serializes_guild_data(monkeypatch):
     }
 
 
+def test_dashboard_roles_snapshot_includes_everyone_and_serializes_roles(monkeypatch):
+    class Role:
+        def __init__(self, role_id, name):
+            self.id = role_id
+            self.name = name
+
+    class Guild:
+        roles = [Role(1, "@everyone"), Role(2, "Moderator")]
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, guild_id):
+            return Guild() if guild_id == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert InProcessBotService().dashboard_roles_snapshot("123") == [
+        {"id": "1", "name": "@everyone"},
+        {"id": "2", "name": "Moderator"},
+    ]
+
+
+def test_dashboard_roles_snapshot_fails_closed_when_guild_unavailable(monkeypatch):
+    service = InProcessBotService()
+    monkeypatch.setattr(core, "bot", None)
+    assert service.dashboard_roles_snapshot("123") is None
+
+
 def test_dashboard_settings_snapshot_fails_closed_when_guild_unavailable(monkeypatch):
     service = InProcessBotService()
     monkeypatch.setattr(core, "bot", None)
