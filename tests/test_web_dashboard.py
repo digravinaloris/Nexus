@@ -473,11 +473,11 @@ def test_dashboard_failed_appeal_reversal_releases_claim(dash, monkeypatch):
 
     _submitted(dash, "failed-accept")
 
-    def fail_reversal(coroutine):
-        coroutine.close()
-        raise RuntimeError("Discord temporarily unavailable")
+    class FailedAppealService:
+        def api_accept_appeal(self, *_args):
+            return False, "Discord temporarily unavailable"
 
-    monkeypatch.setattr(dashboard_module, "run_coroutine", fail_reversal)
+    monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: FailedAppealService())
     response = dash.client.post(dash.url("/appeals/failed-accept/accept"))
     assert response.status_code == 500
 
