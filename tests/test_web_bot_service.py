@@ -1499,3 +1499,27 @@ def test_dashboard_settings_snapshot_fails_closed_when_guild_unavailable(monkeyp
 
     monkeypatch.setattr(core, "bot", ReadyBot())
     assert service.dashboard_settings_snapshot("123") is None
+
+
+
+def test_dashboard_command_role_mutations_use_config_store(monkeypatch):
+    import web.bot_service as service_module
+
+    calls = []
+    monkeypatch.setattr(
+        service_module, "add_command_role",
+        lambda guild_id, command_name, role_id: calls.append(("add", guild_id, command_name, role_id)),
+    )
+    monkeypatch.setattr(
+        service_module, "remove_command_role",
+        lambda guild_id, command_name, role_id: calls.append(("remove", guild_id, command_name, role_id)),
+    )
+
+    service = InProcessBotService()
+    service.dashboard_add_command_role("123", "ban", 456)
+    service.dashboard_remove_command_role("123", "ban", 456)
+
+    assert calls == [
+        ("add", "123", "ban", 456),
+        ("remove", "123", "ban", 456),
+    ]
