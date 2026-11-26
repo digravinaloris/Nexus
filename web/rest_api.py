@@ -460,23 +460,10 @@ def warn_member_route(guild_id, user_id):
 @bp.route('/api/guilds/<guild_id>/members/<user_id>/unwarn', methods=['POST'])
 @require_api_key
 def unwarn_member_route(guild_id, user_id):
-    count = get_warns(guild_id, user_id)
-    if count == 0:
-        return jsonify({"error": "No warnings to remove"}), 400
-    count -= 1
-    set_warns(guild_id, user_id, count)
-
-    if core.bot.is_ready():
-        guild = core.bot.get_guild(int(guild_id))
-        if guild:
-            member = guild.get_member(int(user_id))
-            if member:
-                try:
-                    run_coroutine(log_unwarn(guild, member, count))
-                except Exception:
-                    pass
-
-    return jsonify({"success": True, "warnings": count})
+    success, value = get_bot_service().api_unwarn_member(guild_id, user_id)
+    if not success:
+        return jsonify({"error": value}), 400
+    return jsonify({"success": True, "warnings": value})
 
 
 @bp.route('/api/guilds/<guild_id>/audit', methods=['GET'])
