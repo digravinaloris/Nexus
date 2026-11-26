@@ -458,12 +458,18 @@ def test_mobile_moderation_rejects_malformed_payloads_before_side_effects(env):
     member = FakeMember(10)
     env.guild.members = [member]
     for route in ("ban", "kick", "mute", "warn"):
-        for payload in ([], "invalid", 123, None):
+        for payload in ([], "invalid", 123):
             response = env.client.post(
                 url(f"/members/10/{route}"), json=payload, headers=MASTER
             )
             assert response.status_code == 400
             assert response.get_json() == {"error": "JSON body must be an object"}
+        null_response = env.client.post(
+            url(f"/members/10/{route}"), data="null",
+            content_type="application/json", headers=MASTER,
+        )
+        assert null_response.status_code == 400
+        assert null_response.get_json() == {"error": "JSON body must be an object"}
         for reason in (123, [], {}, "x" * 513):
             response = env.client.post(
                 url(f"/members/10/{route}"), json={"reason": reason}, headers=MASTER
@@ -544,10 +550,15 @@ def test_broadcast(env):
 def test_broadcast_rejects_malformed_payloads_without_sending(env):
     channel = FakeChannel(5, "general")
     env.guild.text_channels = [channel]
-    for payload in ([], "invalid", 123, None):
+    for payload in ([], "invalid", 123):
         response = env.client.post(url("/broadcast"), json=payload, headers=MASTER)
         assert response.status_code == 400
         assert response.get_json() == {"error": "JSON body must be an object"}
+    null_response = env.client.post(
+        url("/broadcast"), data="null", content_type="application/json", headers=MASTER
+    )
+    assert null_response.status_code == 400
+    assert null_response.get_json() == {"error": "JSON body must be an object"}
     invalid_payloads = [
         {"message": 123, "channel_id": "5"},
         {"message": " ", "channel_id": "5"},
