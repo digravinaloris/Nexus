@@ -337,3 +337,50 @@ def test_api_channel_and_role_snapshots_return_none_when_offline(monkeypatch):
     monkeypatch.setattr(core, "bot", None)
     assert service.api_text_channels_snapshot("123") is None
     assert service.api_roles_snapshot("123") is None
+
+
+def test_api_members_snapshot_filters_bots_and_serializes_fields(monkeypatch):
+    class Avatar:
+        url = "https://cdn.example/avatar.png"
+
+    class Member:
+        def __init__(self, uid, name, bot=False, muted=False):
+            self.id = uid
+            self.display_name = name
+            self.bot = bot
+            self.avatar = Avatar()
+            self.muted = muted
+
+        def __str__(self):
+            return "user-" + self.display_name.lower()
+
+        @property
+        def display_avatar(self):
+            return self.avatar
+
+        def is_timed_out(self):
+            return self.muted
+
+    class Guild:
+        members = [Member(10, "Alice", muted=True), Member(11, "Nexus", bot=True)]
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return Guild() if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert InProcessBotService().api_members_snapshot("123") == [
+        {"id": "10", "name": "Alice", "username": "user-alice",
+         "avatar_url": "https://cdn.example/avatar.png", "is_muted": True}
+    ]
+    assert InProcessBotService().api_members_snapshot("456") == []
+
+
+def test_api_members_snapshot_returns_none_when_bot_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().api_members_snapshot("123") is None
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_members_snapshot("123") is None

@@ -413,22 +413,12 @@ def list_roles_route(guild_id):
 @bp.route('/api/guilds/<guild_id>/members', methods=['GET'])
 @require_api_key
 def list_members_route(guild_id):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
-    members = [
-        {
-            "id": str(m.id),
-            "name": m.display_name,
-            "username": str(m),
-            "avatar_url": m.display_avatar.url,
-            "is_muted": m.is_timed_out()
-        }
-        for m in guild.members if not m.bot
-    ]
-    return jsonify(members)
+    return jsonify(get_bot_service().api_members_snapshot(guild_id) or [])
 
 
 @bp.route('/api/guilds/<guild_id>/members/<user_id>/mute', methods=['POST'])
