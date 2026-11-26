@@ -13,7 +13,7 @@ import time
 import core
 import discord
 from bridge import run_coroutine
-from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_warn
+from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from sanctions_store import get_warns, log_sanction, set_warns
 import utils
 
