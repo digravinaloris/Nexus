@@ -1,6 +1,13 @@
 """Tests for the web-to-bot service boundary."""
 import core
-from web.bot_service import InProcessBotService
+from web.in_process_bot_service import InProcessBotService
+
+
+def test_bot_service_interface_module_has_no_runtime_imports():
+    import web.bot_service as interface_module
+
+    assert "core" not in vars(interface_module)
+    assert "discord" not in vars(interface_module)
 
 
 class FakeBot:
@@ -411,7 +418,7 @@ def test_set_guild_locked_fails_when_bot_unavailable(monkeypatch):
 
 
 def test_verification_challenge_operations_are_exposed_by_bot_service(monkeypatch):
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     challenge = {"token": "verify-token", "guild_id": "123", "user_id": "456"}
     calls = []
@@ -428,7 +435,7 @@ def test_verification_challenge_operations_are_exposed_by_bot_service(monkeypatc
 
 
 def test_api_config_snapshot_and_updates_use_config_store(monkeypatch):
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     calls = []
     monkeypatch.setattr(service_module, "get_config", lambda guild_id: {"guild_id": guild_id, "api_key": "secret"})
@@ -445,7 +452,7 @@ def test_api_config_snapshot_and_updates_use_config_store(monkeypatch):
 
 def test_api_guild_stats_snapshot_serializes_guild_metrics(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Member:
         def __init__(self, timed_out=False):
@@ -512,7 +519,7 @@ def test_api_guild_stats_snapshot_returns_none_when_bot_unavailable(monkeypatch)
 
 def test_api_unmute_member_uses_service_and_logs(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Member:
         def __init__(self):
@@ -549,7 +556,7 @@ def test_api_unmute_member_uses_service_and_logs(monkeypatch):
 
 def test_api_unmute_member_reports_missing_member_or_guild(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Guild:
         def get_member(self, uid):
@@ -577,7 +584,7 @@ def test_api_unmute_member_returns_none_when_bot_unavailable(monkeypatch):
 
 def test_api_broadcast_service_sends_embed_and_mention(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Channel:
         def __init__(self):
@@ -645,7 +652,7 @@ def test_api_broadcast_service_returns_none_when_bot_unavailable(monkeypatch):
 
 def test_api_mute_member_applies_timeout_and_logs(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Member:
         top_role = 2
@@ -691,7 +698,7 @@ def test_api_mute_member_applies_timeout_and_logs(monkeypatch):
 
 def test_api_mute_member_checks_member_and_role_hierarchy(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Member:
         top_role = 9
@@ -727,7 +734,7 @@ def test_api_mute_member_returns_none_when_bot_unavailable(monkeypatch):
 
 def test_api_ban_member_applies_ban_and_logs(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Member:
         top_role = 2
@@ -772,7 +779,7 @@ def test_api_ban_member_applies_ban_and_logs(monkeypatch):
 
 def test_api_ban_member_checks_member_and_role_hierarchy(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Member:
         top_role = 10
@@ -808,7 +815,7 @@ def test_api_ban_member_returns_none_when_bot_unavailable(monkeypatch):
 
 def test_api_kick_member_applies_kick_and_logs(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Member:
         top_role = 2
@@ -853,7 +860,7 @@ def test_api_kick_member_applies_kick_and_logs(monkeypatch):
 
 def test_api_kick_member_checks_member_and_role_hierarchy(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Member:
         top_role = 10
@@ -889,7 +896,7 @@ def test_api_kick_member_returns_none_when_bot_unavailable(monkeypatch):
 
 def test_api_warn_member_records_warning_and_attempts_discord_log(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Member:
         pass
@@ -950,7 +957,7 @@ def test_api_warn_member_returns_none_when_bot_unavailable(monkeypatch):
 
 def test_api_unwarn_member_decrements_and_best_effort_logs(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     warnings = {"count": 2}
     records = []
@@ -989,7 +996,7 @@ def test_api_unwarn_member_decrements_and_best_effort_logs(monkeypatch):
 
 
 def test_api_unwarn_member_handles_zero_and_bot_offline(monkeypatch):
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     monkeypatch.setattr(service_module, "get_warns", lambda gid, uid: 0)
     assert InProcessBotService().api_unwarn_member("123", "10") == (False, "No warnings to remove")
@@ -1006,7 +1013,7 @@ def test_api_unwarn_member_handles_zero_and_bot_offline(monkeypatch):
 
 def test_api_accept_appeal_reverses_and_best_effort_dms(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     class Guild:
         name = "Test server"
@@ -1046,7 +1053,7 @@ def test_api_accept_appeal_handles_missing_runtime_and_guild(monkeypatch):
 
 
 def test_api_accept_appeal_returns_failure_when_sanction_reversal_fails(monkeypatch):
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
     class Guild:
         name = "Test"
     class ReadyBot:
@@ -1061,7 +1068,7 @@ def test_api_accept_appeal_returns_failure_when_sanction_reversal_fails(monkeypa
 
 def test_api_deny_appeal_best_effort_dm(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
     class Guild:
         name = "Server"
     class ReadyBot:
@@ -1135,8 +1142,8 @@ def test_set_guild_locked_fails_closed_when_runtime_is_unavailable(monkeypatch):
 
 def test_api_announce_calendar_event_sends_role_limited_announcement(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
-    from web.bot_service import InProcessBotService
+    import web.in_process_bot_service as service_module
+    from web.in_process_bot_service import InProcessBotService
 
     sent = []
     class Role:
@@ -1170,7 +1177,7 @@ def test_api_announce_calendar_event_sends_role_limited_announcement(monkeypatch
 
 
 def test_api_announce_calendar_event_fails_closed_for_missing_runtime_targets(monkeypatch):
-    from web.bot_service import InProcessBotService
+    from web.in_process_bot_service import InProcessBotService
 
     service = InProcessBotService()
     monkeypatch.setattr(core, "bot", None)
@@ -1187,7 +1194,7 @@ def test_api_announce_calendar_event_fails_closed_for_missing_runtime_targets(mo
 
 def test_api_grant_verified_applies_verification_through_service(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
     import verification
 
     guild = object()
@@ -1225,7 +1232,7 @@ def test_api_grant_verified_fails_closed_when_runtime_or_guild_is_missing(monkey
 
 def test_api_post_appeal_for_review_uses_bot_runtime(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     guild = object()
     class ReadyBot:
@@ -1254,7 +1261,7 @@ def test_api_post_appeal_for_review_fails_closed_without_runtime(monkeypatch):
 
 def test_killswitch_owner_notifications_are_delegated_to_runtime(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     calls = []
     async def fake_bruteforce(ip):
@@ -1273,7 +1280,7 @@ def test_killswitch_owner_notifications_are_delegated_to_runtime(monkeypatch):
 
 def test_api_log_dashboard_action_uses_guild_runtime(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     guild = object()
     class ReadyBot:
@@ -1341,7 +1348,7 @@ def test_dashboard_settings_snapshot_serializes_guild_data(monkeypatch):
 
 def test_dashboard_overview_snapshot_serializes_main_dashboard_data(monkeypatch):
     from types import SimpleNamespace
-    from web.bot_service import InProcessBotService
+    from web.in_process_bot_service import InProcessBotService
 
     class Role:
         def __init__(self, role_id, name, default=False, administrator=False):
@@ -1397,7 +1404,7 @@ def test_dashboard_overview_snapshot_serializes_main_dashboard_data(monkeypatch)
 
 
 def test_dashboard_overview_snapshot_fails_closed_when_runtime_unavailable(monkeypatch):
-    from web.bot_service import InProcessBotService
+    from web.in_process_bot_service import InProcessBotService
 
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().dashboard_overview_snapshot("123") is None
@@ -1405,7 +1412,7 @@ def test_dashboard_overview_snapshot_fails_closed_when_runtime_unavailable(monke
 
 def test_api_handle_github_release_dispatches_and_deduplicates(monkeypatch):
     import asyncio
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     deliveries = []
 
@@ -1449,7 +1456,7 @@ def test_api_handle_github_release_dispatches_and_deduplicates(monkeypatch):
 
 
 def test_api_handle_github_release_reports_runtime_and_handler_failures(monkeypatch):
-    import web.bot_service as service_module
+    import web.in_process_bot_service as service_module
 
     service = InProcessBotService()
     monkeypatch.setattr(core, "db", None)
