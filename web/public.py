@@ -15,7 +15,6 @@ from audit import record_audit
 from bridge import run_coroutine
 from config_store import get_global_lock, set_global_lock
 from core import col
-from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
 from sanctions_store import get_ban_appeal
 import utils
 from web.bot_service import get_bot_service
@@ -94,7 +93,7 @@ def killswitch_submit(token):
         record_audit("global", None, f"Unknown (IP {ip})", "Failed kill-switch code attempt", f"{new_attempts}/5 attempts used")
         if new_attempts >= 5:
             try:
-                run_coroutine(notify_owner_bruteforce(ip))
+                get_bot_service().notify_owner_bruteforce(ip)
             except Exception as e:
                 print(f"[KILLSWITCH] Failed to DM owner about brute-force: {e}", flush=True)
         return render_template("killswitch_confirm.html", locked=get_global_lock(), error=True, attempts_left=attempts_left
@@ -107,7 +106,7 @@ def killswitch_submit(token):
     set_global_lock(new_state)
     record_audit("global", None, f"Owner (email + authenticator, IP {ip})", "Locked bot globally" if new_state else "Unlocked bot globally")
     try:
-        run_coroutine(notify_owner_killswitch(new_state))
+        get_bot_service().notify_owner_killswitch(new_state)
     except Exception as e:
         print(f"[KILLSWITCH] Failed to DM owner: {e}", flush=True)
 
