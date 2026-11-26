@@ -19,6 +19,7 @@ from audit import get_audit_log, record_audit
 from bridge import run_coroutine
 from config_store import get_config, update_config
 from core import col
+from web.bot_service import get_bot_service
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from features import FEATURE_TOGGLES
 from moderation_actions import _dm_user_appeal_result, reverse_sanction
@@ -106,18 +107,7 @@ def require_api_key(f):
 @bp.route('/api/health', methods=['GET'])
 @require_api_key
 def health():
-    if g.auth_guild_id:
-        # Clé propre à un serveur : "locked" reflète uniquement ce serveur, pas les autres.
-        return jsonify({
-            "online": core.bot.is_ready(),
-            "locked": int(g.auth_guild_id) in core.bot.locked_guilds,
-            "guild_count": 1
-        })
-    return jsonify({
-        "online": core.bot.is_ready(),
-        "locked": len(core.bot.locked_guilds) > 0,
-        "guild_count": len(core.bot.guilds) if core.bot.is_ready() else 0
-    })
+    return jsonify(get_bot_service().api_health_snapshot(g.auth_guild_id))
 
 
 @bp.route('/api/guilds', methods=['GET'])

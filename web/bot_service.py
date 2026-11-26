@@ -39,6 +39,10 @@ class BotService:
         """Return a display name for a guild, or a neutral fallback."""
         raise NotImplementedError
 
+    def api_health_snapshot(self, guild_id: str = None) -> Dict[str, object]:
+        """Return the existing REST health response without exposing bot objects."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
@@ -69,6 +73,22 @@ class InProcessBotService(BotService):
             return "the server"
         guild = bot.get_guild(int(guild_id))
         return guild.name if guild is not None else "the server"
+
+    def api_health_snapshot(self, guild_id: str = None) -> Dict[str, object]:
+        bot = core.bot
+        online = bool(bot is not None and bot.is_ready())
+        locked_guilds = getattr(bot, "locked_guilds", set()) if bot is not None else set()
+        if guild_id:
+            return {
+                "online": online,
+                "locked": int(guild_id) in locked_guilds,
+                "guild_count": 1,
+            }
+        return {
+            "online": online,
+            "locked": bool(locked_guilds),
+            "guild_count": len(bot.guilds) if online else 0,
+        }
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot
