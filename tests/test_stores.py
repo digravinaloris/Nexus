@@ -311,7 +311,9 @@ def test_sanctions_store_submits_only_pending_appeals(mongo_db):
     doc = mongo_db["ban_appeals"].find_one({"token": "appeal-token"})
     assert doc["status"] == "submitted"
     assert doc["appeal_text"] == "please review"
-    assert doc["submitted_at"] == submitted_at
+    stored_at = doc["submitted_at"].replace(tzinfo=UTC)
+    expected_at = submitted_at.replace(microsecond=(submitted_at.microsecond // 1000) * 1000)
+    assert stored_at == expected_at
     assert sanctions_store.submit_ban_appeal("appeal-token", "duplicate", submitted_at) is False
 
 
