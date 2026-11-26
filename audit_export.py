@@ -18,8 +18,8 @@ def _safe_csv_cell(value):
         return value
     # Excel/LibreOffice may evaluate formula-like cells, including those preceded
     # by whitespace or control characters. Prefix an apostrophe to keep them text.
-    trimmed = value.lstrip(" \\t\\r\\n")
-    if trimmed.startswith(("=", "+", "-", "@")) or value.startswith(("\\t", "\\r", "\\n")):
+    trimmed = value.lstrip(" \t\r\n")
+    if trimmed.startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")):
         return "'" + value
     return value
 
