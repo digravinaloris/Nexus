@@ -25,7 +25,30 @@ BANNER_SIZE = (900, 300)
 AVATAR_SIZE = 200
 DEFAULT_WELCOME_MESSAGE = "{user} Welcome to {server}!"
 MAX_WELCOME_MESSAGE_LENGTH = 300
+MAX_AVATAR_DOWNLOAD_BYTES = 5 * 1024 * 1024
+_AVATAR_CHUNK_SIZE = 64 * 1024
 _DISCORD_MESSAGE_LIMIT = 2000
+
+
+def download_avatar(url):
+    """Télécharge un avatar avec une limite stricte de mémoire (5 Mio)."""
+    response = requests.get(url, timeout=10, stream=True)
+    try:
+        response.raise_for_status()
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=_AVATAR_CHUNK_SIZE):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > MAX_AVATAR_DOWNLOAD_BYTES:
+                raise ValueError("Avatar download exceeds the configured size limit")
+            chunks.append(chunk)
+        if not chunks:
+            raise ValueError("Avatar download is empty")
+        return b"".join(chunks)
+    finally:
+        response.close()
 
 
 def compose_welcome_banner(avatar_bytes):
@@ -67,7 +90,7 @@ async def send_welcome(member, channel, template=None):
     banner = None
     try:
         avatar_bytes = await asyncio.to_thread(
-            lambda: requests.get(member.display_avatar.replace(size=256).url, timeout=10).content)
+            download_avatar, member.display_avatar.replace(size=256).url)
         banner = await asyncio.to_thread(compose_welcome_banner, avatar_bytes)
     except Exception as e:
         log_json("error", "welcome_banner_failed", user_id=member.id, guild_id=member.guild.id, error=str(e))
