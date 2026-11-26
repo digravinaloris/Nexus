@@ -74,30 +74,6 @@ class BotService:
         """Return all guild roles, including @everyone, as serializable DTOs."""
         raise NotImplementedError
 
-    def api_handle_github_release(self, delivery_id: str, release: Dict[str, object]) -> str:
-        db = core.db
-        bot = core.bot
-        if db is None or bot is None or not bot.is_ready():
-            return "unavailable"
-        deliveries = db["github_webhook_deliveries"]
-        if deliveries.find_one({"_id": delivery_id}):
-            return "duplicate"
-        cog = bot.get_cog("GitHubUpdates")
-        if cog is None:
-            return "handler_unavailable"
-        try:
-            sent = run_coroutine(cog.handle_webhook_release(release))
-        except Exception:
-            return "delivery_failed"
-        if not sent:
-            return "ignored"
-        try:
-            deliveries.insert_one({"_id": delivery_id})
-        except Exception:
-            # The Discord message is already sent; do not report a delivery failure.
-            return "record_failed"
-        return "sent"
-
     def dashboard_overview_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         """Return serializable data needed by the main dashboard page."""
         raise NotImplementedError
@@ -300,6 +276,30 @@ class InProcessBotService(BotService):
         if guild is None:
             return None
         return [{"id": str(role.id), "name": role.name} for role in guild.roles]
+
+    def api_handle_github_release(self, delivery_id: str, release: Dict[str, object]) -> str:
+        db = core.db
+        bot = core.bot
+        if db is None or bot is None or not bot.is_ready():
+            return "unavailable"
+        deliveries = db["github_webhook_deliveries"]
+        if deliveries.find_one({"_id": delivery_id}):
+            return "duplicate"
+        cog = bot.get_cog("GitHubUpdates")
+        if cog is None:
+            return "handler_unavailable"
+        try:
+            sent = run_coroutine(cog.handle_webhook_release(release))
+        except Exception:
+            return "delivery_failed"
+        if not sent:
+            return "ignored"
+        try:
+            deliveries.insert_one({"_id": delivery_id})
+        except Exception:
+            # The Discord message is already sent; do not report a delivery failure.
+            return "record_failed"
+        return "sent"
 
     def dashboard_overview_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
