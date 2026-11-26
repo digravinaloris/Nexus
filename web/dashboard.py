@@ -207,7 +207,7 @@ def _describe_change(key, old, new):
 def dash_features_page(guild_id):
     """Équivalent web de /feature enable|disable|list -- construit depuis
     FEATURE_TOGGLES, donc tout nouveau toggle côté Discord apparaît ici tout seul."""
-    guild = core.bot.get_guild(int(guild_id))
+    guild_name = get_bot_service().guild_name(guild_id)
     cfg = get_config(guild_id)
 
     def is_enabled(meta):
@@ -243,7 +243,7 @@ def dash_features_page(guild_id):
         requirement = FEATURE_REQUIREMENTS.get(key)
         needs = t(requirement[1]) if requirement and not all(cfg.get(k) for k in requirement[0]) else None
         rows.append({"key": key, "label": _t_or(f"feat_{key}", meta["label"]), "enabled": is_enabled(meta), "needs": needs})
-    return render_template("features.html", guild=guild, rows=rows, user=session.get("dash_user"))
+    return render_template("features.html", guild_id=guild_id, guild_name=guild_name, rows=rows, user=session.get("dash_user"))
 
 
 @routes.route("/dashboard/<guild_id>/calendar", methods=["GET", "POST"])
@@ -439,9 +439,9 @@ def dash_settings_save(guild_id, section):
 @dash_login_required
 @dash_guild_admin_required
 def dash_template_marketplace(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    guild_name = get_bot_service().guild_name(guild_id)
     templates = list(col.templates.find({"public": True}).sort("created_at", -1).limit(50))
-    return render_template("template_marketplace.html", guild=guild, templates=templates, user=session.get("dash_user"))
+    return render_template("template_marketplace.html", guild_id=guild_id, guild_name=guild_name, templates=templates, user=session.get("dash_user"))
 
 
 @routes.route("/dashboard/<guild_id>/templates/import/<code>", methods=["GET", "POST"])
