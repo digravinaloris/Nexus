@@ -297,7 +297,7 @@ def dash_calendar_page(guild_id):
             except ValueError as exc:
                 flash(str(exc), "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-            event = {"guild_id": str(guild_id), "title": title, "role_id": str(role.id), "description": description,
+            event = {"guild_id": str(guild_id), "title": title, "role_id": str(int(role["id"])), "description": description,
                 "starts_at": starts_at, "timezone": timezone_name, "time_set": bool(request.form.get("time", "").strip()),
                 "channel_id": str(request.form.get("channel_id") or ""), "reminders_sent": [],
                 "created_by": str((session.get("dash_user") or {}).get("id", "")), "created_at": datetime.datetime.now(datetime.timezone.utc)}
@@ -332,8 +332,8 @@ def dash_calendar_page(guild_id):
                 flash("Only the server owner can manage calendar roles." if current_lang() == "en" else "Seul le propriétaire peut gérer les rôles du calendrier.", "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
             manager_ids = set(str(x) for x in cfg.get("calendar_manager_role_ids", []))
-            if request.form.get("manager_action") == "remove": manager_ids.discard(str(role.id))
-            else: manager_ids.add(str(role.id))
+            if request.form.get("manager_action") == "remove": manager_ids.discard(str(int(role["id"])))
+            else: manager_ids.add(str(int(role["id"])))
             update_config(guild_id, "calendar_manager_role_ids", sorted(manager_ids))
             dash_log_action(guild_id, "Updated calendar manager roles", role.name)
             flash("Calendar manager roles saved." if current_lang() == "en" else "Rôles gestionnaires enregistrés.", "calendar")
@@ -581,8 +581,8 @@ def dash_guild_page(guild_id):
         elif autorole_id.isdigit():
             role = guild.get_role(int(autorole_id))
             if role is not None:
-                update_config(guild_id, "autorole", role.id)
-                changes.append(f"autorole → @{role.name}")
+                update_config(guild_id, "autorole", int(role["id"]))
+                changes.append(f"autorole → @{role['name']}")
                 if any(getattr(role.permissions, p) for p in risky_perms):
                     flash(f"⚠️ {role.name}: " + ("sensitive permissions, given to every new member." if current_lang() == "en" else "permissions sensibles, donné à tout nouveau membre."))
 
@@ -658,13 +658,16 @@ def dash_guild_page(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_automod(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
+    if snapshot is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
+    roles = snapshot["roles"]
     submitted = request.form.getlist("allowed_roles")
-    valid_role_ids = {r.id for r in guild.roles}
+    valid_role_ids = {int(role["id"]) for role in roles}
     # ne garde que des ids qui correspondent à de vrais rôles de CE serveur
     clean = [int(rid) for rid in submitted if rid.isdigit() and int(rid) in valid_role_ids]
     update_config(guild_id, "allowed_roles", clean)
-    role_names = ", ".join(f"@{r.name}" for r in guild.roles if r.id in clean) or "none"
+    role_names = ", ".join(f"@{role['name']}" for role in roles if int(role["id"]) in clean) or "none"
     dash_log_action(guild_id, "Updated anti-raid exemptions", f"exempt roles: {role_names}")
     flash("Anti-raid exemptions updated." if current_lang() == "en" else "Exemptions anti-raid mises à jour.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
@@ -675,21 +678,24 @@ def dash_automod(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_add(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
+    if snapshot is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
+    roles = {int(role["id"]): role for role in snapshot["roles"]}
     commands = request.form.getlist("commands")
     role_id = request.form.get("role_id", "")
     valid_commands = [c for c in commands if c in MODERATION_COMMANDS]
     if valid_commands and role_id.isdigit():
-        role = guild.get_role(int(role_id))
+        role = roles.get(int(role_id))
         if role is not None:
             for cmd in valid_commands:
-                add_command_role(guild_id, cmd, role.id)
+                add_command_role(guild_id, cmd, int(role["id"]))
             cmd_list = ", ".join(f"/{c}" for c in valid_commands)
-            dash_log_action(guild_id, "Added command permissions", f"@{role.name}: {cmd_list}")
+            dash_log_action(guild_id, "Added command permissions", f"@{role['name']}: {cmd_list}")
             if current_lang() == "en":
-                flash(f"{role.name} can now use {len(valid_commands)} command(s): {cmd_list}.")
+                flash(f"{role['name']} can now use {len(valid_commands)} command(s): {cmd_list}.")
             else:
-                flash(f"{role.name} peut maintenant utiliser {len(valid_commands)} commande(s) : {cmd_list}.")
+                flash(f"{role['name']} peut maintenant utiliser {len(valid_commands)} commande(s) : {cmd_list}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
 
@@ -698,12 +704,15 @@ def dash_permission_add(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_template(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
+    if snapshot is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
+    roles = {int(role["id"]): role for role in snapshot["roles"]}
     template_id = request.form.get("template_id", "")
     role_id = request.form.get("role_id", "")
     if not role_id.isdigit():
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
-    role = guild.get_role(int(role_id))
+    role = roles.get(int(role_id))
     if role is None:
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -724,8 +733,8 @@ def dash_permission_template(guild_id):
 
     if commands_list:
         for cmd in commands_list:
-            add_command_role(guild_id, cmd, role.id)
-        dash_log_action(guild_id, "Applied permission template", f"template « {label} » → @{role.name}")
+            add_command_role(guild_id, cmd, int(role["id"]))
+        dash_log_action(guild_id, "Applied permission template", f"template « {label} » → @{role['name']}")
         if current_lang() == "en":
             flash(f"Template « {label} » applied to {role.name} ({len(commands_list)} commands).")
         else:
@@ -739,7 +748,10 @@ def dash_permission_template(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_permission_remove(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
+    if snapshot is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
+    roles = {int(role["id"]): role for role in snapshot["roles"]}
     command = request.form.get("command", "")
     role_id = request.form.get("role_id", "")
     # Pas de whitelist ici : la commande vient d'un chip déjà affiché depuis
@@ -749,8 +761,8 @@ def dash_permission_remove(guild_id):
     # commande hors de notre liste curatée).
     if command and role_id.isdigit():
         remove_command_role(guild_id, command, int(role_id))
-        role = guild.get_role(int(role_id)) if guild else None
-        dash_log_action(guild_id, "Removed command permission", f"/{command} for {'@' + role.name if role else role_id}")
+        role = roles.get(int(role_id))
+        dash_log_action(guild_id, "Removed command permission", f"/{command} for {'@' + role['name'] if role else role_id}")
         flash(f"Permission removed for /{command}." if current_lang() == "en" else f"Permission retirée pour /{command}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
