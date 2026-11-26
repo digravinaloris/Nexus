@@ -955,3 +955,82 @@ def test_api_unwarn_member_handles_zero_and_bot_offline(monkeypatch):
     assert records == [0]
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_unwarn_member("123", "10") == (True, 0)
+
+
+
+def test_api_accept_appeal_reverses_and_best_effort_dms(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Guild:
+        name = "Test server"
+
+    guild = Guild()
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    calls = []
+    async def fake_reverse(g, sanction_type, user_id):
+        calls.append(("reverse", g, sanction_type, user_id))
+        return "restored"
+    async def fake_dm(user_id, guild_name, case_id, accepted, result):
+        calls.append(("dm", user_id, guild_name, case_id, accepted, result))
+    monkeypatch.setattr(service_module, "reverse_sanction", fake_reverse)
+    monkeypatch.setattr(service_module, "_dm_user_appeal_result", fake_dm)
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+
+    assert InProcessBotService().api_accept_appeal("123", "10", "ban", "5") == (True, "restored")
+    assert calls == [
+        ("reverse", guild, "ban", "10"),
+        ("dm", 10, "Test server", "5", True, "restored"),
+    ]
+
+
+def test_api_accept_appeal_handles_missing_runtime_and_guild(monkeypatch):
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_accept_appeal("123", "10", "ban", "5") == (False, "Bot not ready")
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, gid):
+            return None
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert InProcessBotService().api_accept_appeal("123", "10", "ban", "5") == (False, "Guild not found")
+
+
+def test_api_accept_appeal_returns_failure_when_sanction_reversal_fails(monkeypatch):
+    import web.bot_service as service_module
+    class Guild:
+        name = "Test"
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, gid):
+            return Guild()
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "reverse_sanction", lambda *args: (_ for _ in ()).throw(RuntimeError("failure")))
+    assert InProcessBotService().api_accept_appeal("123", "10", "ban", "5") == (False, "Unable to resolve appeal")
+
+
+def test_api_deny_appeal_best_effort_dm(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+    class Guild:
+        name = "Server"
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, gid):
+            return Guild()
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    calls = []
+    async def fake_dm(*args):
+        calls.append(args)
+    monkeypatch.setattr(service_module, "_dm_user_appeal_result", fake_dm)
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    assert InProcessBotService().api_deny_appeal("123", "10", "5") == (True, None)
+    assert calls == [(10, "Server", "5", False, None)]
