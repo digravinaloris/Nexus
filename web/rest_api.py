@@ -458,22 +458,14 @@ def mute_member_route(guild_id, user_id):
 @bp.route('/api/guilds/<guild_id>/members/<user_id>/unmute', methods=['POST'])
 @require_api_key
 def unmute_member_route(guild_id, user_id):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
 
-    async def _unmute():
-        member = guild.get_member(int(user_id))
-        if not member:
-            return False, "Member not found"
-        await member.timeout(None)
-        await log_unmute(guild, member)
-        return True, None
-
     try:
-        success, error = run_coroutine(_unmute())
+        success, error = get_bot_service().api_unmute_member(guild_id, user_id)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
