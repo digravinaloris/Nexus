@@ -178,7 +178,9 @@ def _read_channel(key, channels):
     raw = request.form.get(key, "").strip()
     if not raw or raw == "none":
         return None
-    if raw.isdigit() and int(raw) in {c.id for c in channels}:
+    if raw.isdigit() and int(raw) in {
+        int(c["id"] if isinstance(c, dict) else c.id) for c in channels
+    }:
         return int(raw)
     raise ValueError(key)
 
@@ -189,9 +191,14 @@ def _read_role(key, guild):
     if not raw or raw == "none":
         return None
     if raw.isdigit():
-        role = guild.get_role(int(raw))
-        if role is not None and not role.is_default():
-            return role.id
+        if isinstance(guild, dict):
+            role = next((r for r in guild["roles"] if int(r["id"]) == int(raw)), None)
+            if role is not None:
+                return int(role["id"])
+        else:
+            role = guild.get_role(int(raw))
+            if role is not None and not role.is_default():
+                return role.id
     raise ValueError(key)
 
 
@@ -373,7 +380,9 @@ def dash_settings_page(guild_id):
 def dash_settings_save(guild_id, section):
     """Une section = un formulaire = une sauvegarde indépendante (sauvegarder
     l'automod n'écrase jamais les champs d'une autre section)."""
-    guild = core.bot.get_guild(int(guild_id))
+    guild = get_bot_service().dashboard_settings_snapshot(guild_id)
+    if guild is None:
+        return jsonify({"error": "Bot not present on this server"}), 403
     cfg = get_config(guild_id)
     updates = {}
     try:
@@ -388,13 +397,13 @@ def dash_settings_save(guild_id, section):
             updates["warn_kick_threshold"] = max(mute_at + 1, kick_at)
         elif section == "channels":
             for key in TEXT_CHANNEL_SETTINGS:
-                updates[key] = _read_channel(key, guild.text_channels)
+                updates[key] = _read_channel(key, guild["text_channels"])
             for key in VOICE_CHANNEL_SETTINGS:
-                updates[key] = _read_channel(key, guild.voice_channels)
+                updates[key] = _read_channel(key, guild["voice_channels"])
         elif section == "quarantine":
             updates = _read_numbers(QUARANTINE_NUMBER_FIELDS)
             updates["quarantine_role_id"] = _read_role("quarantine_role_id", guild)
-            updates["quarantine_channel_id"] = _read_channel("quarantine_channel_id", guild.text_channels)
+            updates["quarantine_channel_id"] = _read_channel("quarantine_channel_id", guild["text_channels"])
         elif section == "verification":
             verified = _read_role("verified_role_id", guild)
             unverified = _read_role("unverified_role_id", guild)
@@ -494,7 +503,8 @@ def dash_set_theme(theme_name):
 
 def dash_is_owner(guild):
     user = session.get("dash_user") or {}
-    return str(guild.owner_id) == str(user.get("id"))
+    owner_id = guild.get("owner_id") if isinstance(guild, dict) else guild.owner_id
+    return str(owner_id) == str(user.get("id"))
 
 
 def dash_actor():
