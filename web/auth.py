@@ -179,11 +179,12 @@ def dash_callback():
         return jsonify({"error": "Invalid state"}), 403
 
     code = request.args.get("code")
+    if not code:
+        return jsonify({"error": "Missing code"}), 400
     if (
         not isinstance(code, str)
-        or not code
         or len(code) > 2048
-        or re.search(r"[\x00-\x20\x7f]", code) is not None
+        or re.search(r"[\\x00-\\x20\\x7f]", code) is not None
     ):
         return jsonify({"error": "Invalid code"}), 400
 
