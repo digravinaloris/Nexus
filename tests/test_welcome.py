@@ -59,11 +59,52 @@ class FakeChannel:
 
 @pytest.fixture
 def avatar_download(monkeypatch):
-    monkeypatch.setattr(welcome.requests, "get",
-                        lambda *a, **kw: types.SimpleNamespace(content=png_bytes()))
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, chunk_size):
+            data = png_bytes()
+            return iter(data[i:i + 11] for i in range(0, len(data), 11))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(welcome.requests, "get", lambda *a, **kw: FakeResponse())
 
 
 # ---------------------------------------------------------------- bannière
+
+def test_avatar_download_rejects_oversized_response(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, chunk_size):
+            return iter([b"x" * welcome.MAX_AVATAR_DOWNLOAD_BYTES, b"x"])
+
+        def close(self):
+            self.closed = True
+
+    response = FakeResponse()
+    monkeypatch.setattr(welcome.requests, "get", lambda *a, **kw: response)
+    with pytest.raises(ValueError, match="size limit"):
+        welcome.download_avatar("https://cdn.example/avatar.png")
+    assert response.closed
+
+
+def test_avatar_download_rejects_http_errors(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            raise RuntimeError("HTTP error")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(welcome.requests, "get", lambda *a, **kw: FakeResponse())
+    with pytest.raises(RuntimeError, match="HTTP error"):
+        welcome.download_avatar("https://cdn.example/avatar.png")
+
 
 def test_banner_is_png_with_only_a_centered_round_avatar():
     banner = Image.open(welcome.compose_welcome_banner(png_bytes((255, 0, 0)))).convert("RGB")
