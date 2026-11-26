@@ -11,7 +11,7 @@ def _prepare_oauth_session(env):
 
 
 def test_callback_rejects_malformed_authorization_codes_before_token_exchange(env, monkeypatch):
-    codes = ["bad code", "bad\\ncode", "bad\\x7fcode", "x" * 2049]
+    codes = ["bad code", "bad\ncode", "bad\x7fcode", "x" * 2049]
     calls = []
     monkeypatch.setattr(auth.requests, "post", lambda *args, **kwargs: calls.append(True))
 
