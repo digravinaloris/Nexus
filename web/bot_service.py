@@ -66,6 +66,10 @@ class BotService:
         """Return non-default role DTOs for one guild, or None when the bot is offline."""
         raise NotImplementedError
 
+    def dashboard_settings_snapshot(self, guild_id: str) -> Optional[Dict[str, object]]:
+        """Return serializable guild, channel, and role data for dashboard settings."""
+        raise NotImplementedError
+
     def api_members_snapshot(self, guild_id: str) -> Optional[List[Dict[str, object]]]:
         """Return serializable member DTOs for one guild, or None when the bot is offline."""
         raise NotImplementedError
@@ -226,6 +230,31 @@ class InProcessBotService(BotService):
         if guild is None:
             return []
         return [{"id": str(role.id), "name": role.name} for role in guild.roles if not role.is_default()]
+
+    def dashboard_settings_snapshot(self, guild_id: str) -> Optional[Dict[str, object]]:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return None
+        return {
+            "id": str(guild.id),
+            "name": guild.name,
+            "owner_id": str(guild.owner_id),
+            "text_channels": [
+                {"id": str(channel.id), "name": channel.name}
+                for channel in guild.text_channels
+            ],
+            "voice_channels": [
+                {"id": str(channel.id), "name": channel.name}
+                for channel in guild.voice_channels
+            ],
+            "roles": [
+                {"id": str(role.id), "name": role.name}
+                for role in guild.roles if not role.is_default()
+            ],
+        }
 
     def api_members_snapshot(self, guild_id: str) -> Optional[List[Dict[str, object]]]:
         bot = core.bot
