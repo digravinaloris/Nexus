@@ -10,6 +10,8 @@ import math
 import time
 
 import core
+import discord
+from bridge import run_coroutine
 import utils
 
 
@@ -61,6 +63,10 @@ class BotService:
 
     def set_guild_locked(self, guild_id: str, locked: bool) -> bool:
         """Set a guild lock flag; false when the bot runtime is unavailable."""
+        raise NotImplementedError
+
+    def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
+        """Return Discord-derived guild stats without exposing runtime objects."""
         raise NotImplementedError
 
 
@@ -173,6 +179,35 @@ class InProcessBotService(BotService):
         else:
             locked_guilds.discard(int(guild_id))
         return True
+
+    def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return {}
+
+        async def collect_counts():
+            bans = [ban async for ban in guild.bans()]
+            muted = [member for member in guild.members if member.is_timed_out()]
+            return len(bans), len(muted)
+
+        ban_count, muted_count = run_coroutine(collect_counts())
+        open_tickets_count = 0
+        if ticket_category_id:
+            category = guild.get_channel(int(ticket_category_id))
+            if isinstance(category, discord.CategoryChannel):
+                open_tickets_count = len(category.text_channels)
+        return {
+            "guild_id": str(guild.id),
+            "name": guild.name,
+            "member_count": guild.member_count,
+            "ban_count": ban_count,
+            "muted_count": muted_count,
+            "open_tickets_count": open_tickets_count,
+            "locked": int(guild_id) in getattr(bot, "locked_guilds", set()),
+        }
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot
