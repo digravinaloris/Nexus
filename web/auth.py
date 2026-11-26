@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 from flask import jsonify, redirect, request, session, url_for
 import requests
 
-import core
+from web.bot_service import get_bot_service
 from web.routing import Routes
 
 routes = Routes()
@@ -120,7 +120,8 @@ def dash_guild_admin_required(f):
         admin_guild_ids = {g_["id"] for g_ in admin_guilds}
         if guild_id not in admin_guild_ids:
             return jsonify({"error": "Forbidden"}), 403
-        if not core.bot.is_ready() or not core.bot.get_guild(int(guild_id)):
+        presence = get_bot_service().guild_presence(guild_id)
+        if not presence["bot_ready"] or not presence["guild_present"]:
             return jsonify({"error": "Bot not present on this server"}), 403
         return f(guild_id, *args, **kwargs)
     return wrapper
