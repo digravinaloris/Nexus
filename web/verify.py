@@ -12,6 +12,7 @@ import core
 from verification import (MAX_ATTEMPTS, check_turnstile, get_valid_challenge, grant_verified, mark_used,
                           record_failed_attempt, site_key, turnstile_configured)
 from web.public import get_client_ip
+from web.bot_service import get_bot_service
 from web.routing import Routes
 
 routes = Routes()
@@ -29,9 +30,8 @@ def _message(title, message, status=200):
 
 
 def _form(doc, status=200, error=None):
-    guild = core.bot.get_guild(int(doc["guild_id"]))
     return _page("verify.html", status, site_key=site_key(), error=error,
-                 guild_name=guild.name if guild else "the server",
+                 guild_name=get_bot_service().guild_name(doc["guild_id"]),
                  attempts_left=max(0, doc.get("max_attempts", MAX_ATTEMPTS) - doc.get("attempts", 0)))
 
 

@@ -35,6 +35,10 @@ class BotService:
         """Return minimal public status data without leaking Discord client objects."""
         raise NotImplementedError
 
+    def guild_name(self, guild_id: str) -> str:
+        """Return a display name for a guild, or a neutral fallback."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
@@ -58,6 +62,13 @@ class InProcessBotService(BotService):
         bot_ready = bool(bot is not None and bot.is_ready())
         guild_present = bool(bot_ready and bot.get_guild(int(guild_id)) is not None)
         return {"bot_ready": bot_ready, "guild_present": guild_present}
+
+    def guild_name(self, guild_id: str) -> str:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return "the server"
+        guild = bot.get_guild(int(guild_id))
+        return guild.name if guild is not None else "the server"
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot
