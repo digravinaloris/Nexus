@@ -101,12 +101,12 @@ class BotService:
         """Remove one warning and best-effort log the updated count."""
         raise NotImplementedError
 
-    def api_accept_appeal(self, guild_id: str, user_id: str, sanction_type: str, case_id: str):
-        """Reverse a sanction and best-effort DM the user about an accepted appeal."""
+    def api_accept_appeal(self, guild_id: str, user_id: str, sanction_type: str):
+        """Reverse a sanction and return the result without sending notifications."""
         raise NotImplementedError
 
-    def api_deny_appeal(self, guild_id: str, user_id: str, case_id: str):
-        """Best-effort DM the user about a denied appeal."""
+    def api_notify_appeal_result(self, guild_id: str, user_id: str, case_id: str, accepted: bool, result=None):
+        """Best-effort DM the user after the appeal has been resolved."""
         raise NotImplementedError
 
 
@@ -397,7 +397,7 @@ class InProcessBotService(BotService):
                     pass  # Warning removal remains successful if the log fails.
         return True, count
 
-    def api_accept_appeal(self, guild_id: str, user_id: str, sanction_type: str, case_id: str):
+    def api_accept_appeal(self, guild_id: str, user_id: str, sanction_type: str):
         bot = core.bot
         if bot is None or not bot.is_ready():
             return False, "Bot not ready"
@@ -408,13 +408,9 @@ class InProcessBotService(BotService):
             result = run_coroutine(reverse_sanction(guild, sanction_type, user_id))
         except Exception:
             return False, "Unable to resolve appeal"
-        try:
-            run_coroutine(_dm_user_appeal_result(int(user_id), guild.name, case_id, True, result))
-        except Exception as exc:
-            print(f"[APPEAL] Failed to DM user: {exc}", flush=True)
         return True, result
 
-    def api_deny_appeal(self, guild_id: str, user_id: str, case_id: str):
+    def api_notify_appeal_result(self, guild_id: str, user_id: str, case_id: str, accepted: bool, result=None):
         bot = core.bot
         guild_name = "the server"
         if bot is not None and bot.is_ready():
@@ -422,7 +418,7 @@ class InProcessBotService(BotService):
             if guild is not None:
                 guild_name = guild.name
         try:
-            run_coroutine(_dm_user_appeal_result(int(user_id), guild_name, case_id, False, None))
+            run_coroutine(_dm_user_appeal_result(int(user_id), guild_name, case_id, accepted, result))
         except Exception as exc:
             print(f"[APPEAL] Failed to DM user: {exc}", flush=True)
         return True, None
