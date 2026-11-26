@@ -151,7 +151,15 @@ def dash_login():
 
 @routes.route("/callback")
 def dash_callback():
-    state = request.args.get("state")
+    # OAuth parameters must be unambiguous. Reject parameter-pollution attempts
+    # instead of silently trusting the first value supplied by the client.
+    states = request.args.getlist("state")
+    if len(states) != 1:
+        session.pop("oauth_state", None)
+        session.pop("oauth_state_created_at", None)
+        session.pop("oauth_code_verifier", None)
+        return jsonify({"error": "Invalid state"}), 403
+    state = states[0]
     expected_state = session.pop("oauth_state", None)
     state_created_at = session.pop("oauth_state_created_at", None)
     code_verifier = session.pop("oauth_code_verifier", None)
@@ -178,9 +186,12 @@ def dash_callback():
     ):
         return jsonify({"error": "Invalid state"}), 403
 
-    code = request.args.get("code")
-    if not code:
+    codes = request.args.getlist("code")
+    if not codes:
         return jsonify({"error": "Missing code"}), 400
+    if len(codes) != 1:
+        return jsonify({"error": "Invalid code"}), 400
+    code = codes[0]
     if (
         not isinstance(code, str)
         or len(code) > 2048
