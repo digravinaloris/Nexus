@@ -1,14 +1,14 @@
 {% extends "_dashboard.html" %}
 {% block page %}
 <div class="wrap">
-  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild_id) }}">&larr; {{ guild_name }}</a>
   <div class="eyebrow">{{ t('config_eyebrow') }}</div>
   <h1>{{ t('features_title') }}</h1>
   <p class="lead">{{ t('features_lead') }}</p>
 
   {% for msg in get_flashed_messages() %}<div class="flash">{{ msg }}</div>{% endfor %}
 
-  <form method="POST" action="{{ url_for('dash_features_page', guild_id=guild.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <form method="POST" action="{{ url_for('dash_features_page', guild_id=guild_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="panel">
       <div class="panel-head"><h2>{{ t('features_panel_title') }}</h2><span class="badge admin">{{ t('badge_admin') }}</span></div>
       <div class="desc">{{ t('features_panel_desc') }}</div>
