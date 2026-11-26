@@ -20,8 +20,6 @@ from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
 from cogs.calendar import parse_event_datetime, make_embed, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
-from template_ops import _apply_template_base_config
-from template_store import get_template_by_code, list_public_templates
 from utils import normalize_banned_word, normalize_domain, parse_bounded_number, parse_lines_list
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
 from web.bot_service import get_bot_service
@@ -444,7 +442,7 @@ def dash_settings_save(guild_id, section):
 @dash_guild_admin_required
 def dash_template_marketplace(guild_id):
     guild_name = get_bot_service().guild_name(guild_id)
-    templates = list_public_templates()
+    templates = get_bot_service().dashboard_public_templates_snapshot()
     return render_template("template_marketplace.html", guild_id=guild_id, guild_name=guild_name, templates=templates, user=session.get("dash_user"))
 
 
@@ -455,7 +453,7 @@ def dash_template_import(guild_id, code):
     guild = get_bot_service().dashboard_settings_snapshot(guild_id)
     if guild is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    doc = get_template_by_code(code)
+    doc = get_bot_service().dashboard_template_snapshot(code)
     if not doc:
         flash("No template found with that code." if current_lang() == "en" else "Aucun template trouvé avec ce code.")
         return redirect(url_for("dash_template_marketplace", guild_id=guild_id))
@@ -465,7 +463,7 @@ def dash_template_import(guild_id, code):
     distinct_names = sorted({name for names in command_roles_by_name.values() for name in names})
 
     if request.method == "POST":
-        _apply_template_base_config(guild_id, snapshot)
+        get_bot_service().dashboard_apply_template_snapshot(guild_id, snapshot)
         name_to_new_id = {}
         for i, old_name in enumerate(distinct_names):
             selected = request.form.get(f"map__{i}", "")
