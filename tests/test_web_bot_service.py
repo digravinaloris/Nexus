@@ -61,3 +61,31 @@ def test_health_snapshot_handles_uninitialized_runtime(monkeypatch):
         "mongodb": "unreachable",
         "guild_count": 0,
     }
+
+
+def test_guild_presence_reports_ready_and_present_guild(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(guilds=[1, 2]))
+    monkeypatch.setattr(core.bot, "get_guild", lambda guild_id: object() if guild_id == 123 else None)
+
+    assert InProcessBotService().guild_presence("123") == {
+        "bot_ready": True,
+        "guild_present": True,
+    }
+    assert InProcessBotService().guild_presence("456") == {
+        "bot_ready": True,
+        "guild_present": False,
+    }
+
+
+def test_guild_presence_fails_closed_when_bot_is_not_ready_or_uninitialized(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False, guilds=[1]))
+    assert InProcessBotService().guild_presence("123") == {
+        "bot_ready": False,
+        "guild_present": False,
+    }
+
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().guild_presence("123") == {
+        "bot_ready": False,
+        "guild_present": False,
+    }
