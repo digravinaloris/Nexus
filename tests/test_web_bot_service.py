@@ -462,3 +462,66 @@ def test_api_guild_stats_snapshot_returns_none_when_bot_unavailable(monkeypatch)
     assert InProcessBotService().api_guild_stats_snapshot("123") is None
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_guild_stats_snapshot("123") is None
+
+
+def test_api_unmute_member_uses_service_and_logs(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Member:
+        def __init__(self):
+            self.calls = []
+
+        async def timeout(self, duration):
+            self.calls.append(duration)
+
+    member = Member()
+    logged = []
+
+    class Guild:
+        def get_member(self, uid):
+            return member if uid == 10 else None
+
+    guild = Guild()
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    monkeypatch.setattr(service_module, "log_unmute", lambda g, m: logged.append((g, m)))
+    assert InProcessBotService().api_unmute_member("123", "10") == (True, None)
+    assert member.calls == [None]
+    assert logged == [(guild, member)]
+
+
+def test_api_unmute_member_reports_missing_member_or_guild(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Guild:
+        def get_member(self, uid):
+            return None
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return Guild() if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    assert InProcessBotService().api_unmute_member("123", "10") == (False, "Member not found")
+    assert InProcessBotService().api_unmute_member("456", "10") == (False, "Guild not found")
+
+
+def test_api_unmute_member_returns_none_when_bot_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().api_unmute_member("123", "10") is None
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_unmute_member("123", "10") is None
