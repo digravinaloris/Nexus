@@ -4,6 +4,17 @@ All notable changes to Nexus are documented here.
 
 ## [Unreleased]
 
+### Added since 1.2.0
+- Cloudflare Turnstile member verification with personal expiring links, Verified/Unverified roles, optional post-verification roles, account-age checks, and unverified-member cleanup.
+- Server calendar with role-mention announcements, IANA timezone support, dashboard management, and automatic 24-hour / 1-hour reminders.
+- Multi-panel tickets with panel-specific categories, support roles, intake forms, priorities, assignments, archive/reopen flows, and redesigned HTML transcripts.
+- GitHub stable-release announcements for the bot owner's server, delivered by signed webhook with polling fallback.
+
+### Changed since 1.2.0
+- Removed the music system from Nexus; music is planned as a separate bot.
+- Simplified and refreshed the dashboard's visual system and responsive layout.
+
+
 ### Security and mobile API hardening
 - Dashboard OAuth: add PKCE, reject malformed authorization codes and refresh tokens, reject duplicate `state`/`code` callback parameters, and validate session state and CSRF token formats.
 - Sensitive OAuth and dashboard responses now send `Cache-Control: no-store`, `Pragma: no-cache`, and `Expires: 0`.
