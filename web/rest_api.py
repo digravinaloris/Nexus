@@ -391,25 +391,23 @@ def warnlist_route(guild_id):
 @bp.route('/api/guilds/<guild_id>/channels', methods=['GET'])
 @require_api_key
 def list_channels_route(guild_id):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
-    channels = [{"id": str(c.id), "name": c.name} for c in guild.text_channels]
-    return jsonify(channels)
+    return jsonify(get_bot_service().api_text_channels_snapshot(guild_id) or [])
 
 
 @bp.route('/api/guilds/<guild_id>/roles', methods=['GET'])
 @require_api_key
 def list_roles_route(guild_id):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
-    roles = [{"id": str(r.id), "name": r.name} for r in guild.roles if not r.is_default()]
-    return jsonify(roles)
+    return jsonify(get_bot_service().api_roles_snapshot(guild_id) or [])
 
 
 @bp.route('/api/guilds/<guild_id>/members', methods=['GET'])

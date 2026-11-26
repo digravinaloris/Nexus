@@ -280,3 +280,60 @@ def test_api_guild_list_snapshot_returns_none_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().api_guild_list_snapshot() is None
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_guild_list_snapshot("123") is None
+
+
+def test_api_text_channels_snapshot(monkeypatch):
+    class Channel:
+        def __init__(self, cid, name):
+            self.id, self.name = cid, name
+
+    class Guild:
+        text_channels = [Channel(5, "general"), Channel(6, "staff")]
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return Guild() if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    service = InProcessBotService()
+    assert service.api_text_channels_snapshot("123") == [
+        {"id": "5", "name": "general"}, {"id": "6", "name": "staff"}
+    ]
+    assert service.api_text_channels_snapshot("456") == []
+
+
+def test_api_roles_snapshot_excludes_default_role(monkeypatch):
+    class Role:
+        def __init__(self, rid, name, default):
+            self.id, self.name, self.default = rid, name, default
+
+        def is_default(self):
+            return self.default
+
+    class Guild:
+        roles = [Role(123, "@everyone", True), Role(9, "Mods", False)]
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return Guild() if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    service = InProcessBotService()
+    assert service.api_roles_snapshot("123") == [{"id": "9", "name": "Mods"}]
+    assert service.api_roles_snapshot("456") == []
+
+
+def test_api_channel_and_role_snapshots_return_none_when_offline(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    service = InProcessBotService()
+    assert service.api_text_channels_snapshot("123") is None
+    assert service.api_roles_snapshot("123") is None
+    monkeypatch.setattr(core, "bot", None)
+    assert service.api_text_channels_snapshot("123") is None
+    assert service.api_roles_snapshot("123") is None
