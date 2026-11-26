@@ -224,6 +224,12 @@ def test_automod_exempt_roles_are_filtered_to_real_roles(dash):
     assert "Updated anti-raid exemptions" in dash.audit()
 
 
+def test_automod_exempt_roles_preserve_everyone_role_support(dash):
+    resp = dash.client.post(dash.url("/automod"), data={"allowed_roles": [GID]})
+    assert resp.status_code == 302
+    assert dash.cfg()["allowed_roles"] == [int(GID)]
+
+
 # ----------------------------------------------------------------- permissions
 
 def test_permission_routes_require_server_owner(dash):
