@@ -385,7 +385,15 @@ def mute_member_route(guild_id, user_id):
         return jsonify({"error": "Guild not found"}), 404
 
     data = request.get_json(silent=True) or {}
-    minutes = int(data.get("minutes", 10))
+    raw_minutes = data.get("minutes", 10)
+    if isinstance(raw_minutes, bool) or not (
+        isinstance(raw_minutes, int)
+        or (isinstance(raw_minutes, str) and raw_minutes.isdecimal())
+    ):
+        return jsonify({"error": "minutes must be an integer between 1 and 40320"}), 400
+    minutes = int(raw_minutes)
+    if not 1 <= minutes <= 40320:
+        return jsonify({"error": "minutes must be an integer between 1 and 40320"}), 400
     reason = data.get("reason") or "Muted by mobile app"
 
     async def _mute():
