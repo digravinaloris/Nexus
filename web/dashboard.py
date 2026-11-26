@@ -13,6 +13,7 @@ import time
 from urllib.parse import urlparse
 
 import discord
+import calendar_store
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
 from audit import build_sparkline_svg, get_audit_log, record_audit
@@ -254,7 +255,6 @@ def dash_calendar_page(guild_id):
     if guild is None:
         return jsonify({"error": "Bot not present on this server"}), 403
     cfg = get_config(guild_id)
-    collection = core.bot.db["calendar_events"]
     timezone_name = cfg.get("calendar_timezone") or "Europe/Paris"
     if request.method == "POST":
         action = request.form.get("action", "")
@@ -295,10 +295,10 @@ def dash_calendar_page(guild_id):
                 "starts_at": starts_at, "timezone": timezone_name, "time_set": bool(request.form.get("time", "").strip()),
                 "channel_id": str(request.form.get("channel_id") or ""), "reminders_sent": [],
                 "created_by": str((session.get("dash_user") or {}).get("id", "")), "created_at": datetime.datetime.now(datetime.timezone.utc)}
-            if collection.find_one({"guild_id": str(guild_id), "title": title, "starts_at": starts_at}):
+            if calendar_store.find_duplicate_event(guild_id, title, starts_at):
                 flash("Duplicate event." if current_lang() == "en" else "Événement en double.", "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-            event["_id"] = collection.insert_one(event).inserted_id
+            event["_id"] = calendar_store.insert_event(event)
             target_id = cfg.get("calendar_channel_id") or event["channel_id"]
             channel = guild.get_channel(int(target_id)) if str(target_id).isdigit() else None
             if channel is None and event["channel_id"].isdigit():
@@ -321,8 +321,8 @@ def dash_calendar_page(guild_id):
                 oid = ObjectId(raw_id)
             except Exception:
                 oid = None
-            result = collection.delete_one({"_id": oid, "guild_id": str(guild_id)}) if oid else None
-            if result and result.deleted_count:
+            deleted = calendar_store.delete_event(guild_id, oid) if oid else False
+            if deleted:
                 dash_log_action(guild, guild_id, "Deleted calendar event", raw_id)
                 flash("Event deleted." if current_lang() == "en" else "Événement supprimé.", "calendar")
             else:
@@ -342,7 +342,7 @@ def dash_calendar_page(guild_id):
         else:
             flash("Unknown action." if current_lang() == "en" else "Action inconnue.", "error-calendar")
         return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-    events = list(collection.find({"guild_id": str(guild_id), "starts_at": {"$gte": datetime.datetime.now(datetime.timezone.utc)}}).sort("starts_at", 1).limit(50))
+    events = calendar_store.list_upcoming_events(guild_id, datetime.datetime.now(datetime.timezone.utc), limit=50)
     for event in events:
         event["display_when"] = local_when(event)
         event["id_str"] = str(event.get("_id", ""))
