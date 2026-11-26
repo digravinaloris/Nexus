@@ -173,3 +173,27 @@ def test_public_status_snapshot_sanitizes_non_finite_latency(monkeypatch):
 
     monkeypatch.setattr(core, "bot", StatusBot())
     assert InProcessBotService().public_status_snapshot()["latency_ms"] == "—"
+
+
+def test_guild_name_returns_name_for_ready_guild(monkeypatch):
+    class Guild:
+        name = "Test server"
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, guild_id):
+            return Guild() if guild_id == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    service = InProcessBotService()
+    assert service.guild_name("123") == "Test server"
+    assert service.guild_name("456") == "the server"
+
+
+def test_guild_name_falls_back_when_bot_is_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().guild_name("123") == "the server"
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().guild_name("123") == "the server"
