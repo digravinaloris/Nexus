@@ -640,7 +640,7 @@ def dash_guild_page(guild_id):
         chart_start=stats_series[0][0] if stats_series else "",
         chart_end=stats_series[-1][0] if stats_series else "",
         is_owner=is_owner,
-        is_locked=guild.id in core.bot.locked_guilds,
+        is_locked=get_bot_service().api_health_snapshot(guild_id).get("locked", False),
         user=session.get("dash_user"),
     )
 
@@ -794,13 +794,15 @@ def dash_export_audit_pdf(guild_id):
 @dash_owner_required
 def dash_toggle_lock(guild_id):
     guild = core.bot.get_guild(int(guild_id))
-    gid = int(guild_id)
-    if gid in core.bot.locked_guilds:
-        core.bot.locked_guilds.discard(gid)
+    service = get_bot_service()
+    currently_locked = service.api_health_snapshot(guild_id).get("locked", False)
+    if not service.set_guild_locked(guild_id, not currently_locked):
+        flash("Bot is unavailable; lock state was not changed." if current_lang() == "en" else "Le bot est indisponible ; le verrouillage n'a pas été modifié.", "error")
+        return redirect(url_for("dash_guild_page", guild_id=guild_id))
+    if currently_locked:
         dash_log_action(guild, guild_id, "Unlocked the bot")
         flash("Bot unlocked." if current_lang() == "en" else "Bot déverrouillé.")
     else:
-        core.bot.locked_guilds.add(gid)
         dash_log_action(guild, guild_id, "Locked the bot")
         flash("Bot locked — only you can use its commands here." if current_lang() == "en" else "Bot verrouillé — seul toi peux utiliser ses commandes ici.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
