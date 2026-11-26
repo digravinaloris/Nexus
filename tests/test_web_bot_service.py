@@ -65,7 +65,7 @@ def test_health_snapshot_handles_uninitialized_runtime(monkeypatch):
 
 def test_guild_presence_reports_ready_and_present_guild(monkeypatch):
     monkeypatch.setattr(core, "bot", FakeBot(guilds=[1, 2]))
-    monkeypatch.setattr(core.bot, "get_guild", lambda guild_id: object() if guild_id == 123 else None)
+    monkeypatch.setattr(core.bot, "get_guild", lambda guild_id: object() if guild_id == 123 else None, raising=False)
 
     assert InProcessBotService().guild_presence("123") == {
         "bot_ready": True,
