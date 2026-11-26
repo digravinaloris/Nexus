@@ -8,8 +8,7 @@ from urllib.parse import urlsplit
 
 from flask import jsonify, request
 
-import core
-from bridge import run_coroutine
+from web.bot_service import get_bot_service
 from web.routing import Routes
 
 routes = Routes()
@@ -91,23 +90,17 @@ def github_release_webhook():
     if release is None:
         return jsonify({"ignored": "release"}), 202
 
-    if core.db is None or core.bot is None or not core.bot.is_ready():
+    result = get_bot_service().api_handle_github_release(delivery_id, release)
+    if result == "unavailable":
         return jsonify({"error": "Bot unavailable"}), 503
-    deliveries = core.db["github_webhook_deliveries"]
-    if deliveries.find_one({"_id": delivery_id}):
+    if result == "duplicate":
         return jsonify({"duplicate": True}), 200
-    cog = core.bot.get_cog("GitHubUpdates")
-    if cog is None:
+    if result == "handler_unavailable":
         return jsonify({"error": "Release handler unavailable"}), 503
-    try:
-        sent = run_coroutine(cog.handle_webhook_release(release))
-    except Exception:
+    if result == "delivery_failed":
         return jsonify({"error": "Release delivery failed"}), 503
-    if not sent:
+    if result == "ignored":
         return jsonify({"ignored": "not configured or already announced"}), 200
-    try:
-        deliveries.insert_one({"_id": delivery_id})
-    except Exception:
-        # The Discord message is already sent; a duplicate retry may be caught by release ID state.
+    if result == "record_failed":
         return jsonify({"ok": True, "duplicate_delivery_recorded": False}), 200
     return jsonify({"ok": True}), 200
