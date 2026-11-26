@@ -12,7 +12,7 @@ import time
 
 import core
 import discord
-from config_store import get_config, update_config
+from config_store import add_command_role, get_config, remove_command_role, update_config
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
 from bridge import run_coroutine
