@@ -1293,6 +1293,70 @@ def test_dashboard_settings_snapshot_serializes_guild_data(monkeypatch):
     }
 
 
+def test_dashboard_overview_snapshot_serializes_main_dashboard_data(monkeypatch):
+    from types import SimpleNamespace
+    from web.bot_service import InProcessBotService
+
+    class Role:
+        def __init__(self, role_id, name, default=False, administrator=False):
+            self.id = role_id
+            self.name = name
+            self.permissions = SimpleNamespace(
+                administrator=administrator, manage_guild=False, ban_members=False,
+                kick_members=False, manage_roles=False,
+            )
+            self.default = default
+
+        def is_default(self):
+            return self.default
+
+    class Channel:
+        def __init__(self, channel_id, name):
+            self.id = channel_id
+            self.name = name
+
+    class Guild:
+        id = 123
+        name = "Test server"
+        owner_id = 456
+        text_channels = [Channel(10, "logs")]
+        roles = [Role(1, "@everyone", default=True), Role(2, "Admins", administrator=True)]
+
+        def get_channel(self, channel_id):
+            return None
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, guild_id):
+            return Guild() if guild_id == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert InProcessBotService().dashboard_overview_snapshot("123") == {
+        "id": "123",
+        "name": "Test server",
+        "owner_id": "456",
+        "text_channels": [{"id": "10", "name": "logs"}],
+        "roles": [{
+            "id": "2", "name": "Admins",
+            "permissions": {
+                "administrator": True, "manage_guild": False, "ban_members": False,
+                "kick_members": False, "manage_roles": False,
+            },
+        }],
+        "role_names": {"1": "@everyone", "2": "Admins"},
+        "open_tickets": [],
+    }
+
+
+def test_dashboard_overview_snapshot_fails_closed_when_runtime_unavailable(monkeypatch):
+    from web.bot_service import InProcessBotService
+
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().dashboard_overview_snapshot("123") is None
+
+
 def test_dashboard_roles_snapshot_includes_everyone_and_serializes_roles(monkeypatch):
     class Role:
         def __init__(self, role_id, name):
