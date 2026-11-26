@@ -297,7 +297,7 @@ def dash_calendar_page(guild_id):
             except ValueError as exc:
                 flash(str(exc), "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-            event = {"guild_id": str(guild_id), "title": title, "role_id": str(int(role["id"])), "description": description,
+            event = {"guild_id": str(guild_id), "title": title, "role_id": str(role.id), "description": description,
                 "starts_at": starts_at, "timezone": timezone_name, "time_set": bool(request.form.get("time", "").strip()),
                 "channel_id": str(request.form.get("channel_id") or ""), "reminders_sent": [],
                 "created_by": str((session.get("dash_user") or {}).get("id", "")), "created_at": datetime.datetime.now(datetime.timezone.utc)}
@@ -332,8 +332,8 @@ def dash_calendar_page(guild_id):
                 flash("Only the server owner can manage calendar roles." if current_lang() == "en" else "Seul le propriétaire peut gérer les rôles du calendrier.", "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
             manager_ids = set(str(x) for x in cfg.get("calendar_manager_role_ids", []))
-            if request.form.get("manager_action") == "remove": manager_ids.discard(str(int(role["id"])))
-            else: manager_ids.add(str(int(role["id"])))
+            if request.form.get("manager_action") == "remove": manager_ids.discard(str(role.id))
+            else: manager_ids.add(str(role.id))
             update_config(guild_id, "calendar_manager_role_ids", sorted(manager_ids))
             dash_log_action(guild_id, "Updated calendar manager roles", role.name)
             flash("Calendar manager roles saved." if current_lang() == "en" else "Rôles gestionnaires enregistrés.", "calendar")
@@ -581,8 +581,8 @@ def dash_guild_page(guild_id):
         elif autorole_id.isdigit():
             role = guild.get_role(int(autorole_id))
             if role is not None:
-                update_config(guild_id, "autorole", int(role["id"]))
-                changes.append(f"autorole → @{role['name']}")
+                update_config(guild_id, "autorole", role.id)
+                changes.append(f"autorole → @{role.name}")
                 if any(getattr(role.permissions, p) for p in risky_perms):
                     flash(f"⚠️ {role.name}: " + ("sensitive permissions, given to every new member." if current_lang() == "en" else "permissions sensibles, donné à tout nouveau membre."))
 
@@ -736,9 +736,9 @@ def dash_permission_template(guild_id):
             add_command_role(guild_id, cmd, int(role["id"]))
         dash_log_action(guild_id, "Applied permission template", f"template « {label} » → @{role['name']}")
         if current_lang() == "en":
-            flash(f"Template « {label} » applied to {role.name} ({len(commands_list)} commands).")
+            flash(f"Template « {label} » applied to {role['name']} ({len(commands_list)} commands).")
         else:
-            flash(f"Modèle « {label} » appliqué à {role.name} ({len(commands_list)} commandes).")
+            flash(f"Modèle « {label} » appliqué à {role['name']} ({len(commands_list)} commandes).")
 
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
