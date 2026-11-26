@@ -239,14 +239,16 @@ def update_guild_config(guild_id):
 @bp.route('/api/guilds/<guild_id>/lock', methods=['POST'])
 @require_api_key
 def lock_bot_route(guild_id):
-    core.bot.locked_guilds.add(int(guild_id))
+    if not get_bot_service().set_guild_locked(guild_id, True):
+        return jsonify({"error": "Bot not ready"}), 503
     return jsonify({"success": True, "locked": True})
 
 
 @bp.route('/api/guilds/<guild_id>/unlock', methods=['POST'])
 @require_api_key
 def unlock_bot_route(guild_id):
-    core.bot.locked_guilds.discard(int(guild_id))
+    if not get_bot_service().set_guild_locked(guild_id, False):
+        return jsonify({"error": "Bot not ready"}), 503
     return jsonify({"success": True, "locked": False})
 
 
