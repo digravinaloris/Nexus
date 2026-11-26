@@ -90,3 +90,20 @@ def test_baseline_security_headers_include_safe_csp_restrictions(nexus):
     assert "base-uri 'self'" in csp
     assert "object-src 'none'" in csp
     assert "frame-ancestors 'none'" in csp
+
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/login", "/callback", "/logout", "/dashboard", "/dashboard/111/calendar"],
+)
+def test_sensitive_oauth_and_dashboard_responses_are_not_cached(nexus, path):
+    response = nexus.api.test_client().get(path)
+    assert "no-store" in response.headers["Cache-Control"].lower()
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["Expires"] == "0"
+
+
+def test_public_status_response_keeps_normal_cache_policy(nexus):
+    response = nexus.api.test_client().get("/status")
+    assert "no-store" not in response.headers.get("Cache-Control", "").lower()

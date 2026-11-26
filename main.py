@@ -5259,6 +5259,16 @@ def add_security_headers(response):
         "Content-Security-Policy",
         "base-uri 'self'; object-src 'none'; frame-ancestors 'none'",
     )
+    # OAuth callbacks can contain one-time authorization codes, and dashboard
+    # pages expose private server data. Never let browsers or shared proxies cache them.
+    if (
+        request.path in {"/login", "/callback", "/logout"}
+        or request.path == "/dashboard"
+        or request.path.startswith("/dashboard/")
+    ):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     return response
 
 # ---------- Templates HTML ----------
