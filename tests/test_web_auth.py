@@ -144,6 +144,7 @@ def test_callback_rejects_missing_or_invalid_token_expiration(env, monkeypatch):
 
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "valid-state"
+        sess["oauth_code_verifier"] = "A" * 43
 
         sess["oauth_state_created_at"] = auth.time.time()
 
@@ -275,6 +276,7 @@ def test_callback_rejects_malformed_oauth_json_without_session(env, monkeypatch,
 
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "valid-state"
+        sess["oauth_code_verifier"] = "A" * 43
 
         sess["oauth_state_created_at"] = auth.time.time()
 
@@ -308,6 +310,7 @@ def test_callback_rejects_invalid_discord_user_id(env, monkeypatch, user_id):
     monkeypatch.setattr(auth.requests, "get", lambda *a, **k: UserResponse())
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "valid-state"
+        sess["oauth_code_verifier"] = "A" * 43
 
         sess["oauth_state_created_at"] = auth.time.time()
 
