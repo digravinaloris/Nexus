@@ -16,7 +16,7 @@ from bridge import run_coroutine
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from sanctions_store import get_warns, log_sanction, set_warns
 import utils
-from moderation_actions import _dm_user_appeal_result, reverse_sanction
+from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
 
 
 class BotService:
@@ -119,6 +119,10 @@ class BotService:
 
     def api_grant_verified(self, guild_id: str, user_id: str):
         """Apply verification roles without exposing Discord guild/member objects to web routes."""
+        raise NotImplementedError
+
+    def api_post_appeal_for_review(self, guild_id: str, appeal: Dict[str, object], appeal_text: str):
+        """Forward a submitted appeal to its configured Discord review channel."""
         raise NotImplementedError
 
 
@@ -450,6 +454,16 @@ class InProcessBotService(BotService):
             return False, "Guild not found"
         from verification import grant_verified
         return run_coroutine(grant_verified(guild, user_id))
+
+    def api_post_appeal_for_review(self, guild_id: str, appeal: Dict[str, object], appeal_text: str):
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return False, "Bot not ready"
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return False, "Guild not found"
+        run_coroutine(post_appeal_for_review(guild, appeal, appeal_text))
+        return True, None
 
     def api_announce_calendar_event(self, guild_id: str, channel_id: str, event: Dict[str, object]):
         bot = core.bot

@@ -1175,3 +1175,32 @@ def test_api_grant_verified_fails_closed_when_runtime_or_guild_is_missing(monkey
             return None
     monkeypatch.setattr(core, "bot", ReadyBot())
     assert service.api_grant_verified("123", "456") == (False, "Guild not found")
+
+
+def test_api_post_appeal_for_review_uses_bot_runtime(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    guild = object()
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, guild_id):
+            return guild if guild_id == 123 else None
+
+    calls = []
+    async def fake_post(target_guild, appeal, appeal_text):
+        calls.append((target_guild, appeal, appeal_text))
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    monkeypatch.setattr(service_module, "post_appeal_for_review", fake_post)
+    appeal = {"case_id": 7}
+    assert InProcessBotService().api_post_appeal_for_review("123", appeal, "details") == (True, None)
+    assert calls == [(guild, appeal, "details")]
+
+
+def test_api_post_appeal_for_review_fails_closed_without_runtime(monkeypatch):
+    service = InProcessBotService()
+    monkeypatch.setattr(core, "bot", None)
+    assert service.api_post_appeal_for_review("123", {}, "details") == (False, "Bot not ready")
