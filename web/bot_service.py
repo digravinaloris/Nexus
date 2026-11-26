@@ -6,13 +6,15 @@ existing in-process deployment; a signed HTTP adapter can implement the same
 contract in a later migration step without changing route response shapes.
 """
 from typing import Dict, List, Optional
+import datetime
 import math
 import time
 
 import core
 import discord
 from bridge import run_coroutine
-from discord_logging import log_unmute
+from discord_logging import log_mute, log_unmute
+from sanctions_store import log_sanction
 import utils
 
 
@@ -76,6 +78,10 @@ class BotService:
 
     def api_broadcast(self, guild_id: str, channel_id: str, message: str, mention: str = "none"):
         """Send a mobile-app broadcast; return a success/error pair."""
+        raise NotImplementedError
+
+    def api_mute_member(self, guild_id: str, user_id: str, minutes: int, reason: str):
+        """Apply a timeout and write its existing sanction/log records."""
         raise NotImplementedError
 
 
@@ -263,6 +269,28 @@ class InProcessBotService(BotService):
 
         run_coroutine(send())
         return True, None
+
+    def api_mute_member(self, guild_id: str, user_id: str, minutes: int, reason: str):
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return False, "Guild not found"
+
+        async def mute():
+            member = guild.get_member(int(user_id))
+            if member is None:
+                return False, "Member not found"
+            if member.top_role >= guild.me.top_role:
+                return False, "Role too high"
+            duration = datetime.timedelta(minutes=minutes)
+            await member.timeout(duration, reason=reason)
+            log_sanction(guild_id, user_id, "mute", f"{reason} ({minutes} min)", "mobile_app")
+            await log_mute(guild, member, minutes, reason)
+            return True, None
+
+        return run_coroutine(mute())
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot
