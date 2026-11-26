@@ -672,10 +672,12 @@ def test_mobile_appeal_claim_prevents_concurrent_resolution(env, monkeypatch, ac
     env.col.ban_appeals.update_one(
         {"token": token}, {"$set": {"status": "processing"}}
     )
+    appeal_service = rest_module.get_bot_service()
     monkeypatch.setattr(
-        rest_module, "get_ban_appeal",
+        appeal_service, "api_get_appeal",
         lambda _token: {**stale_appeal, "status": "submitted"},
     )
+    monkeypatch.setattr(rest_module, "get_bot_service", lambda: appeal_service)
     side_effects = []
     monkeypatch.setattr(
         service_module, "run_coroutine",
