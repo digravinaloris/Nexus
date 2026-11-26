@@ -413,6 +413,25 @@ def test_mute_and_unmute(env):
     assert env.client.post(url("/members/99/unmute"), headers=MASTER).status_code == 400
 
 
+def test_mute_rejects_invalid_duration_without_calling_discord(env):
+    member = FakeMember(10)
+    env.guild.members = [member]
+
+    for minutes in ("abc", -1, 0, 40321, True, 30.5):
+        response = env.client.post(
+            url("/members/10/mute"),
+            json={"minutes": minutes},
+            headers=MASTER,
+        )
+        assert response.status_code == 400
+        assert response.get_json() == {
+            "error": "minutes must be an integer between 1 and 40320"
+        }
+
+    assert member.calls == []
+    assert env.col.sanctions.count_documents({}) == 0
+
+
 def test_warn_unwarn_and_listing(env):
     env.guild.members = [FakeMember(10)]
     resp = env.client.post(url("/members/10/warn"), json={"reason": "rude"}, headers=MASTER)
