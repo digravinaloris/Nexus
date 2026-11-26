@@ -900,3 +900,58 @@ def test_api_warn_member_returns_none_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().api_warn_member("123", "10", "x") is None
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_warn_member("123", "10", "x") is None
+
+
+def test_api_unwarn_member_decrements_and_best_effort_logs(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    warnings = {"count": 2}
+    records = []
+    logs = []
+
+    class Member:
+        pass
+
+    member = Member()
+    class Guild:
+        def get_member(self, uid):
+            return member if uid == 10 else None
+
+    guild = Guild()
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "get_warns", lambda gid, uid: warnings["count"])
+    def fake_set_warns(gid, uid, count):
+        warnings["count"] = count
+        records.append((gid, uid, count))
+    monkeypatch.setattr(service_module, "set_warns", fake_set_warns)
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    async def fake_log_unwarn(g, m, count):
+        logs.append((g, m, count))
+    monkeypatch.setattr(service_module, "log_unwarn", fake_log_unwarn)
+
+    assert InProcessBotService().api_unwarn_member("123", "10") == (True, 1)
+    assert warnings["count"] == 1
+    assert records == [("123", "10", 1)]
+    assert logs == [(guild, member, 1)]
+
+
+def test_api_unwarn_member_handles_zero_and_bot_offline(monkeypatch):
+    import web.bot_service as service_module
+
+    monkeypatch.setattr(service_module, "get_warns", lambda gid, uid: 0)
+    assert InProcessBotService().api_unwarn_member("123", "10") == (False, "No warnings to remove")
+    monkeypatch.setattr(service_module, "get_warns", lambda gid, uid: 1)
+    records = []
+    monkeypatch.setattr(service_module, "set_warns", lambda gid, uid, count: records.append(count))
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().api_unwarn_member("123", "10") == (True, 0)
+    assert records == [0]
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_unwarn_member("123", "10") == (True, 0)
