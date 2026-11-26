@@ -4,6 +4,15 @@ All notable changes to Nexus are documented here.
 
 ## [Unreleased]
 
+### Security and mobile API hardening
+- Dashboard OAuth: add PKCE, reject malformed authorization codes and refresh tokens, reject duplicate `state`/`code` callback parameters, and validate session state and CSRF token formats.
+- Sensitive OAuth and dashboard responses now send `Cache-Control: no-store`, `Pragma: no-cache`, and `Expires: 0`.
+- Welcome-banner avatar downloads are streamed with a 5 MiB size cap and a timeout; a failed avatar download no longer prevents the plain-text welcome message.
+- Audit CSV exports neutralize spreadsheet formula-like cells to reduce formula-injection risk.
+- GitHub release announcements atomically claim release IDs to prevent duplicate posts when webhook and polling deliveries race.
+- Mobile API: validate guild/user snowflake IDs, mute durations, FAQ payloads and toggle booleans; use 128-bit FAQ entry IDs and bound audit/case pagination.
+
+
 ### Added
 - `/apply` — role application system: members apply via a form, the server owner reviews and accepts/refuses via buttons
 - `/config` command group — server configuration (logs channel, autorole, API key, per-command role permissions)
