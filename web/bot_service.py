@@ -74,6 +74,10 @@ class BotService:
         """Return all guild roles, including @everyone, as serializable DTOs."""
         raise NotImplementedError
 
+    def dashboard_overview_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
+        """Return serializable data needed by the main dashboard page."""
+        raise NotImplementedError
+
     def api_members_snapshot(self, guild_id: str) -> Optional[List[Dict[str, object]]]:
         """Return serializable member DTOs for one guild, or None when the bot is offline."""
         raise NotImplementedError
@@ -268,6 +272,43 @@ class InProcessBotService(BotService):
         if guild is None:
             return None
         return [{"id": str(role.id), "name": role.name} for role in guild.roles]
+
+    def dashboard_overview_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return None
+        permission_names = ("administrator", "manage_guild", "ban_members", "kick_members", "manage_roles")
+        roles = [{
+            "id": str(role.id),
+            "name": role.name,
+            "permissions": {
+                name: bool(getattr(role.permissions, name, False))
+                for name in permission_names
+            },
+        } for role in guild.roles if not role.is_default()]
+        open_tickets = []
+        if ticket_category_id and str(ticket_category_id).isdigit():
+            category = guild.get_channel(int(ticket_category_id))
+            if isinstance(category, discord.CategoryChannel):
+                open_tickets = [
+                    {"id": str(channel.id), "name": channel.name}
+                    for channel in category.text_channels
+                ]
+        return {
+            "id": str(guild.id),
+            "name": guild.name,
+            "owner_id": str(guild.owner_id),
+            "text_channels": [
+                {"id": str(channel.id), "name": channel.name}
+                for channel in guild.text_channels
+            ],
+            "roles": roles,
+            "role_names": {str(role.id): role.name for role in guild.roles},
+            "open_tickets": open_tickets,
+        }
 
     def api_members_snapshot(self, guild_id: str) -> Optional[List[Dict[str, object]]]:
         bot = core.bot
