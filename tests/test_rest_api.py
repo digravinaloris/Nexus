@@ -564,7 +564,7 @@ def test_faq_crud_and_toggle(env):
     assert env.col.faq.count_documents({"guild_id": str(GUILD)}) == 0
     resp = env.client.post(url("/faq"), json={"keywords": [" rules ", "règles"], "response": " Read #rules "}, headers=h)
     entry_id = resp.get_json()["id"]
-    assert len(entry_id) == 4
+    assert len(entry_id) == 32
     body = env.client.get(url("/faq"), headers=h).get_json()
     assert body["entries"] == [{"id": entry_id, "keywords": ["rules", "règles"], "response": "Read #rules"}]
     assert env.client.post(url("/faq/toggle"), json={"enabled": True}, headers=h).get_json() == {

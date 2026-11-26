@@ -654,9 +654,9 @@ def guild_faq_add_route(guild_id):
 
     doc = col.faq.find_one({"guild_id": str(guild_id)}) or {"guild_id": str(guild_id), "enabled": False, "entries": []}
     existing_ids = {e["id"] for e in doc["entries"]}
-    entry_id = secrets.token_hex(2)
+    entry_id = secrets.token_hex(16)
     while entry_id in existing_ids:
-        entry_id = secrets.token_hex(2)
+        entry_id = secrets.token_hex(16)
     doc["entries"].append({"id": entry_id, "keywords": keywords, "response": response_text})
     col.faq.update_one({"guild_id": str(guild_id)}, {"$set": {"entries": doc["entries"]}}, upsert=True)
     return jsonify({"success": True, "id": entry_id})
