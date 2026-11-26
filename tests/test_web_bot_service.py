@@ -1417,7 +1417,12 @@ def test_api_handle_github_release_reports_runtime_and_handler_failures(monkeypa
         def get_cog(self, name):
             return None
 
-    monkeypatch.setattr(core, "db", {})
+    class EmptyDB:
+        def __getitem__(self, name):
+            assert name == "github_webhook_deliveries"
+            return type("EmptyCollection", (), {"find_one": lambda self, query: None})()
+
+    monkeypatch.setattr(core, "db", EmptyDB())
     monkeypatch.setattr(core, "bot", ReadyBot())
     assert service.api_handle_github_release("delivery-1", {}) == "handler_unavailable"
 
