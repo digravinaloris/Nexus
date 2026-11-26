@@ -484,6 +484,10 @@ def test_audit_feed_and_cases(env):
     only_bans = env.client.get(url("/cases?type=ban"), headers=MASTER).get_json()
     assert [c["type"] for c in only_bans] == ["ban"]
     assert len(env.client.get(url("/cases?limit=1"), headers=MASTER).get_json()) == 1
+    assert len(env.client.get(url("/cases?limit=0"), headers=MASTER).get_json()) == 1
+    assert len(env.client.get(url("/cases?limit=-5"), headers=MASTER).get_json()) == 1
+    assert len(env.client.get(url("/audit?limit=0"), headers=MASTER).get_json()) == 1
+    assert len(env.client.get(url("/audit?limit=-5"), headers=MASTER).get_json()) == 1
 
 
 # ------------------------------------------------------------------- appeals
