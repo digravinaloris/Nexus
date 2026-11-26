@@ -677,3 +677,84 @@ def test_api_mute_member_returns_none_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().api_mute_member("123", "10", 10, "x") is None
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_mute_member("123", "10", 10, "x") is None
+
+
+def test_api_ban_member_applies_ban_and_logs(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Member:
+        top_role = 2
+
+        def __init__(self):
+            self.calls = []
+
+        async def ban(self, reason=None):
+            self.calls.append(reason)
+
+    member = Member()
+    sanctions = []
+    ban_logs = []
+
+    class Guild:
+        me = type("BotMember", (), {"top_role": 5})()
+
+        def get_member(self, uid):
+            return member if uid == 10 else None
+
+    guild = Guild()
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    monkeypatch.setattr(service_module, "log_sanction", lambda *args: sanctions.append(args))
+    async def fake_log_ban(g, m, reason):
+        ban_logs.append((g, m, reason))
+    monkeypatch.setattr(service_module, "log_ban", fake_log_ban)
+
+    assert InProcessBotService().api_ban_member("123", "10", "bad behavior") == (True, None)
+    assert member.calls == ["bad behavior"]
+    assert sanctions == [("123", "10", "ban", "bad behavior", "mobile_app")]
+    assert ban_logs == [(guild, member, "bad behavior")]
+
+
+def test_api_ban_member_checks_member_and_role_hierarchy(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Member:
+        top_role = 10
+
+        async def ban(self, reason=None):
+            raise AssertionError("too-high member must not be banned")
+
+    member = Member()
+    class Guild:
+        me = type("BotMember", (), {"top_role": 5})()
+        def get_member(self, uid):
+            return member if uid == 10 else None
+
+    guild = Guild()
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    assert InProcessBotService().api_ban_member("123", "99", "x") == (False, "Member not found")
+    assert InProcessBotService().api_ban_member("123", "10", "x") == (False, "Role too high")
+
+
+def test_api_ban_member_returns_none_when_bot_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().api_ban_member("123", "10", "x") is None
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_ban_member("123", "10", "x") is None
