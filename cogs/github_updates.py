@@ -1,6 +1,5 @@
-"""Owner-only GitHub release announcements for the single Nexus home server."""
+"""Owner-only GitHub release announcements, delivered as plain Discord messages."""
 import asyncio
-import datetime as dt
 
 import discord
 import requests
@@ -10,6 +9,7 @@ from discord.ext import commands
 RELEASE_API = "https://api.github.com/repos/digravinaloris/Nexus/releases/latest"
 POLL_SECONDS = 600
 STATE_ID = "github_release_announcements"
+MAX_DISCORD_MESSAGE_LENGTH = 2000
 
 
 def fetch_latest_release():
@@ -34,36 +34,33 @@ def fetch_latest_release():
     required = ("id", "tag_name", "html_url")
     if any(not release.get(key) for key in required):
         raise ValueError("GitHub release is missing required fields.")
+    if not isinstance(release.get("tag_name"), str):
+        raise ValueError("GitHub release tag is invalid.")
+    url = release.get("html_url")
+    if (
+        not isinstance(url, str)
+        or len(url) > 500
+        or not url.startswith("https://github.com/digravinaloris/Nexus/releases/")
+    ):
+        raise ValueError("GitHub release URL is invalid.")
     return release
 
 
-def build_release_embed(release):
-    name = (release.get("name") or release["tag_name"]).strip()[:254]
-    body = (release.get("body") or "").strip()
-    if not body:
-        body = "A new Nexus version is available."
-    if len(body) > 4000:
-        body = body[:3997].rstrip() + "..."
-    embed = discord.Embed(
-        title=f"🚀 {name}",
-        url=release["html_url"],
-        description=body,
-        color=0x5865F2,
-        timestamp=_parse_published_at(release.get("published_at")),
-    )
-    embed.add_field(name="Version", value=release["tag_name"][:256], inline=True)
-    embed.add_field(name="Release notes", value=f"[View on GitHub]({release['html_url']})", inline=True)
-    embed.set_footer(text="Nexus · Automatic update announcement")
-    return embed
+def build_release_message(release):
+    """Format release details as a bounded plain-text message (no Discord embed)."""
+    tag = str(release["tag_name"]).strip()[:100]
+    name = str(release.get("name") or tag).strip()[:160] or tag
+    body = str(release.get("body") or "").strip() or "No release notes provided."
+    url = str(release["html_url"]).strip()
 
-
-def _parse_published_at(value):
-    if not value:
-        return None
-    try:
-        return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (AttributeError, TypeError, ValueError):
-        return None
+    prefix = f"📢 New Nexus release!\n{name}\nVersion: {tag}\n\n"
+    suffix = f"\n\n{url}"
+    body_limit = max(0, MAX_DISCORD_MESSAGE_LENGTH - len(prefix) - len(suffix))
+    if len(body) > body_limit and body_limit >= 3:
+        body = body[:body_limit - 3].rstrip() + "..."
+    else:
+        body = body[:body_limit]
+    return prefix + body + suffix
 
 
 class GitHubUpdates(commands.Cog):
@@ -100,8 +97,7 @@ class GitHubUpdates(commands.Cog):
         if channel is None or not isinstance(channel, discord.TextChannel):
             return False
         await channel.send(
-            content="📢 **A new Nexus update is available!**",
-            embed=build_release_embed(release),
+            content=build_release_message(release),
             allowed_mentions=discord.AllowedMentions.none(),
         )
         self.state().update_one(
