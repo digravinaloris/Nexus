@@ -1357,6 +1357,71 @@ def test_dashboard_overview_snapshot_fails_closed_when_runtime_unavailable(monke
     assert InProcessBotService().dashboard_overview_snapshot("123") is None
 
 
+def test_api_handle_github_release_dispatches_and_deduplicates(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    deliveries = []
+
+    class DeliveryCollection:
+        def find_one(self, query):
+            return next((item for item in deliveries if item["_id"] == query["_id"]), None)
+
+        def insert_one(self, document):
+            deliveries.append(document)
+
+    class FakeDB:
+        def __getitem__(self, name):
+            assert name == "github_webhook_deliveries"
+            return DeliveryCollection()
+
+    calls = []
+
+    class FakeCog:
+        async def handle_webhook_release(self, release):
+            calls.append(release["tag_name"])
+            return True
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_cog(self, name):
+            assert name == "GitHubUpdates"
+            return FakeCog()
+
+    monkeypatch.setattr(core, "db", FakeDB())
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coroutine: asyncio.run(coroutine))
+    service = InProcessBotService()
+    release = {"tag_name": "v2.1.0"}
+
+    assert service.api_handle_github_release("delivery-1", release) == "sent"
+    assert service.api_handle_github_release("delivery-1", release) == "duplicate"
+    assert calls == ["v2.1.0"]
+    assert deliveries == [{"_id": "delivery-1"}]
+
+
+def test_api_handle_github_release_reports_runtime_and_handler_failures(monkeypatch):
+    import web.bot_service as service_module
+
+    service = InProcessBotService()
+    monkeypatch.setattr(core, "db", None)
+    monkeypatch.setattr(core, "bot", None)
+    assert service.api_handle_github_release("delivery-1", {}) == "unavailable"
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_cog(self, name):
+            return None
+
+    monkeypatch.setattr(core, "db", {})
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert service.api_handle_github_release("delivery-1", {}) == "handler_unavailable"
+
+
 def test_dashboard_roles_snapshot_includes_everyone_and_serializes_roles(monkeypatch):
     class Role:
         def __init__(self, role_id, name):
