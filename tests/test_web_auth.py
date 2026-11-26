@@ -378,3 +378,17 @@ def test_guild_id_validation_accepts_supported_snowflake_lengths(guild_id):
 @pytest.mark.parametrize("guild_id", ["1234567890123456", "123456789012345678901", "invalid", ""])
 def test_guild_id_validation_rejects_invalid_snowflake_lengths(guild_id):
     assert not auth.GUILD_ID_RE.fullmatch(guild_id)
+
+
+@pytest.mark.parametrize("expected_state", [123, ["state"], {"state": "value"}])
+def test_callback_rejects_non_string_session_state_without_calling_discord(env, monkeypatch, expected_state):
+    called = []
+    monkeypatch.setattr(auth.requests, "post", lambda *a, **k: called.append(True))
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = expected_state
+        sess["oauth_state_created_at"] = auth.time.time()
+        sess["oauth_code_verifier"] = "A" * 43
+
+    response = env.client.get("/callback?code=authorization-code&state=valid-state")
+    assert response.status_code == 403
+    assert called == []

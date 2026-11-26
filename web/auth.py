@@ -168,7 +168,9 @@ def dash_callback():
         and re.fullmatch(r"[A-Za-z0-9._~-]+", code_verifier) is not None
     )
     if (
-        not state
+        not isinstance(state, str)
+        or not state
+        or not isinstance(expected_state, str)
         or not expected_state
         or not state_is_fresh
         or not secrets.compare_digest(state, expected_state)
