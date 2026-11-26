@@ -13,7 +13,7 @@ import time
 import core
 import discord
 from bridge import run_coroutine
-from discord_logging import log_ban, log_mute, log_unmute
+from discord_logging import log_ban, log_kick, log_mute, log_unmute
 from sanctions_store import log_sanction
 import utils
 
@@ -86,6 +86,10 @@ class BotService:
 
     def api_ban_member(self, guild_id: str, user_id: str, reason: str):
         """Ban a member and write its existing sanction/log records."""
+        raise NotImplementedError
+
+    def api_kick_member(self, guild_id: str, user_id: str, reason: str):
+        """Kick a member and write its existing sanction/log records."""
         raise NotImplementedError
 
 
@@ -316,6 +320,27 @@ class InProcessBotService(BotService):
             return True, None
 
         return run_coroutine(ban())
+
+    def api_kick_member(self, guild_id: str, user_id: str, reason: str):
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return False, "Guild not found"
+
+        async def kick():
+            member = guild.get_member(int(user_id))
+            if member is None:
+                return False, "Member not found"
+            if member.top_role >= guild.me.top_role:
+                return False, "Role too high"
+            await member.kick(reason=reason)
+            log_sanction(guild_id, user_id, "kick", reason, "mobile_app")
+            await log_kick(guild, member, reason)
+            return True, None
+
+        return run_coroutine(kick())
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot
