@@ -50,6 +50,14 @@ def test_payload_validation_only_accepts_own_published_release():
     wrong_repo["repository"]["full_name"] = "fork/Nexus"
     assert github_webhook.validate_release(wrong_repo) is None
     assert github_webhook.validate_release(payload(html_url="https://example.org")) is None
+    assert github_webhook.validate_release(payload(html_url="https://github.com.evil.example/digravinaloris/Nexus/releases/tag/v2.1.0")) is None
+    assert github_webhook.validate_release(payload(html_url="https://user@github.com/digravinaloris/Nexus/releases/tag/v2.1.0")) is None
+    assert github_webhook.validate_release(payload(html_url="https://github.com/digravinaloris/Nexus/releases/tag/v2.1.0?redirect=evil")) is None
+    assert github_webhook.validate_release(payload(html_url="https://github.com/digravinaloris/Nexus/releases/../../other")) is None
+    assert github_webhook.validate_release(payload(tag_name="")) is None
+    assert github_webhook.validate_release(payload(tag_name="x" * 256)) is None
+    assert github_webhook.validate_release(payload(id=True)) is None
+    assert github_webhook.validate_release(payload(id=0)) is None
 
 
 def test_missing_secret_returns_503(monkeypatch):
