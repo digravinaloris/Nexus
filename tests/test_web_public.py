@@ -188,10 +188,11 @@ def test_callback_success_stores_session_and_redirects(env, monkeypatch):
 
 
 def test_logout_clears_session(env):
+    csrf_token = "test-csrf-token-" + "x" * 32
     with env.client.session_transaction() as sess:
         sess["access_token"] = "AT"
-        sess["csrf_token"] = "test-token"
-    resp = env.client.post("/logout", data={"csrf_token": "test-token"})
+        sess["csrf_token"] = csrf_token
+    resp = env.client.post("/logout", data={"csrf_token": csrf_token})
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
         assert "access_token" not in sess

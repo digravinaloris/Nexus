@@ -124,9 +124,21 @@ def test_logout_rejects_get_requests(env):
 def test_logout_rejects_missing_or_invalid_csrf(env):
     with env.client.session_transaction() as sess:
         sess["access_token"] = "valid"
-        sess["csrf_token"] = "expected-token"
+        sess["csrf_token"] = "expected-csrf-token-" + "x" * 32
 
     response = env.client.post("/logout", data={"csrf_token": "wrong-token"})
+    assert response.status_code == 403
+    with env.client.session_transaction() as sess:
+        assert sess["access_token"] == "valid"
+
+
+@pytest.mark.parametrize("token", ["", "short-token", "x" * 31])
+def test_logout_rejects_weak_csrf_tokens(env, token):
+    with env.client.session_transaction() as sess:
+        sess["access_token"] = "valid"
+        sess["csrf_token"] = token
+
+    response = env.client.post("/logout", data={"csrf_token": token})
     assert response.status_code == 403
     with env.client.session_transaction() as sess:
         assert sess["access_token"] == "valid"
@@ -135,9 +147,9 @@ def test_logout_rejects_missing_or_invalid_csrf(env):
 def test_logout_with_valid_csrf_clears_session(env):
     with env.client.session_transaction() as sess:
         sess["access_token"] = "valid"
-        sess["csrf_token"] = "expected-token"
+        sess["csrf_token"] = "expected-csrf-token-" + "x" * 32
 
-    response = env.client.post("/logout", data={"csrf_token": "expected-token"})
+    response = env.client.post("/logout", data={"csrf_token": "expected-csrf-token-" + "x" * 32})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
