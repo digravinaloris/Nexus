@@ -547,3 +547,32 @@ def test_dashboard_home_uses_bot_service_for_available_guild_ids(dash, monkeypat
     assert response.status_code == 200
     assert "Managed Server" in body
     assert "Not In Bot" not in body
+
+
+
+@pytest.mark.parametrize("is_owner", [True, False])
+def test_dashboard_owner_guard_uses_bot_service(dash, monkeypatch, is_owner):
+    from flask import session
+    from web import dashboard
+
+    class FakeBotService:
+        def is_guild_owner(self, guild_id, user_id):
+            assert guild_id == GID
+            assert user_id == OWNER_ID
+            return is_owner
+
+    monkeypatch.setattr(dashboard, "get_bot_service", lambda: FakeBotService())
+
+    @dashboard.dash_owner_required
+    def protected(guild_id):
+        return "allowed"
+
+    with dash.nexus.api.test_request_context(dash.url()):
+        session["dash_user"] = {"id": OWNER_ID}
+        result = protected(GID)
+        if is_owner:
+            assert result == "allowed"
+        else:
+            response, status = result
+            assert status == 403
+            assert response.get_json() == {"error": "Server owner required"}

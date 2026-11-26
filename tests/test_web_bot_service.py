@@ -112,3 +112,28 @@ def test_available_guild_ids_returns_empty_when_bot_is_unavailable(monkeypatch):
 
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().available_guild_ids(["1", "2"]) == []
+
+
+def test_is_guild_owner_checks_current_guild_owner(monkeypatch):
+    class Guild:
+        owner_id = 42
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, guild_id):
+            return Guild() if guild_id == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    service = InProcessBotService()
+    assert service.is_guild_owner("123", "42") is True
+    assert service.is_guild_owner("123", "43") is False
+    assert service.is_guild_owner("456", "42") is False
+
+
+def test_is_guild_owner_fails_closed_when_bot_is_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False, guilds=[]))
+    assert InProcessBotService().is_guild_owner("123", "42") is False
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().is_guild_owner("123", "42") is False
