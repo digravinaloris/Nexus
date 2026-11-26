@@ -21,6 +21,7 @@ from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
 from sanctions_store import get_ban_appeal
 import utils
 from web.routing import Routes
+from web.bot_service import get_bot_service
 
 routes = Routes()
 
@@ -29,22 +30,10 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # racine
 
 @routes.route('/')
 def home():
-    # Reste toujours 200 (UptimeRobot et Render s'en servent comme simple ping
-    # de "le serveur web répond") -- le détail par composant est dans le JSON,
-    # pas dans le status code, pour ne jamais déclencher de faux downtime sur
-    # un blip Mongo passager.
-    mongo_ok = False
-    try:
-        core.mongo.admin.command("ping")
-        mongo_ok = True
-    except Exception:
-        pass
-    return jsonify({
-        "status": "alive",
-        "discord_gateway": "connected" if core.bot.is_ready() else "disconnected",
-        "mongodb": "connected" if mongo_ok else "unreachable",
-        "guild_count": len(core.bot.guilds) if core.bot.is_ready() else 0,
-    })
+    # Reste toujours 200 (UptimeRobot et l'hébergement s'en servent comme
+    # simple ping). L'adaptateur conserve le format JSON historique et isole
+    # la route de l'instance Discord/Mongo du processus web.
+    return jsonify(get_bot_service().health_snapshot())
 
 
 @routes.route('/favicon.ico')
