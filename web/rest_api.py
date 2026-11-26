@@ -303,10 +303,10 @@ def ban_member_route(guild_id, user_id):
 @bp.route('/api/guilds/<guild_id>/members/<user_id>/kick', methods=['POST'])
 @require_api_key
 def kick_member_route(guild_id, user_id):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
 
     data = _get_json_object()
@@ -316,22 +316,13 @@ def kick_member_route(guild_id, user_id):
     if reason is None:
         return jsonify({"error": "reason must be a string of at most 512 characters"}), 400
 
-    async def _kick():
-        member = guild.get_member(int(user_id))
-        if not member:
-            return False, "Member not found"
-        if member.top_role >= guild.me.top_role:
-            return False, "Role too high"
-        await member.kick(reason=reason)
-        log_sanction(guild_id, user_id, "kick", reason, "mobile_app")
-        await log_kick(guild, member, reason)
-        return True, None
-
     try:
-        success, error = run_coroutine(_kick())
+        result = get_bot_service().api_kick_member(guild_id, user_id, reason)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
+    if result is None:
+        return jsonify({"error": "Bot not ready"}), 503
+    success, error = result
     if not success:
         return jsonify({"error": error}), 400
     return jsonify({"success": True})
