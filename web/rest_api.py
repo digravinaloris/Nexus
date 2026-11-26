@@ -435,10 +435,10 @@ def unmute_member_route(guild_id, user_id):
 @bp.route('/api/guilds/<guild_id>/members/<user_id>/warn', methods=['POST'])
 @require_api_key
 def warn_member_route(guild_id, user_id):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
 
     data = _get_json_object()
@@ -448,20 +448,13 @@ def warn_member_route(guild_id, user_id):
     if reason is None:
         return jsonify({"error": "reason must be a string of at most 512 characters"}), 400
 
-    member = guild.get_member(int(user_id))
-    if not member:
-        return jsonify({"error": "Member not found"}), 404
-
-    count = get_warns(guild_id, user_id) + 1
-    set_warns(guild_id, user_id, count)
-    log_sanction(guild_id, user_id, "warn", reason, "mobile_app")
-
-    try:
-        run_coroutine(log_warn(guild, member, reason, count))
-    except Exception:
-        pass  # le warn est déjà enregistré, le log est secondaire
-
-    return jsonify({"success": True, "warnings": count, "reason": reason})
+    result = get_bot_service().api_warn_member(guild_id, user_id, reason)
+    if result is None:
+        return jsonify({"error": "Bot not ready"}), 503
+    success, value = result
+    if not success:
+        return jsonify({"error": value}), 404
+    return jsonify({"success": True, "warnings": value, "reason": reason})
 
 
 @bp.route('/api/guilds/<guild_id>/members/<user_id>/unwarn', methods=['POST'])
