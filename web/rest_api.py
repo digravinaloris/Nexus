@@ -29,6 +29,16 @@ bp = Blueprint("rest_api", __name__)
 API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à définir sur Render
 
 
+def _is_valid_snowflake(value):
+    """Return whether a route identifier is a valid positive Discord snowflake."""
+    return (
+        isinstance(value, str)
+        and value.isascii()
+        and value.isdecimal()
+        and 0 < int(value) <= (2**64 - 1)
+    )
+
+
 def _api_key_matches(provided, expected):
     """Compare API keys in constant time, ignoring malformed stored values."""
     return isinstance(expected, str) and secrets.compare_digest(provided, expected)
@@ -49,6 +59,10 @@ def require_api_key(f):
         key = request.headers.get("X-API-Key")
         if not key:
             return jsonify({"error": "Missing X-API-Key header"}), 401
+        for parameter in ("guild_id", "user_id"):
+            value = kwargs.get(parameter)
+            if value is not None and not _is_valid_snowflake(value):
+                return jsonify({"error": f"Invalid {parameter}"}), 400
         if API_KEY and _api_key_matches(key, API_KEY):
             g.auth_guild_id = None
             return f(*args, **kwargs)
