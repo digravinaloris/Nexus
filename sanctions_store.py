@@ -159,3 +159,24 @@ def get_sanction_stats(guild_id, days=30):
         key = day.strftime("%Y-%m-%d")
         series.append((day.strftime("%d/%m"), counts.get(key, 0)))
     return series
+
+
+
+def get_warnlist(guild_id):
+    """Return active warning counts for one guild, without exposing Mongo details."""
+    return list(col.warns.find({"guild_id": str(guild_id), "count": {"$gt": 0}}))
+
+
+
+def get_sanction_cases(guild_id, filter_type="", limit=50):
+    """Return recent sanction cases for the mobile case browser."""
+    query = {"guild_id": str(guild_id)}
+    if filter_type:
+        query["type"] = filter_type
+    return list(col.sanctions.find(query).sort("timestamp", -1).limit(limit))
+
+
+
+def get_submitted_appeals(guild_id):
+    """Return submitted appeals awaiting moderator review, newest first."""
+    return list(col.ban_appeals.find({"guild_id": str(guild_id), "status": "submitted"}).sort("submitted_at", -1))
