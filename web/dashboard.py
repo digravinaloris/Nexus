@@ -771,10 +771,10 @@ def dash_export_audit_csv(guild_id):
 @dash_owner_required
 def dash_export_audit_pdf(guild_id):
     from flask import Response
-    guild = core.bot.get_guild(int(guild_id))
+    guild_name = get_bot_service().guild_name(guild_id)
     records = _get_audit_records(guild_id)
     return Response(
-        _build_audit_pdf_bytes(records, guild.name if guild else guild_id),
+        _build_audit_pdf_bytes(records, guild_name if guild_name != "the server" else guild_id),
         mimetype="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=audit_{guild_id}.pdf"},
     )
@@ -804,12 +804,12 @@ def dash_toggle_lock(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_cases_page(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    guild_name = get_bot_service().guild_name(guild_id)
     filter_type = request.args.get("type", "")
     cases = get_sanction_cases(guild_id, filter_type, 200)
     all_types = get_sanction_types(guild_id)
-    return render_template("cases.html", guild=guild, cases=cases, all_types=all_types, filter_type=filter_type,
-        user=session.get("dash_user"),
+    return render_template("cases.html", guild_id=guild_id, guild_name=guild_name, cases=cases,
+        all_types=all_types, filter_type=filter_type, user=session.get("dash_user"),
     )
 
 
@@ -817,9 +817,10 @@ def dash_cases_page(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_appeals_page(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
+    guild_name = get_bot_service().guild_name(guild_id)
     appeals = get_submitted_appeals(guild_id)
-    return render_template("appeals_review.html", guild=guild, appeals=appeals, user=session.get("dash_user"))
+    return render_template("appeals_review.html", guild_id=guild_id, guild_name=guild_name,
+        appeals=appeals, user=session.get("dash_user"))
 
 
 @routes.route("/dashboard/<guild_id>/appeals/<token>/accept", methods=["POST"])
