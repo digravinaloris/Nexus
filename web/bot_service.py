@@ -14,7 +14,7 @@ import core
 import discord
 from bridge import run_coroutine
 from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
-from sanctions_store import get_warns, log_sanction, set_warns
+from sanctions_store import get_sanction_stats, get_warns, log_sanction, set_warns
 import utils
 from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
 from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
@@ -385,6 +385,16 @@ class InProcessBotService(BotService):
             category = guild.get_channel(int(ticket_category_id))
             if isinstance(category, discord.CategoryChannel):
                 open_tickets_count = len(category.text_channels)
+        warned_count = core.col.warns.count_documents({
+            "guild_id": str(guild_id), "count": {"$gt": 0}
+        })
+        today_start = datetime.datetime.now(datetime.timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        warns_today = core.col.sanctions.count_documents({
+            "guild_id": str(guild_id), "type": "warn", "timestamp": {"$gte": today_start},
+        })
+        activity_7d = [count for _, count in get_sanction_stats(guild_id, days=7)]
         return {
             "guild_id": str(guild.id),
             "name": guild.name,
@@ -392,6 +402,9 @@ class InProcessBotService(BotService):
             "ban_count": ban_count,
             "muted_count": muted_count,
             "open_tickets_count": open_tickets_count,
+            "warned_count": warned_count,
+            "warns_today": warns_today,
+            "activity_7d": activity_7d,
             "locked": int(guild_id) in getattr(bot, "locked_guilds", set()),
         }
 
