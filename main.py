@@ -49,7 +49,7 @@ from discord_logging import get_or_create_log_webhook, _send_log_embed, log_dash
 from moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTION_ICONS, post_appeal_for_review
 from owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
 from web.rest_api import bp as rest_api_bp
-from web import auth as web_auth, public as web_public, dashboard as web_dashboard, verify as web_verify
+from web import auth as web_auth, public as web_public, dashboard as web_dashboard, verify as web_verify, github_webhook
 from web.csrf import register_csrf
 from verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
                           account_days_left, kick_pass, SETTINGS_LIMITS)
@@ -5228,6 +5228,7 @@ web_auth.routes.register(api)    # login / callback / logout (voir web/auth.py)
 web_public.routes.register(api)  # /, /status, kill-switch, appels publics (voir web/public.py)
 web_dashboard.routes.register(api)  # pages /dashboard/* (voir web/dashboard.py)
 web_verify.routes.register(api)     # /verify/<jeton> : vérification Turnstile (voir web/verify.py)
+github_webhook.routes.register(api)  # webhook GitHub release signé
 
 
 # ============================================================

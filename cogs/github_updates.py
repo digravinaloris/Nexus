@@ -121,6 +121,14 @@ class GitHubUpdates(commands.Cog):
             return
         await self.post_release(state["guild_id"], state["channel_id"], release)
 
+    async def handle_webhook_release(self, release):
+        state = self.state().find_one({"_id": STATE_ID})
+        if not state:
+            return False
+        if str(release.get("id", "")) == str(state.get("last_release_id", "")):
+            return False
+        return await self.post_release(state["guild_id"], state["channel_id"], release)
+
     async def scheduler(self):
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
