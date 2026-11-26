@@ -1,5 +1,7 @@
 """Owner-only GitHub release announcements, delivered as plain Discord messages."""
 import asyncio
+import re
+from urllib.parse import urlsplit
 
 import discord
 import requests
@@ -31,16 +33,38 @@ def fetch_latest_release():
         raise ValueError("GitHub returned an invalid release response.")
     if release.get("draft") or release.get("prerelease"):
         return None
-    required = ("id", "tag_name", "html_url")
-    if any(not release.get(key) for key in required):
+    if any(key not in release for key in ("id", "tag_name", "html_url")):
         raise ValueError("GitHub release is missing required fields.")
-    if not isinstance(release.get("tag_name"), str):
-        raise ValueError("GitHub release tag is invalid.")
-    url = release.get("html_url")
+
+    release_id = release.get("id")
+    tag = release.get("tag_name")
     if (
-        not isinstance(url, str)
-        or len(url) > 500
-        or not url.startswith("https://github.com/digravinaloris/Nexus/releases/")
+        isinstance(release_id, bool)
+        or not isinstance(release_id, int)
+        or release_id <= 0
+        or not isinstance(tag, str)
+        or not tag.strip()
+        or len(tag) > 255
+    ):
+        raise ValueError("GitHub release metadata is invalid.")
+
+    url = release.get("html_url")
+    if not isinstance(url, str) or len(url) > 500:
+        raise ValueError("GitHub release URL is invalid.")
+    try:
+        parsed_url = urlsplit(url)
+        parsed_port = parsed_url.port
+    except ValueError as exc:
+        raise ValueError("GitHub release URL is invalid.") from exc
+    if (
+        parsed_url.scheme != "https"
+        or parsed_url.hostname != "github.com"
+        or parsed_url.username is not None
+        or parsed_url.password is not None
+        or parsed_port not in (None, 443)
+        or parsed_url.query
+        or parsed_url.fragment
+        or not re.fullmatch(r"/digravinaloris/Nexus/releases/(?:tag/)?[^/]+", parsed_url.path)
     ):
         raise ValueError("GitHub release URL is invalid.")
     return release

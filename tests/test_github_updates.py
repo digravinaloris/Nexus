@@ -110,6 +110,52 @@ def test_fetch_latest_release_rejects_external_release_url(monkeypatch):
         github_updates.fetch_latest_release()
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://github.com/digravinaloris/Nexus/releases/tag/v2.0.0",
+        "https://github.com.evil.example/digravinaloris/Nexus/releases/tag/v2.0.0",
+        "https://github.com@evil.example/digravinaloris/Nexus/releases/tag/v2.0.0",
+        "https://github.com/digravinaloris/Nexus/releases/tag/v2.0.0?next=evil",
+        "https://github.com/digravinaloris/Nexus/releases/tag/v2.0.0#fragment",
+        "https://github.com:444/digravinaloris/Nexus/releases/tag/v2.0.0",
+        "https://github.com:not-a-port/digravinaloris/Nexus/releases/tag/v2.0.0",
+        "https://github.com/digravinaloris/Nexus/releases/tag/v2.0.0/extra",
+        "https://github.com/other/repo/releases/tag/v2.0.0",
+    ],
+)
+def test_fetch_latest_release_rejects_noncanonical_release_urls(monkeypatch, url):
+    monkeypatch.setattr(
+        github_updates.requests,
+        "get",
+        lambda *a, **k: FakeResponse(payload=sample_release(html_url=url)),
+    )
+    with pytest.raises(ValueError, match="URL is invalid"):
+        github_updates.fetch_latest_release()
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"id": True},
+        {"id": 0},
+        {"id": "123"},
+        {"tag_name": ""},
+        {"tag_name": " "},
+        {"tag_name": 123},
+        {"tag_name": "x" * 256},
+    ],
+)
+def test_fetch_latest_release_rejects_invalid_release_metadata(monkeypatch, metadata):
+    monkeypatch.setattr(
+        github_updates.requests,
+        "get",
+        lambda *a, **k: FakeResponse(payload=sample_release(**metadata)),
+    )
+    with pytest.raises(ValueError, match="metadata is invalid"):
+        github_updates.fetch_latest_release()
+
+
 def test_post_release_sends_plain_text_without_embed_and_records_state(monkeypatch):
     class FakeTextChannel:
         def __init__(self):
