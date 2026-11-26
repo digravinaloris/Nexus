@@ -16,6 +16,7 @@ import calendar_store
 from config_store import add_command_role, get_config, remove_command_role, update_config
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
+from audit_export import _get_audit_records
 from bridge import run_coroutine
 from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns
@@ -176,6 +177,10 @@ class BotService:
 
     def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> List[Dict[str, object]]:
         """Return upcoming calendar event documents for dashboard rendering."""
+        raise NotImplementedError
+
+    def dashboard_audit_export_records(self, guild_id: str) -> List[Dict[str, object]]:
+        """Return full audit records for dashboard exports."""
         raise NotImplementedError
 
     def api_handle_github_release(self, delivery_id: str, release: Dict[str, object]) -> str:
@@ -538,6 +543,9 @@ class InProcessBotService(BotService):
 
     def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> List[Dict[str, object]]:
         return calendar_store.list_upcoming_events(guild_id, now, limit=limit)
+
+    def dashboard_audit_export_records(self, guild_id: str) -> List[Dict[str, object]]:
+        return _get_audit_records(guild_id)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
