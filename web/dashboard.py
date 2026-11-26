@@ -21,8 +21,6 @@ from bridge import run_coroutine
 from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
 from config_store import add_command_role, get_config, remove_command_role, update_config
 from cogs.calendar import parse_event_datetime, make_embed, local_when, validate_timezone
-import core
-from core import col
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from moderation_actions import _dm_user_appeal_result, reverse_sanction
@@ -32,6 +30,7 @@ from sanctions_store import (
     resolve_sanction_appeal,
 )
 from template_ops import _apply_template_base_config
+from template_store import get_template_by_code, list_public_templates
 from utils import normalize_banned_word, normalize_domain, parse_bounded_number, parse_lines_list
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
 from web.bot_service import get_bot_service
@@ -454,7 +453,7 @@ def dash_settings_save(guild_id, section):
 @dash_guild_admin_required
 def dash_template_marketplace(guild_id):
     guild_name = get_bot_service().guild_name(guild_id)
-    templates = list(col.templates.find({"public": True}).sort("created_at", -1).limit(50))
+    templates = list_public_templates()
     return render_template("template_marketplace.html", guild_id=guild_id, guild_name=guild_name, templates=templates, user=session.get("dash_user"))
 
 
@@ -465,7 +464,7 @@ def dash_template_import(guild_id, code):
     guild = get_bot_service().dashboard_settings_snapshot(guild_id)
     if guild is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    doc = col.templates.find_one({"code": code.strip()})
+    doc = get_template_by_code(code)
     if not doc:
         flash("No template found with that code." if current_lang() == "en" else "Aucun template trouvé avec ce code.")
         return redirect(url_for("dash_template_marketplace", guild_id=guild_id))
