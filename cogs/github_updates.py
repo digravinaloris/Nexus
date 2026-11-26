@@ -33,6 +33,9 @@ def fetch_latest_release():
         raise ValueError("GitHub returned an invalid release response.")
     if release.get("draft") or release.get("prerelease"):
         return None
+    if any(not release.get(key) for key in ("id", "tag_name", "html_url")):
+        raise ValueError("GitHub release is missing required fields.")
+
     release_id = release.get("id")
     tag = release.get("tag_name")
     if (
