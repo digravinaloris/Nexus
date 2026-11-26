@@ -209,7 +209,7 @@ def test_api_health_snapshot_for_master_key(monkeypatch):
 
     monkeypatch.setattr(core, "bot", HealthBot())
     assert InProcessBotService().api_health_snapshot() == {
-        "online": True, "locked": True, "guild_count": 2
+        "online": True, "locked": True, "guild_count": 3
     }
 
 
