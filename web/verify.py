@@ -7,9 +7,7 @@ main.py (bot -> `core.bot`).
 from flask import make_response, render_template, request
 
 from audit import record_audit
-from bridge import run_coroutine
-import core
-from verification import (MAX_ATTEMPTS, check_turnstile, get_valid_challenge, grant_verified, mark_used,
+from verification import (MAX_ATTEMPTS, check_turnstile, get_valid_challenge, mark_used,
                           record_failed_attempt, site_key, turnstile_configured)
 from web.public import get_client_ip
 from web.bot_service import get_bot_service
@@ -73,11 +71,8 @@ def verify_submit(token):
     if not mark_used(token):  # deux requêtes simultanées : une seule passe
         return _message("Link expired", "This verification link was already used.", 410)
 
-    guild = core.bot.get_guild(int(doc["guild_id"]))
-    if guild is None:
-        return _message("Verification failed", "The server isn't available right now. Please try again later.", 500)
     try:
-        granted, error = run_coroutine(grant_verified(guild, doc["user_id"]))
+        granted, error = get_bot_service().api_grant_verified(doc["guild_id"], doc["user_id"])
     except Exception as e:
         print(f"[VERIFY] grant_verified failed: {e}", flush=True)
         granted, error = False, "Something went wrong while giving you access. Please contact a moderator."
