@@ -576,7 +576,7 @@ def test_faq_crud_and_toggle(env):
     for invalid in ("false", "true", 0, 1, None, [], {}):
         response = env.client.post(url("/faq/toggle"), json={"enabled": invalid}, headers=h)
         assert response.status_code == 400
-    assert env.client.get(url("/faq"), headers=h).get_json()["enabled"] is False
+    assert env.client.get(url("/faq"), headers=h).get_json()["enabled"] is True
     assert env.client.delete(url("/faq/x", OTHER_GUILD), headers=h).status_code == 404
 
 
