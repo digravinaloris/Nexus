@@ -1031,3 +1031,26 @@ def test_api_deny_appeal_best_effort_dm(monkeypatch):
     monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
     assert InProcessBotService().api_notify_appeal_result("123", "10", "5", False) == (True, None)
     assert calls == [(10, "Server", "5", False, None)]
+
+
+
+def test_api_guild_id_candidates_returns_string_ids_for_ready_bot(monkeypatch):
+    guilds = [FakeGuild(123), FakeGuild(456)]
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        @property
+        def guilds(self):
+            return guilds
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    assert InProcessBotService().api_guild_id_candidates() == ["123", "456"]
+
+
+def test_api_guild_id_candidates_fails_closed_when_unavailable(monkeypatch):
+    class OfflineBot:
+        def is_ready(self):
+            return False
+    monkeypatch.setattr(core, "bot", OfflineBot())
+    assert InProcessBotService().api_guild_id_candidates() == []
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_guild_id_candidates() == []
