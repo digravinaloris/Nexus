@@ -536,6 +536,10 @@ def test_features_list_and_toggle(env):
     feats = {f["key"]: f["enabled"] for f in env.client.get(url("/features"), headers=MASTER).get_json()}
     assert feats["antinuke"] is True
     assert env.client.post(url("/features/does_not_exist"), headers=MASTER).status_code == 404
+    for invalid in ("false", "true", 0, 1, None, [], {}):
+        response = env.client.post(url("/features/antinuke"), json={"enabled": invalid}, headers=MASTER)
+        assert response.status_code == 400
+    assert {item["key"]: item["enabled"] for item in env.client.get(url("/features"), headers=MASTER).get_json()}["antinuke"] is True
 
 
 # ----------------------------------------------------------------------- faq
@@ -569,6 +573,10 @@ def test_faq_crud_and_toggle(env):
     assert env.client.delete(url("/faq/zzzz"), headers=h).status_code == 404
     assert env.client.delete(url(f"/faq/{entry_id}"), headers=h).get_json() == {"success": True}
     assert env.client.get(url("/faq"), headers=h).get_json()["entries"] == []
+    for invalid in ("false", "true", 0, 1, None, [], {}):
+        response = env.client.post(url("/faq/toggle"), json={"enabled": invalid}, headers=h)
+        assert response.status_code == 400
+    assert env.client.get(url("/faq"), headers=h).get_json()["enabled"] is True
     assert env.client.delete(url("/faq/x", OTHER_GUILD), headers=h).status_code == 404
 
 

@@ -608,8 +608,12 @@ def guild_features_route(guild_id):
 def guild_feature_toggle_route(guild_id, feature_key):
     if feature_key not in FEATURE_TOGGLES:
         return jsonify({"error": "Unknown feature"}), 404
-    data = request.get_json(silent=True) or {}
-    enabled = bool(data.get("enabled", True))
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "enabled must be a boolean"}), 400
+    enabled = data.get("enabled", True)
+    if not isinstance(enabled, bool):
+        return jsonify({"error": "enabled must be a boolean"}), 400
     update_config(guild_id, FEATURE_TOGGLES[feature_key]["config_key"], enabled)
     return jsonify({"success": True, "key": feature_key, "enabled": enabled})
 
@@ -674,7 +678,11 @@ def guild_faq_remove_route(guild_id, entry_id):
 @bp.route('/api/guilds/<guild_id>/faq/toggle', methods=['POST'])
 @require_api_key
 def guild_faq_toggle_route(guild_id):
-    data = request.get_json(silent=True) or {}
-    enabled = bool(data.get("enabled", True))
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "enabled must be a boolean"}), 400
+    enabled = data.get("enabled", True)
+    if not isinstance(enabled, bool):
+        return jsonify({"error": "enabled must be a boolean"}), 400
     col.faq.update_one({"guild_id": str(guild_id)}, {"$set": {"enabled": enabled}}, upsert=True)
     return jsonify({"success": True, "enabled": enabled})
