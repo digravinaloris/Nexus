@@ -17,6 +17,7 @@ import math
 import secrets
 
 import discord
+import requests  # compatibility alias for existing verification tests/callers
 from pymongo import ReturnDocument
 
 from config_store import get_config
