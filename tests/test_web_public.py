@@ -48,6 +48,7 @@ GOLDEN_ENDPOINTS = [
     ('dash_template_marketplace', '/dashboard/<guild_id>/templates', ('GET',)),
     ('dash_toggle_lock', '/dashboard/<guild_id>/lock', ('POST',)),
     ('favicon', '/favicon.ico', ('GET',)),
+    ('github_release_webhook', '/webhooks/github/releases', ('POST',)),
     ('home', '/', ('GET',)),
     ('killswitch_confirm_page', '/admin/kill-switch/<token>', ('GET',)),
     ('killswitch_submit', '/admin/kill-switch/<token>', ('POST',)),
