@@ -106,7 +106,7 @@ Ticket priorities and staff assignments are stored in the channel topic and rema
 
 ### GitHub Release Announcements
 
-The bot owner can configure one announcement channel on their own server with `/updates channel <channel>`. Nexus checks its GitHub releases every 10 minutes and posts a Discord-style announcement when a new stable release is published. Use `/updates check` to publish the latest release immediately, `/updates status` to view the configuration, and `/updates disable` to turn it off. Only the Discord application owner who also owns the configured server can manage this feature.
+The bot owner can configure one announcement channel on their own server with `/updates channel <channel>`. Nexus checks its GitHub releases every 10 minutes and posts a plain-text announcement when a new stable release is published. Use `/updates check` to publish the latest release immediately, `/updates status` to view the configuration, and `/updates disable` to turn it off. Only the Discord application owner who also owns the configured server can manage this feature.
 
 ### Invites, Backups & Data
 | Command | Access | Description |
