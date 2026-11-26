@@ -59,6 +59,10 @@ class BotService:
         """Return serializable member DTOs for one guild, or None when the bot is offline."""
         raise NotImplementedError
 
+    def set_guild_locked(self, guild_id: str, locked: bool) -> bool:
+        """Set a guild lock flag; false when the bot runtime is unavailable."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
@@ -156,6 +160,19 @@ class InProcessBotService(BotService):
             "avatar_url": member.display_avatar.url,
             "is_muted": member.is_timed_out(),
         } for member in guild.members if not member.bot]
+
+    def set_guild_locked(self, guild_id: str, locked: bool) -> bool:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return False
+        locked_guilds = getattr(bot, "locked_guilds", None)
+        if locked_guilds is None:
+            return False
+        if locked:
+            locked_guilds.add(int(guild_id))
+        else:
+            locked_guilds.discard(int(guild_id))
+        return True
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot
