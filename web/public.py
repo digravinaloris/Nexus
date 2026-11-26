@@ -11,12 +11,8 @@ import time
 from flask import jsonify, render_template, request, send_from_directory
 import pyotp
 
-from audit import record_audit
-from config_store import get_global_lock, set_global_lock
-from sanctions_store import get_ban_appeal, submit_ban_appeal
 import utils
 from web.bot_service import get_bot_service
-from killswitch_store import get_killswitch_token, increment_killswitch_attempts, mark_killswitch_token_used
 from web.routing import Routes
 
 routes = Routes()
@@ -40,7 +36,7 @@ def favicon():
 
 
 def _killswitch_token_doc(token):
-    doc = get_killswitch_token(token)
+    doc = get_bot_service().public_get_killswitch_token(token)
     if not doc:
         return None
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -68,10 +64,10 @@ def get_client_ip():
 def killswitch_confirm_page(token):
     ip = get_client_ip()
     if _killswitch_token_doc(token) is None:
-        record_audit("global", None, f"Unknown (IP {ip})", "Viewed an invalid/expired kill-switch link")
+        get_bot_service().api_record_audit("global", None, f"Unknown (IP {ip})", "Viewed an invalid/expired kill-switch link")
         return render_template("killswitch_invalid.html"), 410
-    record_audit("global", None, f"Unknown (IP {ip})", "Opened the kill-switch confirmation page")
-    return render_template("killswitch_confirm.html", locked=get_global_lock(), error=False)
+    get_bot_service().api_record_audit("global", None, f"Unknown (IP {ip})", "Opened the kill-switch confirmation page")
+    return render_template("killswitch_confirm.html", locked=get_bot_service().public_global_lock_state(), error=False)
 
 
 @routes.route("/admin/kill-switch/<token>", methods=["POST"])
@@ -86,26 +82,26 @@ def killswitch_submit(token):
     valid = bool(totp_secret) and bool(code) and pyotp.TOTP(totp_secret).verify(code, valid_window=1)
 
     if not valid:
-        new_attempts = increment_killswitch_attempts(token)
+        new_attempts = get_bot_service().public_increment_killswitch_attempts(token)
         if new_attempts is None:
             return render_template("killswitch_invalid.html"), 410
         attempts_left = max(0, 5 - new_attempts)
-        record_audit("global", None, f"Unknown (IP {ip})", "Failed kill-switch code attempt", f"{new_attempts}/5 attempts used")
+        get_bot_service().api_record_audit("global", None, f"Unknown (IP {ip})", "Failed kill-switch code attempt", f"{new_attempts}/5 attempts used")
         if new_attempts >= 5:
             try:
                 get_bot_service().notify_owner_bruteforce(ip)
             except Exception as e:
                 print(f"[KILLSWITCH] Failed to DM owner about brute-force: {e}", flush=True)
-        return render_template("killswitch_confirm.html", locked=get_global_lock(), error=True, attempts_left=attempts_left
+        return render_template("killswitch_confirm.html", locked=get_bot_service().public_global_lock_state(), error=True, attempts_left=attempts_left
         )
 
     # Code correct : le token est consommé immédiatement (usage unique),
     # avant même de faire quoi que ce soit d'autre.
-    if not mark_killswitch_token_used(token):
+    if not get_bot_service().public_mark_killswitch_token_used(token):
         return render_template("killswitch_invalid.html"), 410
-    new_state = not get_global_lock()
-    set_global_lock(new_state)
-    record_audit("global", None, f"Owner (email + authenticator, IP {ip})", "Locked bot globally" if new_state else "Unlocked bot globally")
+    new_state = not get_bot_service().public_global_lock_state()
+    get_bot_service().public_set_global_lock(new_state)
+    get_bot_service().api_record_audit("global", None, f"Owner (email + authenticator, IP {ip})", "Locked bot globally" if new_state else "Unlocked bot globally")
     try:
         get_bot_service().notify_owner_killswitch(new_state)
     except Exception as e:
@@ -123,7 +119,7 @@ APPEAL_STATUS_COPY = {
 
 @routes.route("/appeal/<token>", methods=["GET"])
 def appeal_form_page(token):
-    appeal = get_ban_appeal(token)
+    appeal = get_bot_service().api_get_appeal(token)
     if not appeal:
         return render_template("appeal_invalid.html"), 404
     if appeal["status"] != "pending":
@@ -139,7 +135,7 @@ def appeal_form_page(token):
 
 @routes.route("/appeal/<token>", methods=["POST"])
 def appeal_form_submit(token):
-    appeal = get_ban_appeal(token)
+    appeal = get_bot_service().api_get_appeal(token)
     if not appeal or appeal["status"] != "pending":
         return render_template("appeal_invalid.html"), 404
 
@@ -152,7 +148,7 @@ def appeal_form_submit(token):
             ban_reason=appeal["ban_reason"] or "No reason provided",
         )
 
-    submitted = submit_ban_appeal(token, appeal_text, datetime.datetime.now(datetime.timezone.utc))
+    submitted = get_bot_service().public_submit_ban_appeal(token, appeal_text, datetime.datetime.now(datetime.timezone.utc))
     if not submitted:
         title, message = APPEAL_STATUS_COPY["submitted"]
         return render_template("appeal_status.html", title=title, message=message)
