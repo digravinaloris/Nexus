@@ -48,6 +48,17 @@ def test_callback_rejects_expired_state_without_calling_discord(env, monkeypatch
         assert "oauth_state" not in sess and "oauth_state_created_at" not in sess
 
 
+def test_callback_rejects_missing_pkce_verifier_without_calling_discord(env, monkeypatch):
+    called = []
+    monkeypatch.setattr(auth.requests, "post", lambda *a, **k: called.append(True))
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = "valid-state"
+        sess["oauth_state_created_at"] = auth.time.time()
+    response = env.client.get("/callback?code=authorization-code&state=valid-state")
+    assert response.status_code == 403
+    assert called == []
+
+
 def test_callback_rejects_invalid_state_without_calling_discord(env, monkeypatch):
     called = []
     monkeypatch.setattr(auth.requests, "post", lambda *a, **k: called.append(True))
