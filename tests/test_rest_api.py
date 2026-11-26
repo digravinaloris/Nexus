@@ -376,10 +376,42 @@ def test_config_post_validation_and_update(env):
     h = MASTER
     assert env.client.post(url("/config", 999), json={"language": "fr"}, headers=h).status_code == 404
     assert env.client.post(url("/config"), json={"nope": 1}, headers=h).status_code == 400
-    resp = env.client.post(url("/config"), json={"language": "fr", "nope": 1, "autorole": "5"}, headers=h)
-    assert resp.status_code == 200
-    assert resp.get_json() == {"success": True, "updated": {"language": "fr", "autorole": "5"}}
+    for payload in ([], "invalid", 123):
+        response = env.client.post(url("/config"), json=payload, headers=h)
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "JSON body must be an object"}
+
+    invalid_payloads = [
+        {"language": "de"},
+        {"language": 1},
+        {"logs_channel": []},
+        {"logs_channel": "not-a-channel-id"},
+        {"autorole": "not-a-role-id"},
+        {"allowed_roles": "5"},
+        {"allowed_roles": ["5", None]},
+        {"command_roles": []},
+        {"command_roles": {"ban": "5"}},
+        {"command_roles": {"ban": ["5", "bad"]}},
+    ]
     from config_store import get_config
+    for payload in invalid_payloads:
+        before = dict(get_config(GUILD))
+        response = env.client.post(url("/config"), json=payload, headers=h)
+        assert response.status_code == 400
+        assert get_config(GUILD) == before
+
+    resp = env.client.post(url("/config"), json={
+        "language": "fr", "nope": 1, "autorole": "5",
+        "allowed_roles": ["5"], "command_roles": {"ban": ["5"]},
+    }, headers=h)
+    assert resp.status_code == 200
+    assert resp.get_json() == {
+        "success": True,
+        "updated": {
+            "language": "fr", "autorole": "5",
+            "allowed_roles": ["5"], "command_roles": {"ban": ["5"]},
+        },
+    }
     assert get_config(GUILD)["language"] == "fr"
     assert "nope" not in get_config(GUILD)
     env.ready = False

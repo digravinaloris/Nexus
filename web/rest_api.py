@@ -193,17 +193,54 @@ def update_guild_config(guild_id):
     if not guild:
         return jsonify({"error": "Guild not found"}), 404
 
-    data = request.get_json(silent=True) or {}
-    allowed_keys = {"logs_channel", "autorole", "allowed_roles", "command_roles", "language"}
-    updated = {}
-    for key, value in data.items():
-        if key in allowed_keys:
-            update_config(guild_id, key, value)
-            updated[key] = value
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON body must be an object"}), 400
 
-    if not updated:
+    allowed_keys = {"logs_channel", "autorole", "allowed_roles", "command_roles", "language"}
+    updates = {key: value for key, value in data.items() if key in allowed_keys}
+    if not updates:
         return jsonify({"error": "No valid fields provided"}), 400
-    return jsonify({"success": True, "updated": updated})
+
+    # Validate the complete payload before writing anything to MongoDB.
+    for key, value in updates.items():
+        if key == "logs_channel":
+            valid = (
+                isinstance(value, str)
+                and len(value) <= 100
+                and (value == "logs" or _is_valid_snowflake(value))
+            )
+        elif key == "autorole":
+            valid = value is None or _is_valid_snowflake(value)
+        elif key == "allowed_roles":
+            valid = (
+                isinstance(value, list)
+                and len(value) <= 100
+                and all(_is_valid_snowflake(role_id) for role_id in value)
+            )
+        elif key == "command_roles":
+            valid = (
+                isinstance(value, dict)
+                and len(value) <= 100
+                and all(
+                    isinstance(command, str)
+                    and 1 <= len(command) <= 100
+                    and isinstance(role_ids, list)
+                    and len(role_ids) <= 100
+                    and all(_is_valid_snowflake(role_id) for role_id in role_ids)
+                    for command, role_ids in value.items()
+                )
+            )
+        else:  # language
+            valid = value is None or value in ("en", "fr")
+
+        if not valid:
+            return jsonify({"error": f"Invalid {key}"}), 400
+
+    for key, value in updates.items():
+        update_config(guild_id, key, value)
+
+    return jsonify({"success": True, "updated": updates})
 
 
 @bp.route('/api/guilds/<guild_id>/lock', methods=['POST'])
