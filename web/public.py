@@ -12,17 +12,13 @@ from flask import jsonify, render_template, request, send_from_directory
 import pyotp
 
 from audit import record_audit
-from bridge import run_coroutine
 from config_store import get_global_lock, set_global_lock
-import core
 from core import col
-from moderation_actions import post_appeal_for_review
 from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
 from sanctions_store import get_ban_appeal
 import utils
 from web.bot_service import get_bot_service
 from web.routing import Routes
-from web.bot_service import get_bot_service
 
 routes = Routes()
 
@@ -132,9 +128,9 @@ def appeal_form_page(token):
     if appeal["status"] != "pending":
         title, message = APPEAL_STATUS_COPY.get(appeal["status"], ("Status", "This appeal has already been processed."))
         return render_template("appeal_status.html", title=title, message=message)
-    guild = core.bot.get_guild(int(appeal["guild_id"]))
+    guild_name = get_bot_service().guild_name(appeal["guild_id"])
     return render_template("appeal_form.html",
-        guild_name=guild.name if guild else "the server",
+        guild_name=guild_name,
         case_id=appeal["case_id"],
         ban_reason=appeal["ban_reason"] or "No reason provided",
     )
@@ -147,10 +143,10 @@ def appeal_form_submit(token):
         return render_template("appeal_invalid.html"), 404
 
     appeal_text = request.form.get("appeal_text", "").strip()[:1000]
-    guild = core.bot.get_guild(int(appeal["guild_id"]))
+    guild_name = get_bot_service().guild_name(appeal["guild_id"])
     if not appeal_text:
         return render_template("appeal_form.html",
-            guild_name=guild.name if guild else "the server",
+            guild_name=guild_name,
             case_id=appeal["case_id"],
             ban_reason=appeal["ban_reason"] or "No reason provided",
         )
@@ -164,11 +160,14 @@ def appeal_form_submit(token):
         }},
     )
 
-    if guild:
-        try:
-            run_coroutine(post_appeal_for_review(guild, appeal, appeal_text))
-        except Exception as e:
-            print(f"[APPEAL] Failed to post appeal for review: {e}", flush=True)
+    try:
+        posted, error = get_bot_service().api_post_appeal_for_review(
+            appeal["guild_id"], appeal, appeal_text
+        )
+        if not posted:
+            print(f"[APPEAL] Failed to post appeal for review: {error}", flush=True)
+    except Exception as e:
+        print(f"[APPEAL] Failed to post appeal for review: {e}", flush=True)
 
     return render_template("appeal_done.html", case_id=appeal["case_id"])
 
