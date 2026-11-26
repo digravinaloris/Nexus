@@ -12,13 +12,26 @@ def _get_audit_records(guild_id):
     return list(col.audit.find({"guild_id": str(guild_id)}).sort("timestamp", -1))
 
 
+def _safe_csv_cell(value):
+    """Neutralize spreadsheet formulas in untrusted audit fields."""
+    if not isinstance(value, str):
+        return value
+    # Excel/LibreOffice may evaluate formula-like cells, including those preceded
+    # by whitespace or control characters. Prefix an apostrophe to keep them text.
+    trimmed = value.lstrip(" \t\r\n")
+    if trimmed.startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")):
+        return "'" + value
+    return value
+
+
 def _build_audit_csv_bytes(records):
-    """Partagé entre /export audit (Discord) et le bouton d'export du dashboard web."""
+    """Shared by Discord and dashboard exports; user-controlled cells stay inert."""
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["actor_name", "action", "details", "timestamp"])
     for r in records:
-        writer.writerow([r.get("actor_name", ""), r.get("action", ""), r.get("details", ""), r.get("timestamp", "")])
+        writer.writerow([_safe_csv_cell(r.get("actor_name", "")), _safe_csv_cell(r.get("action", "")),
+                        _safe_csv_cell(r.get("details", "")), _safe_csv_cell(r.get("timestamp", ""))])
     return buf.getvalue().encode("utf-8")
 
 
