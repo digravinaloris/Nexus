@@ -18,33 +18,19 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from faq_store import get_or_create_faq, save_faq_entries
 from utils import looks_like_question, match_faq_entries
 
 # Référence au bot, renseignée par setup() au chargement de l'extension.
 _bot = None
 
 
-def _faq_col():
-    """Accès paresseux à la collection Mongo -- bot.db n'existe qu'une fois
-    init_mongo() passé (dans on_ready(), après le chargement des cogs), donc
-    on ne le lit jamais au niveau module, seulement au moment de la commande."""
-    return _bot.db["faq"]
-
-
 def _get_faq_doc(guild_id):
-    doc = _faq_col().find_one({"guild_id": str(guild_id)})
-    if not doc:
-        doc = {"guild_id": str(guild_id), "enabled": False, "entries": []}
-        _faq_col().insert_one(doc)
-    return doc
+    return get_or_create_faq(guild_id)
 
 
 def _save_entries(guild_id, entries):
-    _faq_col().update_one(
-        {"guild_id": str(guild_id)},
-        {"$set": {"entries": entries}},
-        upsert=True,
-    )
+    save_faq_entries(guild_id, entries)
 
 
 def _new_entry_id(existing_entries):

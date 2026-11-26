@@ -288,3 +288,16 @@ def test_faq_store_add_remove_toggle_lifecycle(mongo_db):
     assert faq_store.get_faq(1)["enabled"] is True
     assert faq_store.get_faq(2)["enabled"] is False
     assert faq_store.get_faq(1)["entries"] == [{"id": "def", "keywords": ["rules"], "response": "rules answer"}]
+
+
+
+def test_faq_store_get_or_create_and_save_preserve_enabled(mongo_db):
+    import faq_store
+
+    doc = faq_store.get_or_create_faq(5)
+    assert {key: doc[key] for key in ("guild_id", "enabled", "entries")} == {"guild_id": "5", "enabled": False, "entries": []}
+    faq_store.set_faq_enabled(5, True)
+    faq_store.save_faq_entries(5, [{"id": "x", "keywords": ["test"], "response": "answer"}])
+    assert faq_store.get_faq(5)["enabled"] is True
+    assert faq_store.get_faq(5)["entries"][0]["id"] == "x"
+    assert mongo_db["faq"].count_documents({"guild_id": "5"}) == 1
