@@ -16,13 +16,12 @@ from flask import Blueprint, g, jsonify, request
 
 import core
 from audit import get_audit_log, record_audit
-from bridge import run_coroutine
+from bridge import run_coroutine  # compatibility for existing route tests; actions use BotService
 from config_store import get_config, update_config
 from core import col
 from web.bot_service import get_bot_service
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from features import FEATURE_TOGGLES
-from moderation_actions import _dm_user_appeal_result, reverse_sanction
 from sanctions_store import (
     claim_sanction_appeal, get_ban_appeal, get_sanction_stats, get_warns,
     log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns,
@@ -524,10 +523,10 @@ def guild_appeals_route(guild_id):
 @bp.route('/api/guilds/<guild_id>/appeals/<token>/accept', methods=['POST'])
 @require_api_key
 def guild_appeal_accept_route(guild_id, token):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
     appeal = get_ban_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
@@ -537,28 +536,27 @@ def guild_appeal_accept_route(guild_id, token):
         return jsonify({"error": "Appeal not found or already resolved"}), 404
 
     sanction_type = appeal.get("sanction_type", "ban")
-    try:
-        result = run_coroutine(reverse_sanction(guild, sanction_type, appeal["user_id"]))
-    except Exception:
+    success, result = get_bot_service().api_accept_appeal(
+        guild_id, appeal["user_id"], sanction_type
+    )
+    if not success:
         release_sanction_appeal_claim(guild_id, token)
-        return jsonify({"error": "Unable to resolve appeal"}), 500
+        status_code = 503 if result == "Bot not ready" else 404 if result == "Guild not found" else 500
+        return jsonify({"error": result}), status_code
     if not resolve_sanction_appeal(guild_id, token, "accepted"):
         return jsonify({"error": "Appeal resolution conflict"}), 409
     record_audit(guild_id, "mobile_app", "📱 Mobile App", "Accepted appeal (via mobile app)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
-    try:
-        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], True, result))
-    except Exception as e:
-        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
+    get_bot_service().api_notify_appeal_result(guild_id, appeal["user_id"], appeal["case_id"], True, result)
     return jsonify({"success": True, "result": result})
 
 
 @bp.route('/api/guilds/<guild_id>/appeals/<token>/deny', methods=['POST'])
 @require_api_key
 def guild_appeal_deny_route(guild_id, token):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
     appeal = get_ban_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
@@ -569,10 +567,7 @@ def guild_appeal_deny_route(guild_id, token):
     if not resolve_sanction_appeal(guild_id, token, "denied"):
         return jsonify({"error": "Appeal resolution conflict"}), 409
     record_audit(guild_id, "mobile_app", "📱 Mobile App", "Denied appeal (via mobile app)", f"Case #{appeal['case_id']}")
-    try:
-        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], False, None))
-    except Exception as e:
-        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
+    get_bot_service().api_notify_appeal_result(guild_id, appeal["user_id"], appeal["case_id"], False)
     return jsonify({"success": True})
 
 

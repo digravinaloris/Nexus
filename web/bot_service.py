@@ -16,6 +16,7 @@ from bridge import run_coroutine
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from sanctions_store import get_warns, log_sanction, set_warns
 import utils
+from moderation_actions import _dm_user_appeal_result, reverse_sanction
 
 
 class BotService:
@@ -98,6 +99,14 @@ class BotService:
 
     def api_unwarn_member(self, guild_id: str, user_id: str):
         """Remove one warning and best-effort log the updated count."""
+        raise NotImplementedError
+
+    def api_accept_appeal(self, guild_id: str, user_id: str, sanction_type: str):
+        """Reverse a sanction and return the result without sending notifications."""
+        raise NotImplementedError
+
+    def api_notify_appeal_result(self, guild_id: str, user_id: str, case_id: str, accepted: bool, result=None):
+        """Best-effort DM the user after the appeal has been resolved."""
         raise NotImplementedError
 
 
@@ -387,6 +396,32 @@ class InProcessBotService(BotService):
                 except Exception:
                     pass  # Warning removal remains successful if the log fails.
         return True, count
+
+    def api_accept_appeal(self, guild_id: str, user_id: str, sanction_type: str):
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return False, "Bot not ready"
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return False, "Guild not found"
+        try:
+            result = run_coroutine(reverse_sanction(guild, sanction_type, user_id))
+        except Exception:
+            return False, "Unable to resolve appeal"
+        return True, result
+
+    def api_notify_appeal_result(self, guild_id: str, user_id: str, case_id: str, accepted: bool, result=None):
+        bot = core.bot
+        guild_name = "the server"
+        if bot is not None and bot.is_ready():
+            guild = bot.get_guild(int(guild_id))
+            if guild is not None:
+                guild_name = guild.name
+        try:
+            run_coroutine(_dm_user_appeal_result(int(user_id), guild_name, case_id, accepted, result))
+        except Exception as exc:
+            print(f"[APPEAL] Failed to DM user: {exc}", flush=True)
+        return True, None
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot
