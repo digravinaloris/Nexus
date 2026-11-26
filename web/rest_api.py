@@ -14,7 +14,6 @@ from functools import wraps
 import discord
 from flask import Blueprint, g, jsonify, request
 
-import core
 from audit import get_audit_log, record_audit
 from bridge import run_coroutine  # compatibility for existing route tests; actions use BotService
 from config_store import get_config, update_config
@@ -91,13 +90,13 @@ def require_api_key(f):
             if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
                 g.auth_guild_id = str(guild_id)
                 return f(*args, **kwargs)
-        elif core.bot.is_ready():
-            # Pas de guild_id dans l'URL (ex: /api/health, /api/guilds) : on cherche
-            # à quel serveur cette clé appartient parmi tous les serveurs du bot.
-            for candidate_guild in core.bot.guilds:
-                cfg = get_config(candidate_guild.id)
+        else:
+            # API endpoints without a guild ID resolve a per-guild key using
+            # serializable service snapshots, never Discord objects in this route.
+            for candidate_guild_id in get_bot_service().api_guild_id_candidates():
+                cfg = get_config(candidate_guild_id)
                 if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
-                    g.auth_guild_id = str(candidate_guild.id)
+                    g.auth_guild_id = candidate_guild_id
                     return f(*args, **kwargs)
         return jsonify({"error": "Unauthorized"}), 401
     return wrapper
