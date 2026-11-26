@@ -50,6 +50,7 @@ def fetch_latest_release():
         raise ValueError("GitHub release URL is invalid.")
     try:
         parsed_url = urlsplit(url)
+        parsed_port = parsed_url.port
     except ValueError as exc:
         raise ValueError("GitHub release URL is invalid.") from exc
     if (
@@ -57,7 +58,7 @@ def fetch_latest_release():
         or parsed_url.hostname != "github.com"
         or parsed_url.username is not None
         or parsed_url.password is not None
-        or parsed_url.port not in (None, 443)
+        or parsed_port not in (None, 443)
         or parsed_url.query
         or parsed_url.fragment
         or not re.fullmatch(r"/digravinaloris/Nexus/releases/(?:tag/)?[^/]+", parsed_url.path)
