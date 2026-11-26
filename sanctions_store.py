@@ -180,3 +180,15 @@ def get_sanction_cases(guild_id, filter_type="", limit=50):
 def get_submitted_appeals(guild_id):
     """Return submitted appeals awaiting moderator review, newest first."""
     return list(col.ban_appeals.find({"guild_id": str(guild_id), "status": "submitted"}).sort("submitted_at", -1))
+
+
+
+def get_sanction_types(guild_id):
+    """Return the sanction types recorded for a single guild."""
+    return col.sanctions.distinct("type", {"guild_id": str(guild_id)})
+
+
+
+def get_sanction_types(guild_id):
+    """Return the sanction types recorded for a single guild."""
+    return col.sanctions.distinct("type", {"guild_id": str(guild_id)})

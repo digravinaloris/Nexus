@@ -260,3 +260,12 @@ def test_rest_sanction_query_helpers_are_guild_scoped_and_sorted(mongo_db):
     sanctions_store.create_sanction_appeal(2, 3, "ban", 44, "Carol", "r", "foreign")
     mongo_db["ban_appeals"].update_one({"token": "foreign"}, {"$set": {"status": "submitted", "submitted_at": datetime.datetime.now(UTC)}})
     assert {a["token"] for a in sanctions_store.get_submitted_appeals(1)} == {"pending", "other"}
+
+
+
+def test_get_sanction_types_is_guild_scoped(mongo_db):
+    sanctions_store.log_sanction(1, 42, "warn", "warning", 7)
+    sanctions_store.log_sanction(1, 43, "ban", "ban", 7)
+    sanctions_store.log_sanction(2, 44, "mute", "other guild", 7)
+    assert set(sanctions_store.get_sanction_types(1)) == {"warn", "ban"}
+    assert set(sanctions_store.get_sanction_types(2)) == {"mute"}
