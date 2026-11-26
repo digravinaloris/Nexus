@@ -240,10 +240,10 @@ def unlock_bot_route(guild_id):
 @bp.route('/api/guilds/<guild_id>/broadcast', methods=['POST'])
 @require_api_key
 def broadcast_route(guild_id):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
 
     data = _get_json_object()
@@ -260,29 +260,15 @@ def broadcast_route(guild_id):
     if not isinstance(mention, str) or len(mention) > 100:
         return jsonify({"error": "mention must be a string of at most 100 characters"}), 400
 
-    channel = guild.get_channel(int(channel_id))
-    if not channel:
-        return jsonify({"error": "Channel not found"}), 404
-
-    if mention == "everyone":
-        ping = "@everyone"
-    elif mention == "here":
-        ping = "@here"
-    else:
-        role = discord.utils.get(guild.roles, name=mention)
-        ping = role.mention if role else None
-
-    embed = discord.Embed(description=message, color=0x3399ff)
-    embed.set_footer(text="📢 Sent from the mobile app")
-
-    async def _send():
-        await channel.send(content=ping, embed=embed)
-
     try:
-        run_coroutine(_send())
+        result = get_bot_service().api_broadcast(guild_id, channel_id, message, mention)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
+    if result is None:
+        return jsonify({"error": "Bot not ready"}), 503
+    success, error = result
+    if not success:
+        return jsonify({"error": error}), 404
     return jsonify({"success": True})
 
 
