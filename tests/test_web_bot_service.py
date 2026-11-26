@@ -137,3 +137,39 @@ def test_is_guild_owner_fails_closed_when_bot_is_unavailable(monkeypatch):
     assert InProcessBotService().is_guild_owner("123", "42") is False
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().is_guild_owner("123", "42") is False
+
+
+
+def test_public_status_snapshot_is_transport_neutral_and_handles_missing_runtime(monkeypatch):
+    class StatusBot:
+        def is_ready(self):
+            return True
+
+        guilds = [object(), object(), object()]
+        start_time = __import__("time").time() - 3700
+        latency = 0.125
+
+    monkeypatch.setattr(core, "bot", StatusBot())
+    snapshot = InProcessBotService().public_status_snapshot()
+    assert snapshot["online"] is True
+    assert snapshot["guild_count"] == 3
+    assert snapshot["latency_ms"] == 125
+    assert snapshot["uptime"].startswith("1h")
+
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().public_status_snapshot() == {
+        "online": False, "guild_count": 0, "latency_ms": "—", "uptime": "unknown"
+    }
+
+
+def test_public_status_snapshot_sanitizes_non_finite_latency(monkeypatch):
+    class StatusBot:
+        def is_ready(self):
+            return True
+
+        guilds = []
+        start_time = 0
+        latency = float("nan")
+
+    monkeypatch.setattr(core, "bot", StatusBot())
+    assert InProcessBotService().public_status_snapshot()["latency_ms"] == "—"
