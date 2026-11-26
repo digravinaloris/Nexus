@@ -259,8 +259,8 @@ def dash_logout():
     if (
         not isinstance(token, str)
         or not isinstance(expected, str)
-        or len(token) < 32
-        or len(expected) < 32
+        or re.fullmatch(r"[A-Za-z0-9_-]{32,256}", token) is None
+        or re.fullmatch(r"[A-Za-z0-9_-]{32,256}", expected) is None
         or not secrets.compare_digest(token, expected)
     ):
         return jsonify({"error": "Invalid CSRF token"}), 403

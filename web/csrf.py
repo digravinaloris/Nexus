@@ -1,17 +1,19 @@
 """Session-backed CSRF protection for authenticated dashboard actions."""
 import hmac
+import re
 import secrets
 
 from flask import abort, request, session
 
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_CSRF_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 
 
 def generate_csrf_token():
     """Return the current session token, creating one when needed."""
     token = session.get("csrf_token")
-    if not isinstance(token, str) or len(token) < 32:
+    if not isinstance(token, str) or not _CSRF_TOKEN_RE.fullmatch(token):
         token = secrets.token_urlsafe(32)
         session["csrf_token"] = token
     return token
@@ -27,7 +29,8 @@ def validate_csrf_request():
     if (
         not isinstance(expected, str)
         or not isinstance(supplied, str)
-        or len(expected) < 32
+        or not _CSRF_TOKEN_RE.fullmatch(expected)
+        or not _CSRF_TOKEN_RE.fullmatch(supplied)
         or not hmac.compare_digest(expected, supplied)
     ):
         abort(400, description="Invalid or missing CSRF token")
