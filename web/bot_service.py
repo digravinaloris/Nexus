@@ -13,6 +13,8 @@ import time
 import core
 import discord
 import calendar_store
+from template_ops import _apply_template_base_config
+from template_store import get_template_by_code, list_public_templates
 from killswitch_store import get_killswitch_token, increment_killswitch_attempts, mark_killswitch_token_used
 from verification import get_valid_challenge, mark_used, record_failed_attempt
 from config_store import add_command_role, get_config, get_global_lock, remove_command_role, set_global_lock, update_config
@@ -219,6 +221,18 @@ class BotService:
 
     def dashboard_audit_export_records(self, guild_id: str) -> List[Dict[str, object]]:
         """Return full audit records for dashboard exports."""
+        raise NotImplementedError
+
+    def dashboard_public_templates_snapshot(self) -> List[Dict[str, object]]:
+        """Return the public template marketplace entries."""
+        raise NotImplementedError
+
+    def dashboard_template_snapshot(self, code: str) -> Optional[Dict[str, object]]:
+        """Return one marketplace template by share code."""
+        raise NotImplementedError
+
+    def dashboard_apply_template_snapshot(self, guild_id: str, snapshot: Dict[str, object]) -> None:
+        """Apply the portable part of a marketplace template."""
         raise NotImplementedError
 
     def api_handle_github_release(self, delivery_id: str, release: Dict[str, object]) -> str:
@@ -611,6 +625,15 @@ class InProcessBotService(BotService):
 
     def verify_mark_used(self, token: str) -> bool:
         return mark_used(token)
+
+    def dashboard_public_templates_snapshot(self) -> List[Dict[str, object]]:
+        return list_public_templates()
+
+    def dashboard_template_snapshot(self, code: str) -> Optional[Dict[str, object]]:
+        return get_template_by_code(code)
+
+    def dashboard_apply_template_snapshot(self, guild_id: str, snapshot: Dict[str, object]) -> None:
+        _apply_template_base_config(guild_id, snapshot)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
