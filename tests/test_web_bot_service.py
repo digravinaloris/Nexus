@@ -1058,3 +1058,30 @@ def test_api_guild_id_candidates_fails_closed_when_unavailable(monkeypatch):
     assert InProcessBotService().api_guild_id_candidates() == []
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_guild_id_candidates() == []
+
+def test_set_guild_locked_updates_runtime_state(monkeypatch):
+    class LockingBot(FakeBot):
+        def __init__(self, ready=True):
+            super().__init__(ready=ready)
+            self.locked_guilds = set()
+
+    bot = LockingBot()
+    monkeypatch.setattr(core, "bot", bot)
+    service = InProcessBotService()
+
+    assert service.set_guild_locked("123", True) is True
+    assert bot.locked_guilds == {123}
+    assert service.api_health_snapshot("123")["locked"] is True
+
+    assert service.set_guild_locked("123", False) is True
+    assert bot.locked_guilds == set()
+    assert service.api_health_snapshot("123")["locked"] is False
+
+
+def test_set_guild_locked_fails_closed_when_runtime_is_unavailable(monkeypatch):
+    bot = FakeBot(ready=False)
+    monkeypatch.setattr(core, "bot", bot)
+    assert InProcessBotService().set_guild_locked("123", True) is False
+
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().set_guild_locked("123", True) is False
