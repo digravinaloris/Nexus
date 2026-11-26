@@ -43,7 +43,7 @@ def mongo_db():
 
 # ---------------------------------------------------------------- hygiène
 
-MODULES = ["core", "config_store", "sanctions_store", "audit", "i18n", "utils"]
+MODULES = ["core", "config_store", "sanctions_store", "faq_store", "audit", "i18n", "utils"]
 
 
 @pytest.mark.parametrize("module", MODULES)
@@ -269,3 +269,22 @@ def test_get_sanction_types_is_guild_scoped(mongo_db):
     sanctions_store.log_sanction(2, 44, "mute", "other guild", 7)
     assert set(sanctions_store.get_sanction_types(1)) == {"warn", "ban"}
     assert set(sanctions_store.get_sanction_types(2)) == {"mute"}
+
+
+
+def test_faq_store_add_remove_toggle_lifecycle(mongo_db):
+    import faq_store
+
+    assert faq_store.get_faq(1) is None
+    faq_store.add_faq_entry(1, {"id": "abc", "keywords": ["help"], "response": "answer"})
+    doc = faq_store.get_faq(1)
+    assert doc.get("enabled", False) is False and doc["entries"] == [{"id": "abc", "keywords": ["help"], "response": "answer"}]
+    faq_store.add_faq_entry(1, {"id": "def", "keywords": ["rules"], "response": "rules answer"})
+    assert len(faq_store.get_faq(1)["entries"]) == 2
+    assert faq_store.remove_faq_entry(1, "abc") is True
+    assert faq_store.remove_faq_entry(1, "missing") is False
+    faq_store.set_faq_enabled(1, True)
+    faq_store.set_faq_enabled(2, False)
+    assert faq_store.get_faq(1)["enabled"] is True
+    assert faq_store.get_faq(2)["enabled"] is False
+    assert faq_store.get_faq(1)["entries"] == [{"id": "def", "keywords": ["rules"], "response": "rules answer"}]
