@@ -17,7 +17,7 @@ from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
 from bridge import run_coroutine
 from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
-from sanctions_store import get_sanction_cases, get_sanction_stats, get_warnlist, get_warns, log_sanction, set_warns
+from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_sanction_stats, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns
 import utils
 from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
 from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
@@ -99,6 +99,26 @@ class BotService:
 
     def api_warnlist_snapshot(self, guild_id: str) -> List[Dict[str, object]]:
         """Return members with active warnings for the mobile API."""
+        raise NotImplementedError
+
+    def api_submitted_appeals(self, guild_id: str) -> List[Dict[str, object]]:
+        """Return submitted appeals for one guild."""
+        raise NotImplementedError
+
+    def api_get_appeal(self, token: str) -> Optional[Dict[str, object]]:
+        """Return one appeal by its token."""
+        raise NotImplementedError
+
+    def api_claim_appeal(self, guild_id: str, token: str) -> bool:
+        """Atomically claim a pending appeal for review."""
+        raise NotImplementedError
+
+    def api_release_appeal_claim(self, guild_id: str, token: str) -> None:
+        """Release a pending appeal review claim after a failed action."""
+        raise NotImplementedError
+
+    def api_resolve_appeal(self, guild_id: str, token: str, status: str) -> bool:
+        """Resolve a claimed appeal to an accepted or denied state."""
         raise NotImplementedError
 
     def api_guild_list_snapshot(self, guild_id: str = None) -> Optional[List[Dict[str, object]]]:
@@ -446,6 +466,21 @@ class InProcessBotService(BotService):
 
     def api_warnlist_snapshot(self, guild_id: str) -> List[Dict[str, object]]:
         return get_warnlist(guild_id)
+
+    def api_submitted_appeals(self, guild_id: str) -> List[Dict[str, object]]:
+        return get_submitted_appeals(guild_id)
+
+    def api_get_appeal(self, token: str) -> Optional[Dict[str, object]]:
+        return get_ban_appeal(token)
+
+    def api_claim_appeal(self, guild_id: str, token: str) -> bool:
+        return claim_sanction_appeal(guild_id, token)
+
+    def api_release_appeal_claim(self, guild_id: str, token: str) -> None:
+        release_sanction_appeal_claim(guild_id, token)
+
+    def api_resolve_appeal(self, guild_id: str, token: str, status: str) -> bool:
+        return resolve_sanction_appeal(guild_id, token, status)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
