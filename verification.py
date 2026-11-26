@@ -14,11 +14,9 @@ Ce module n'importe JAMAIS main.py : le bot et la base passent par `core`.
 """
 import datetime
 import math
-import os
 import secrets
 
 import discord
-import requests
 from pymongo import ReturnDocument
 
 from config_store import get_config
@@ -26,10 +24,9 @@ from core import col
 from discord_logging import _send_log_embed
 from jsonlog import log_json
 from sanctions_store import log_sanction
+from turnstile import TURNSTILE_VERIFY_URL, MAX_ATTEMPTS, check_turnstile, public_base_url, site_key, turnstile_configured, verification_url
 
-TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 LINK_TTL = datetime.timedelta(minutes=10)
-MAX_ATTEMPTS = 3                              # échecs Turnstile avant que le lien meure
 REUSE_WINDOW = datetime.timedelta(seconds=30)  # un double-clic réutilise le même lien
 METHODS = ("button", "turnstile")
 
@@ -59,33 +56,6 @@ def get_verification_settings(guild_id):
         lo, hi = SETTINGS_LIMITS[key]
         settings[key] = max(lo, min(hi, value)) if isinstance(value, int) and not isinstance(value, bool) else default
     return settings
-
-
-def site_key():
-    return os.getenv("TURNSTILE_SITE_KEY", "").strip()
-
-
-def _secret_key():
-    return os.getenv("TURNSTILE_SECRET_KEY", "").strip()
-
-
-def public_base_url():
-    base = os.getenv("PUBLIC_BASE_URL", "").strip()
-    if not base:
-        redirect_uri = os.getenv("DISCORD_REDIRECT_URI", "").strip()
-        if redirect_uri.endswith("/callback"):
-            base = redirect_uri[: -len("/callback")]
-    return base.rstrip("/")
-
-
-def turnstile_configured():
-    """Faux si une clé ou l'URL publique manque : le bouton refuse alors de vérifier (il ne
-    retombe JAMAIS silencieusement sur « donne le rôle sans contrôle »)."""
-    return bool(site_key() and _secret_key() and public_base_url())
-
-
-def verification_url(token):
-    return f"{public_base_url()}/verify/{token}"
 
 
 def _now():
@@ -139,25 +109,6 @@ def mark_used(token, now=None):
     res = col.verification_challenges.update_one({"token": token, "used": False},
                                                  {"$set": {"used": True, "used_at": now or _now()}})
     return res.modified_count == 1
-
-
-def check_turnstile(response_token, remote_ip=None):
-    """Validation côté serveur auprès de Cloudflare. Retourne (ok, raison). Échoue FERMÉ : si
-    Cloudflare est injoignable, personne n'est vérifié."""
-    secret = _secret_key()
-    if not secret:
-        return False, "not_configured"
-    payload = {"secret": secret, "response": response_token}
-    if remote_ip:
-        payload["remoteip"] = remote_ip
-    try:
-        data = requests.post(TURNSTILE_VERIFY_URL, data=payload, timeout=10).json()
-    except (requests.RequestException, ValueError) as e:
-        log_json("error", "turnstile_unreachable", error=repr(e))
-        return False, "service_unavailable"
-    if data.get("success") is True:
-        return True, None
-    return False, ",".join(data.get("error-codes", [])) or "failed"
 
 
 async def grant_verified(guild, user_id):
