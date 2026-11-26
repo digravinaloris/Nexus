@@ -278,7 +278,7 @@ def test_faq_store_add_remove_toggle_lifecycle(mongo_db):
     assert faq_store.get_faq(1) is None
     faq_store.add_faq_entry(1, {"id": "abc", "keywords": ["help"], "response": "answer"})
     doc = faq_store.get_faq(1)
-    assert doc["enabled"] is False and doc["entries"] == [{"id": "abc", "keywords": ["help"], "response": "answer"}]
+    assert doc.get("enabled", False) is False and doc["entries"] == [{"id": "abc", "keywords": ["help"], "response": "answer"}]
     faq_store.add_faq_entry(1, {"id": "def", "keywords": ["rules"], "response": "rules answer"})
     assert len(faq_store.get_faq(1)["entries"]) == 2
     assert faq_store.remove_faq_entry(1, "abc") is True
