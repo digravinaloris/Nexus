@@ -254,6 +254,28 @@ def test_missing_key_is_401(env):
     assert resp.get_json() == {"error": "Missing X-API-Key header"}
 
 
+def test_invalid_guild_snowflakes_are_rejected_before_config_lookup(env, monkeypatch):
+    import web.rest_api as rest_module
+
+    def unexpected_lookup(_guild_id):
+        raise AssertionError("invalid guild ID reached config lookup")
+
+    monkeypatch.setattr(rest_module, "get_config", unexpected_lookup)
+    for invalid in ("abc", "0", str(2**64), "１２３"):
+        response = env.client.get(url("/features", invalid), headers=MASTER)
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "Invalid guild_id"}
+
+
+def test_invalid_user_snowflakes_are_rejected(env):
+    for invalid in ("abc", "0", str(2**64), "１２３"):
+        response = env.client.get(
+            url(f"/members/{invalid}/warnings"), headers=MASTER
+        )
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "Invalid user_id"}
+
+
 def test_wrong_key_is_401(env):
     resp = env.client.get("/api/health", headers={"X-API-Key": "nope"})
     assert resp.status_code == 401
