@@ -6,6 +6,7 @@ existing in-process deployment; a signed HTTP adapter can implement the same
 contract in a later migration step without changing route response shapes.
 """
 from typing import Dict, List, Optional
+import datetime
 import math
 import time
 
@@ -283,7 +284,7 @@ class InProcessBotService(BotService):
                 return False, "Member not found"
             if member.top_role >= guild.me.top_role:
                 return False, "Role too high"
-            duration = __import__("datetime").timedelta(minutes=minutes)
+            duration = datetime.timedelta(minutes=minutes)
             await member.timeout(duration, reason=reason)
             log_sanction(guild_id, user_id, "mute", f"{reason} ({minutes} min)", "mobile_app")
             await log_mute(guild, member, minutes, reason)
