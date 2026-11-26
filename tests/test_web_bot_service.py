@@ -238,3 +238,45 @@ def test_api_health_snapshot_handles_uninitialized_bot(monkeypatch):
     assert InProcessBotService().api_health_snapshot("123") == {
         "online": False, "locked": False, "guild_count": 1
     }
+
+
+def test_api_guild_list_snapshot_returns_serializable_guild_fields(monkeypatch):
+    class Icon:
+        url = "https://cdn.example/icon.png"
+
+    class Guild:
+        def __init__(self, gid, name, members, icon=None):
+            self.id = gid
+            self.name = name
+            self.member_count = members
+            self.icon = icon
+
+    guild_a = Guild(123, "Alpha", 10, Icon())
+    guild_b = Guild(456, "Beta", 20)
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        guilds = [guild_a, guild_b]
+
+        def get_guild(self, guild_id):
+            return next((g for g in self.guilds if g.id == guild_id), None)
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    service = InProcessBotService()
+    assert service.api_guild_list_snapshot() == [
+        {"id": "123", "name": "Alpha", "member_count": 10, "icon_url": "https://cdn.example/icon.png"},
+        {"id": "456", "name": "Beta", "member_count": 20, "icon_url": None},
+    ]
+    assert service.api_guild_list_snapshot("123") == [
+        {"id": "123", "name": "Alpha", "member_count": 10, "icon_url": "https://cdn.example/icon.png"}
+    ]
+    assert service.api_guild_list_snapshot("999") == []
+
+
+def test_api_guild_list_snapshot_returns_none_when_bot_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().api_guild_list_snapshot() is None
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_guild_list_snapshot("123") is None

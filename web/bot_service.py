@@ -5,7 +5,7 @@ Discord's Gateway client directly. The first adapter deliberately preserves the
 existing in-process deployment; a signed HTTP adapter can implement the same
 contract in a later migration step without changing route response shapes.
 """
-from typing import Dict, List
+from typing import Dict, List, Optional
 import math
 import time
 
@@ -41,6 +41,10 @@ class BotService:
 
     def api_health_snapshot(self, guild_id: str = None) -> Dict[str, object]:
         """Return the existing REST health response without exposing bot objects."""
+        raise NotImplementedError
+
+    def api_guild_list_snapshot(self, guild_id: str = None) -> Optional[List[Dict[str, object]]]:
+        """Return serializable guild list DTOs, or None when the bot is offline."""
         raise NotImplementedError
 
 
@@ -89,6 +93,24 @@ class InProcessBotService(BotService):
             "locked": bool(locked_guilds),
             "guild_count": len(bot.guilds) if online else 0,
         }
+
+    def api_guild_list_snapshot(self, guild_id: str = None) -> Optional[List[Dict[str, object]]]:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+
+        def serialize(guild):
+            return {
+                "id": str(guild.id),
+                "name": guild.name,
+                "member_count": guild.member_count,
+                "icon_url": str(guild.icon.url) if guild.icon else None,
+            }
+
+        if guild_id:
+            guild = bot.get_guild(int(guild_id))
+            return [serialize(guild)] if guild is not None else []
+        return [serialize(guild) for guild in bot.guilds]
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot

@@ -113,25 +113,9 @@ def health():
 @bp.route('/api/guilds', methods=['GET'])
 @require_api_key
 def list_guilds():
-    if not core.bot.is_ready():
+    guilds = get_bot_service().api_guild_list_snapshot(g.auth_guild_id)
+    if guilds is None:
         return jsonify({"error": "Bot not ready"}), 503
-    if g.auth_guild_id:
-        # Clé propre à un serveur : ne renvoie que CE serveur, jamais les autres.
-        guild = core.bot.get_guild(int(g.auth_guild_id))
-        if not guild:
-            return jsonify([])
-        return jsonify([{
-            "id": str(guild.id),
-            "name": guild.name,
-            "member_count": guild.member_count,
-            "icon_url": str(guild.icon.url) if guild.icon else None,
-        }])
-    guilds = [{
-        "id": str(gd.id),
-        "name": gd.name,
-        "member_count": gd.member_count,
-        "icon_url": str(gd.icon.url) if gd.icon else None,
-    } for gd in core.bot.guilds]
     return jsonify(guilds)
 
 
