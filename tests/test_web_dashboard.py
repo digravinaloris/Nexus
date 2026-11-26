@@ -576,3 +576,18 @@ def test_dashboard_owner_guard_uses_bot_service(dash, monkeypatch, is_owner):
             response, status = result
             assert status == 403
             assert response.get_json() == {"error": "Server owner required"}
+
+
+def test_read_only_dashboard_pages_use_guild_name_service(dash, monkeypatch):
+    import web.dashboard as dashboard_module
+
+    class GuildNameService:
+        def guild_name(self, guild_id):
+            assert guild_id == GID
+            return "Service Guild Name"
+
+    monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: GuildNameService())
+    cases = dash.client.get(dash.url("/cases"))
+    appeals = dash.client.get(dash.url("/appeals"))
+    assert cases.status_code == 200 and "Service Guild Name" in cases.get_data(as_text=True)
+    assert appeals.status_code == 200 and "Service Guild Name" in appeals.get_data(as_text=True)

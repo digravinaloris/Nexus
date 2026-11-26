@@ -1,7 +1,7 @@
 {% extends "_dashboard.html" %}
 {% block page %}
 <div class="wrap">
-  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild.id) }}">&larr; {{ guild.name }}</a>
+  <a class="back" href="{{ url_for('dash_guild_page', guild_id=guild_id) }}">&larr; {{ guild_name }}</a>
   <div class="eyebrow">{{ t('config_eyebrow') }}</div>
   <h1>{{ t('cases_title') }}</h1>
 
