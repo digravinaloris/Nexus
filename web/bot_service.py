@@ -47,6 +47,14 @@ class BotService:
         """Return serializable guild list DTOs, or None when the bot is offline."""
         raise NotImplementedError
 
+    def api_text_channels_snapshot(self, guild_id: str) -> Optional[List[Dict[str, str]]]:
+        """Return text channel DTOs for one guild, or None when the bot is offline."""
+        raise NotImplementedError
+
+    def api_roles_snapshot(self, guild_id: str) -> Optional[List[Dict[str, str]]]:
+        """Return non-default role DTOs for one guild, or None when the bot is offline."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
@@ -111,6 +119,24 @@ class InProcessBotService(BotService):
             guild = bot.get_guild(int(guild_id))
             return [serialize(guild)] if guild is not None else []
         return [serialize(guild) for guild in bot.guilds]
+
+    def api_text_channels_snapshot(self, guild_id: str) -> Optional[List[Dict[str, str]]]:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return []
+        return [{"id": str(channel.id), "name": channel.name} for channel in guild.text_channels]
+
+    def api_roles_snapshot(self, guild_id: str) -> Optional[List[Dict[str, str]]]:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return None
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return []
+        return [{"id": str(role.id), "name": role.name} for role in guild.roles if not role.is_default()]
 
     def public_status_snapshot(self) -> Dict[str, object]:
         bot = core.bot
