@@ -186,3 +186,9 @@ def get_submitted_appeals(guild_id):
 def get_sanction_types(guild_id):
     """Return the sanction types recorded for a single guild."""
     return col.sanctions.distinct("type", {"guild_id": str(guild_id)})
+
+
+
+def get_sanction_types(guild_id):
+    """Return the sanction types recorded for a single guild."""
+    return col.sanctions.distinct("type", {"guild_id": str(guild_id)})
