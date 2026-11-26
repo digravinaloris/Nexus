@@ -114,39 +114,20 @@ def test_non_release_event_ignored_after_signature(monkeypatch):
 def test_duplicate_delivery_suppressed_and_valid_event_dispatched(monkeypatch):
     monkeypatch.setenv("GITHUB_RELEASE_WEBHOOK_SECRET", SECRET)
     body, headers = signed(payload())
-    markers = []
+    deliveries = []
 
-    class DeliveryCollection:
-        def find_one(self, query):
-            return next((marker for marker in markers if marker["_id"] == query["_id"]), None)
-
-        def insert_one(self, doc):
-            markers.append(doc)
-
-    class FakeDB:
-        def __getitem__(self, name):
-            assert name == "github_webhook_deliveries"
-            return DeliveryCollection()
-
-    class FakeCog:
-        async def handle_webhook_release(self, release):
+    class FakeBotService:
+        def api_handle_github_release(self, delivery_id, release):
             assert release["tag_name"] == "v2.1.0"
-            return True
+            if delivery_id in deliveries:
+                return "duplicate"
+            deliveries.append(delivery_id)
+            return "sent"
 
-    class FakeBot:
-        def is_ready(self):
-            return True
-
-        def get_cog(self, name):
-            assert name == "GitHubUpdates"
-            return FakeCog()
-
-    monkeypatch.setattr(github_webhook.core, "db", FakeDB())
-    monkeypatch.setattr(github_webhook.core, "bot", FakeBot())
-    monkeypatch.setattr(github_webhook, "run_coroutine", lambda coro: __import__("asyncio").run(coro))
+    monkeypatch.setattr(github_webhook, "get_bot_service", lambda: FakeBotService())
     client = app()
     first = client.post("/webhooks/github/releases", data=body, headers=headers)
     assert first.status_code == 200 and first.json == {"ok": True}
     second = client.post("/webhooks/github/releases", data=body, headers=headers)
     assert second.status_code == 200 and second.json == {"duplicate": True}
-    assert markers == [{"_id": DELIVERY}]
+    assert deliveries == [DELIVERY]
