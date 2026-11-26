@@ -536,7 +536,7 @@ def guild_appeal_accept_route(guild_id, token):
 
     sanction_type = appeal.get("sanction_type", "ban")
     success, result = get_bot_service().api_accept_appeal(
-        guild_id, appeal["user_id"], sanction_type, appeal["case_id"]
+        guild_id, appeal["user_id"], sanction_type
     )
     if not success:
         release_sanction_appeal_claim(guild_id, token)
@@ -545,6 +545,7 @@ def guild_appeal_accept_route(guild_id, token):
     if not resolve_sanction_appeal(guild_id, token, "accepted"):
         return jsonify({"error": "Appeal resolution conflict"}), 409
     record_audit(guild_id, "mobile_app", "📱 Mobile App", "Accepted appeal (via mobile app)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
+    get_bot_service().api_notify_appeal_result(guild_id, appeal["user_id"], appeal["case_id"], True, result)
     return jsonify({"success": True, "result": result})
 
 
@@ -565,7 +566,7 @@ def guild_appeal_deny_route(guild_id, token):
     if not resolve_sanction_appeal(guild_id, token, "denied"):
         return jsonify({"error": "Appeal resolution conflict"}), 409
     record_audit(guild_id, "mobile_app", "📱 Mobile App", "Denied appeal (via mobile app)", f"Case #{appeal['case_id']}")
-    get_bot_service().api_deny_appeal(guild_id, appeal["user_id"], appeal["case_id"])
+    get_bot_service().api_notify_appeal_result(guild_id, appeal["user_id"], appeal["case_id"], False)
     return jsonify({"success": True})
 
 
