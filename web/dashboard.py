@@ -524,8 +524,8 @@ def dash_log_action(guild, guild_id, action, details=""):
 def dash_owner_required(f):
     @wraps(f)
     def wrapper(guild_id, *args, **kwargs):
-        guild = core.bot.get_guild(int(guild_id))
-        if guild is None or not dash_is_owner(guild):
+        user_id = (session.get("dash_user") or {}).get("id")
+        if not get_bot_service().is_guild_owner(guild_id, user_id):
             return jsonify({"error": "Server owner required"}), 403
         return f(guild_id, *args, **kwargs)
     return wrapper
