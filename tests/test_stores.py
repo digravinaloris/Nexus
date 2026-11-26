@@ -320,8 +320,18 @@ def test_killswitch_store_token_lifecycle(mongo_db):
 
     mongo_db["killswitch_tokens"].insert_one({"token": "one-time", "used": False, "attempts": 0})
     assert killswitch_store.get_killswitch_token("one-time")["attempts"] == 0
-    killswitch_store.increment_killswitch_attempts("one-time")
-    killswitch_store.mark_killswitch_token_used("one-time")
+    assert killswitch_store.increment_killswitch_attempts("one-time") == 1
+    assert killswitch_store.mark_killswitch_token_used("one-time") is True
+    assert killswitch_store.mark_killswitch_token_used("one-time") is False
     doc = killswitch_store.get_killswitch_token("one-time")
     assert doc["attempts"] == 1 and doc["used"] is True
     assert killswitch_store.get_killswitch_token("missing") is None
+
+
+def test_killswitch_store_stops_attempts_at_limit(mongo_db):
+    import killswitch_store
+
+    mongo_db["killswitch_tokens"].insert_one({"token": "limited", "used": False, "attempts": 4})
+    assert killswitch_store.increment_killswitch_attempts("limited") == 5
+    assert killswitch_store.increment_killswitch_attempts("limited") is None
+    assert killswitch_store.mark_killswitch_token_used("limited") is False
