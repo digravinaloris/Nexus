@@ -447,12 +447,25 @@ def test_api_guild_stats_snapshot_serializes_guild_metrics(monkeypatch):
         def get_guild(self, gid):
             return guild if gid == 123 else None
 
+    class CountCollection:
+        def __init__(self, count):
+            self.count = count
+
+        def count_documents(self, query):
+            return self.count
+
+    monkeypatch.setattr(core, "col", type("FakeCollections", (), {
+        "warns": CountCollection(1), "sanctions": CountCollection(2),
+    })())
     monkeypatch.setattr(core, "bot", ReadyBot())
     monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    monkeypatch.setattr(service_module, "get_sanction_stats", lambda guild_id, days: [(str(i), i) for i in range(days)])
     snapshot = InProcessBotService().api_guild_stats_snapshot("123")
     assert snapshot == {
         "guild_id": "123", "name": "Alpha", "member_count": 25,
-        "ban_count": 2, "muted_count": 1, "open_tickets_count": 0, "locked": True,
+        "ban_count": 2, "muted_count": 1, "open_tickets_count": 0,
+        "warned_count": 1, "warns_today": 2, "activity_7d": [0, 1, 2, 3, 4, 5, 6],
+        "locked": True,
     }
     assert InProcessBotService().api_guild_stats_snapshot("456") == {}
 
