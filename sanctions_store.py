@@ -193,3 +193,18 @@ def get_sanction_types(guild_id):
     """Return the sanction types recorded for a single guild."""
     return col.sanctions.distinct("type", {"guild_id": str(guild_id)})
 
+
+
+
+def submit_ban_appeal(token, appeal_text, submitted_at=None):
+    """Atomically transition a pending public appeal to submitted."""
+    submitted_at = submitted_at or datetime.datetime.now(datetime.timezone.utc)
+    result = col.ban_appeals.update_one(
+        {"token": token, "status": "pending"},
+        {"$set": {
+            "status": "submitted",
+            "appeal_text": appeal_text,
+            "submitted_at": submitted_at,
+        }},
+    )
+    return result.modified_count == 1
