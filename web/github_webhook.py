@@ -3,6 +3,8 @@ import hashlib
 import hmac
 import json
 import os
+import re
+from urllib.parse import urlsplit
 
 from flask import jsonify, request
 
@@ -13,7 +15,7 @@ from web.routing import Routes
 routes = Routes()
 MAX_PAYLOAD_BYTES = 256 * 1024
 REPOSITORY = "digravinaloris/Nexus"
-RELEASE_PREFIX = "https://github.com/digravinaloris/Nexus/releases/"
+RELEASE_PATH_RE = re.compile(r"^/digravinaloris/Nexus/releases/(?:tag/)?[^/]+$")
 
 
 def verify_signature(raw_body, signature, secret):
@@ -32,10 +34,32 @@ def validate_release(payload):
         return None
     if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
         return None
-    if not release.get("id") or not isinstance(release.get("tag_name"), str):
+    if (
+        isinstance(release.get("id"), bool)
+        or not isinstance(release.get("id"), int)
+        or release["id"] <= 0
+        or not isinstance(release.get("tag_name"), str)
+        or not release["tag_name"].strip()
+        or len(release["tag_name"]) > 255
+    ):
         return None
     url = release.get("html_url")
-    if not isinstance(url, str) or len(url) > 500 or not url.startswith(RELEASE_PREFIX):
+    if not isinstance(url, str) or len(url) > 500:
+        return None
+    try:
+        parsed_url = urlsplit(url)
+    except ValueError:
+        return None
+    if (
+        parsed_url.scheme != "https"
+        or parsed_url.hostname != "github.com"
+        or parsed_url.username is not None
+        or parsed_url.password is not None
+        or parsed_url.port not in (None, 443)
+        or parsed_url.query
+        or parsed_url.fragment
+        or not RELEASE_PATH_RE.fullmatch(parsed_url.path)
+    ):
         return None
     return release
 
