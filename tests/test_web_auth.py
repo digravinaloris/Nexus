@@ -392,3 +392,16 @@ def test_callback_rejects_non_string_session_state_without_calling_discord(env, 
     response = env.client.get("/callback?code=authorization-code&state=valid-state")
     assert response.status_code == 403
     assert called == []
+
+
+@pytest.mark.parametrize("token, expected", [
+    ("é" * 40, "é" * 40),
+    ("x" * 257, "x" * 257),
+    ("valid-csrf-token-" + "x" * 32, "é" * 40),
+])
+def test_logout_rejects_malformed_csrf_strings_without_500(env, token, expected):
+    with env.client.session_transaction() as sess:
+        sess["csrf_token"] = expected
+
+    response = env.client.post("/logout", data={"csrf_token": token})
+    assert response.status_code == 403
