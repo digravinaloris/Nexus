@@ -478,8 +478,8 @@ def test_dashboard_failed_appeal_reversal_releases_claim(dash, monkeypatch):
         raise RuntimeError("Discord temporarily unavailable")
 
     monkeypatch.setattr(dashboard_module, "run_coroutine", fail_reversal)
-    with pytest.raises(RuntimeError, match="temporarily unavailable"):
-        dash.client.post(dash.url("/appeals/failed-accept/accept"))
+    response = dash.client.post(dash.url("/appeals/failed-accept/accept"))
+    assert response.status_code == 500
 
     appeal = dash.col.ban_appeals.find_one({"token": "failed-accept"})
     assert appeal["status"] == "submitted"
