@@ -845,20 +845,17 @@ def dash_appeal_accept(guild_id, token):
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
 
     sanction_type = appeal.get("sanction_type", "ban")
-    try:
-        result = run_coroutine(reverse_sanction(guild, sanction_type, appeal["user_id"]))
-    except Exception:
+    service = get_bot_service()
+    success, result = service.api_accept_appeal(guild_id, str(appeal["user_id"]), sanction_type)
+    if not success:
         release_sanction_appeal_claim(guild_id, token)
-        raise
+        raise RuntimeError(result or "Unable to resolve appeal")
     if not resolve_sanction_appeal(guild_id, token, "accepted"):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
     record_audit(guild_id, actor_id, actor_name, "Accepted appeal (via dashboard)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
-    try:
-        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], True, result))
-    except Exception as e:
-        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
+    service.api_notify_appeal_result(guild_id, str(appeal["user_id"]), str(appeal["case_id"]), True, result)
     flash(f"Case #{appeal['case_id']} accepted — {result}.")
     return redirect(url_for("dash_appeals_page", guild_id=guild_id))
 
@@ -881,9 +878,8 @@ def dash_appeal_deny(guild_id, token):
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
     record_audit(guild_id, actor_id, actor_name, "Denied appeal (via dashboard)", f"Case #{appeal['case_id']}")
-    try:
-        run_coroutine(_dm_user_appeal_result(int(appeal["user_id"]), guild.name, appeal["case_id"], False, None))
-    except Exception as e:
-        print(f"[APPEAL] Failed to DM user: {e}", flush=True)
+    get_bot_service().api_notify_appeal_result(
+        guild_id, str(appeal["user_id"]), str(appeal["case_id"]), False, None
+    )
     flash(f"Case #{appeal['case_id']} denied.")
     return redirect(url_for("dash_appeals_page", guild_id=guild_id))
