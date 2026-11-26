@@ -6,7 +6,7 @@ main.py (bot -> `core.bot`).
 """
 from flask import make_response, render_template, request
 
-from verification import MAX_ATTEMPTS, check_turnstile, site_key, turnstile_configured
+from turnstile import MAX_ATTEMPTS, check_turnstile, site_key, turnstile_configured
 from web.public import get_client_ip
 from web.bot_service import get_bot_service
 from web.routing import Routes
