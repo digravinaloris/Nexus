@@ -407,7 +407,7 @@ def test_logout_rejects_malformed_csrf_strings_without_500(env, token, expected)
     assert response.status_code == 403
 
 
-@pytest.mark.parametrize("refresh_token", ["bad token", "bad\\nvalue", "x" * 4097, 123])
+@pytest.mark.parametrize("refresh_token", ["bad token", "bad\\tvalue", "x" * 4097, 123])
 def test_callback_rejects_malformed_refresh_tokens_without_identity_lookup(env, monkeypatch, refresh_token):
     class TokenResponse:
         status_code = 200
