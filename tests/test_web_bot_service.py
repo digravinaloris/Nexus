@@ -410,6 +410,22 @@ def test_set_guild_locked_fails_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().set_guild_locked("123", False) is False
 
 
+def test_api_config_snapshot_and_updates_use_config_store(monkeypatch):
+    import web.bot_service as service_module
+
+    calls = []
+    monkeypatch.setattr(service_module, "get_config", lambda guild_id: {"guild_id": guild_id, "api_key": "secret"})
+
+    def fake_update(guild_id, key, value):
+        calls.append((guild_id, key, value))
+
+    monkeypatch.setattr(service_module, "update_config", fake_update)
+    service = InProcessBotService()
+    assert service.api_config_snapshot("123") == {"guild_id": "123", "api_key": "secret"}
+    service.api_update_config("123", {"language": "fr", "autorole": 9})
+    assert calls == [("123", "language", "fr"), ("123", "autorole", 9)]
+
+
 def test_api_guild_stats_snapshot_serializes_guild_metrics(monkeypatch):
     import asyncio
     import web.bot_service as service_module
