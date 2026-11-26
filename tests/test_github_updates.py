@@ -170,6 +170,7 @@ def test_post_release_sends_plain_text_without_embed_and_records_state(monkeypat
 
         def update_one(self, query, update):
             self.updates.append((query, update))
+            return type("UpdateResult", (), {"matched_count": 1})()
 
     class FakeGuild:
         def __init__(self, channel):
@@ -222,3 +223,29 @@ def test_poll_once_skips_already_announced_release(monkeypatch):
     monkeypatch.setattr(cog, "post_release", unexpected_post)
 
     asyncio.run(cog.poll_once())
+
+
+
+def test_post_release_skips_when_atomic_release_claim_was_already_taken(monkeypatch):
+    class FakeTextChannel:
+        async def send(self, **kwargs):
+            pytest.fail("A release already claimed by another worker must not be sent twice.")
+
+    class FakeCollection:
+        def update_one(self, query, update):
+            assert query["last_release_id"] == {"$ne": "123"}
+            return type("UpdateResult", (), {"matched_count": 0})()
+
+    class FakeGuild:
+        def get_channel(self, channel_id):
+            return FakeTextChannel()
+
+    class FakeBot:
+        db = {"bot_state": FakeCollection()}
+
+        def get_guild(self, guild_id):
+            return FakeGuild()
+
+    monkeypatch.setattr(github_updates.discord, "TextChannel", FakeTextChannel)
+    cog = github_updates.GitHubUpdates(FakeBot())
+    assert asyncio.run(cog.post_release("1", "2", sample_release())) is False
