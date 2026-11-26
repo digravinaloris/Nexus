@@ -122,50 +122,35 @@ def list_guilds():
 @bp.route('/api/guilds/<guild_id>/stats', methods=['GET'])
 @require_api_key
 def guild_stats(guild_id):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
 
-    async def _stats():
-        bans = [b async for b in guild.bans()]
-        muted = [m for m in guild.members if m.is_timed_out()]
-        return len(bans), len(muted)
-
+    cfg = get_config(guild_id)
     try:
-        ban_count, muted_count = run_coroutine(_stats())
+        snapshot = get_bot_service().api_guild_stats_snapshot(
+            guild_id, cfg.get("ticket_category_id")
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    if snapshot is None:
+        return jsonify({"error": "Bot not ready"}), 503
 
     warned_count = col.warns.count_documents({"guild_id": str(guild_id), "count": {"$gt": 0}})
-
-    cfg = get_config(guild_id)
-    open_tickets_count = 0
-    ticket_category_id = cfg.get("ticket_category_id")
-    if ticket_category_id:
-        category = guild.get_channel(int(ticket_category_id))
-        if isinstance(category, discord.CategoryChannel):
-            open_tickets_count = len(category.text_channels)
-
     today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     warns_today = col.sanctions.count_documents({
         "guild_id": str(guild_id), "type": "warn", "timestamp": {"$gte": today_start},
     })
     activity_7d = [count for _, count in get_sanction_stats(guild_id, days=7)]
 
-    return jsonify({
-        "guild_id": str(guild.id),
-        "name": guild.name,
-        "member_count": guild.member_count,
-        "ban_count": ban_count,
-        "muted_count": muted_count,
+    snapshot.update({
         "warned_count": warned_count,
         "warns_today": warns_today,
-        "open_tickets_count": open_tickets_count,
         "activity_7d": activity_7d,
-        "locked": int(guild_id) in core.bot.locked_guilds
     })
+    return jsonify(snapshot)
 
 
 @bp.route('/api/guilds/<guild_id>/config', methods=['GET'])
