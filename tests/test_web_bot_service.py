@@ -1120,7 +1120,7 @@ def test_api_announce_calendar_event_sends_role_limited_announcement(monkeypatch
     assert InProcessBotService().api_announce_calendar_event("123", "8", event) == (True, None)
     assert sent[0]["content"] == "<@&7>"
     assert sent[0]["embed"] == "calendar-embed"
-    assert sent[0]["allowed_mentions"].roles == [Role()]
+    assert [role.id for role in sent[0]["allowed_mentions"].roles] == [7]
 
 
 def test_api_announce_calendar_event_fails_closed_for_missing_runtime_targets(monkeypatch):
