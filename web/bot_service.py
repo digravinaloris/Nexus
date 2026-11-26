@@ -13,13 +13,14 @@ import time
 import core
 import discord
 import calendar_store
-from config_store import add_command_role, get_config, remove_command_role, update_config
+from killswitch_store import get_killswitch_token, increment_killswitch_attempts, mark_killswitch_token_used
+from config_store import add_command_role, get_config, get_global_lock, remove_command_role, set_global_lock, update_config
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
 from audit_export import _get_audit_records
 from bridge import run_coroutine
 from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
-from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns
+from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns, submit_ban_appeal
 import utils
 from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
 from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
@@ -109,6 +110,30 @@ class BotService:
 
     def api_get_appeal(self, token: str) -> Optional[Dict[str, object]]:
         """Return one appeal by its token."""
+        raise NotImplementedError
+
+    def public_get_killswitch_token(self, token: str) -> Optional[Dict[str, object]]:
+        """Look up one global kill-switch token."""
+        raise NotImplementedError
+
+    def public_increment_killswitch_attempts(self, token: str) -> Optional[int]:
+        """Atomically count one failed kill-switch code attempt."""
+        raise NotImplementedError
+
+    def public_mark_killswitch_token_used(self, token: str) -> bool:
+        """Atomically consume one valid kill-switch token."""
+        raise NotImplementedError
+
+    def public_global_lock_state(self) -> bool:
+        """Return the persisted global bot lock state."""
+        raise NotImplementedError
+
+    def public_set_global_lock(self, locked: bool) -> None:
+        """Persist the global bot lock state."""
+        raise NotImplementedError
+
+    def public_submit_ban_appeal(self, token: str, appeal_text: str, submitted_at) -> bool:
+        """Atomically submit a public ban appeal."""
         raise NotImplementedError
 
     def api_claim_appeal(self, guild_id: str, token: str) -> bool:
@@ -546,6 +571,24 @@ class InProcessBotService(BotService):
 
     def dashboard_audit_export_records(self, guild_id: str) -> List[Dict[str, object]]:
         return _get_audit_records(guild_id)
+
+    def public_get_killswitch_token(self, token: str) -> Optional[Dict[str, object]]:
+        return get_killswitch_token(token)
+
+    def public_increment_killswitch_attempts(self, token: str) -> Optional[int]:
+        return increment_killswitch_attempts(token)
+
+    def public_mark_killswitch_token_used(self, token: str) -> bool:
+        return mark_killswitch_token_used(token)
+
+    def public_global_lock_state(self) -> bool:
+        return get_global_lock()
+
+    def public_set_global_lock(self, locked: bool) -> None:
+        set_global_lock(locked)
+
+    def public_submit_ban_appeal(self, token: str, appeal_text: str, submitted_at) -> bool:
+        return submit_ban_appeal(token, appeal_text, submitted_at)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
