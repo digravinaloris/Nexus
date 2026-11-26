@@ -197,3 +197,44 @@ def test_guild_name_falls_back_when_bot_is_unavailable(monkeypatch):
     assert InProcessBotService().guild_name("123") == "the server"
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().guild_name("123") == "the server"
+
+
+def test_api_health_snapshot_for_master_key(monkeypatch):
+    class HealthBot:
+        def is_ready(self):
+            return True
+
+        guilds = [object(), object(), object()]
+        locked_guilds = {123}
+
+    monkeypatch.setattr(core, "bot", HealthBot())
+    assert InProcessBotService().api_health_snapshot() == {
+        "online": True, "locked": True, "guild_count": 2
+    }
+
+
+def test_api_health_snapshot_for_guild_key(monkeypatch):
+    class HealthBot:
+        def is_ready(self):
+            return False
+
+        guilds = [object(), object()]
+        locked_guilds = {123}
+
+    monkeypatch.setattr(core, "bot", HealthBot())
+    assert InProcessBotService().api_health_snapshot("123") == {
+        "online": False, "locked": True, "guild_count": 1
+    }
+    assert InProcessBotService().api_health_snapshot("456") == {
+        "online": False, "locked": False, "guild_count": 1
+    }
+
+
+def test_api_health_snapshot_handles_uninitialized_bot(monkeypatch):
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_health_snapshot() == {
+        "online": False, "locked": False, "guild_count": 0
+    }
+    assert InProcessBotService().api_health_snapshot("123") == {
+        "online": False, "locked": False, "guild_count": 1
+    }
