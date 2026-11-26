@@ -500,7 +500,7 @@ def unwarn_member_route(guild_id, user_id):
 def guild_audit_route(guild_id):
     """Fil d'activité multi-admin pour l'app mobile -- même source que le
     dashboard web (get_audit_log), fusionne actions dashboard + sanctions."""
-    limit = min(request.args.get("limit", default=20, type=int) or 20, 100)
+    limit = max(1, min(request.args.get("limit", default=20, type=int) or 20, 100))
     entries = get_audit_log(guild_id, limit=limit)
     return jsonify([{
         "actor_name": e.get("actor_name", "Unknown"),
@@ -516,7 +516,7 @@ def guild_cases_route(guild_id):
     """Historique des sanctions (case browser) pour l'app mobile -- même
     requête Mongo que la page /dashboard/<guild_id>/cases côté web."""
     filter_type = request.args.get("type", "")
-    limit = min(request.args.get("limit", default=50, type=int) or 50, 200)
+    limit = max(1, min(request.args.get("limit", default=50, type=int) or 50, 200))
     query = {"guild_id": str(guild_id)}
     if filter_type:
         query["type"] = filter_type
