@@ -17,15 +17,10 @@ from flask import flash, jsonify, redirect, render_template, request, session, u
 
 from audit import build_sparkline_svg
 from audit_export import _build_audit_csv_bytes, _build_audit_pdf_bytes, _get_audit_records
-from bridge import run_coroutine
 from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
 from cogs.calendar import parse_event_datetime, make_embed, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
-from moderation_actions import _dm_user_appeal_result, reverse_sanction
-from sanctions_store import (
-    claim_sanction_appeal, get_ban_appeal, get_submitted_appeals, release_sanction_appeal_claim,
-)
 from template_ops import _apply_template_base_config
 from template_store import get_template_by_code, list_public_templates
 from utils import normalize_banned_word, normalize_domain, parse_bounded_number, parse_lines_list
@@ -833,7 +828,7 @@ def dash_cases_page(guild_id):
 @dash_guild_admin_required
 def dash_appeals_page(guild_id):
     guild_name = get_bot_service().guild_name(guild_id)
-    appeals = get_submitted_appeals(guild_id)
+    appeals = get_bot_service().api_submitted_appeals(guild_id)
     return render_template("appeals_review.html", guild_id=guild_id, guild_name=guild_name,
         appeals=appeals, user=session.get("dash_user"))
 
@@ -842,12 +837,12 @@ def dash_appeals_page(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_appeal_accept(guild_id, token):
-    appeal = get_ban_appeal(token)
+    appeal = get_bot_service().api_get_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
 
-    if not claim_sanction_appeal(guild_id, token):
+    if not get_bot_service().api_claim_appeal(guild_id, token):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
 
@@ -855,9 +850,9 @@ def dash_appeal_accept(guild_id, token):
     service = get_bot_service()
     success, result = service.api_accept_appeal(guild_id, str(appeal["user_id"]), sanction_type)
     if not success:
-        release_sanction_appeal_claim(guild_id, token)
+        get_bot_service().api_release_appeal_claim(guild_id, token)
         raise RuntimeError(result or "Unable to resolve appeal")
-    if not resolve_sanction_appeal(guild_id, token, "accepted"):
+    if not get_bot_service().api_resolve_appeal(guild_id, token, "accepted"):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
@@ -871,15 +866,15 @@ def dash_appeal_accept(guild_id, token):
 @dash_login_required
 @dash_guild_admin_required
 def dash_appeal_deny(guild_id, token):
-    appeal = get_ban_appeal(token)
+    appeal = get_bot_service().api_get_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
 
-    if not claim_sanction_appeal(guild_id, token):
+    if not get_bot_service().api_claim_appeal(guild_id, token):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
-    if not resolve_sanction_appeal(guild_id, token, "denied"):
+    if not get_bot_service().api_resolve_appeal(guild_id, token, "denied"):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
