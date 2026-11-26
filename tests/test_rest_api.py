@@ -636,6 +636,27 @@ def test_appeals_list_accept_deny(env):
     assert "Denied appeal (via mobile app)" in audit_actions
 
 
+def test_mobile_failed_appeal_reversal_releases_claim(env, monkeypatch):
+    import web.rest_api as rest_module
+
+    _submitted_appeal(env, "ban", "failed-accept")
+
+    def fail_reversal(coroutine):
+        coroutine.close()
+        raise RuntimeError("Discord temporarily unavailable")
+
+    monkeypatch.setattr(rest_module, "run_coroutine", fail_reversal)
+    response = env.client.post(
+        url("/appeals/failed-accept/accept"), headers=MASTER
+    )
+    assert response.status_code == 500
+    assert response.get_json() == {"error": "Unable to resolve appeal"}
+
+    appeal = env.col.ban_appeals.find_one({"token": "failed-accept"})
+    assert appeal["status"] == "submitted"
+    assert "processing_at" not in appeal
+
+
 @pytest.mark.parametrize("action", ["accept", "deny"])
 def test_mobile_appeal_claim_prevents_concurrent_resolution(env, monkeypatch, action):
     import web.rest_api as rest_module
