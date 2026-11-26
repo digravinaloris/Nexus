@@ -6,7 +6,6 @@ sur l'app Flask. Ce module n'importe JAMAIS main.py (sous `python main.py` le
 module s'appelle `__main__`, l'importer le rechargerait avec un 2e bot) : le
 bot vient de `core.bot`, la base de `core.col`.
 """
-import datetime
 import os
 import secrets
 from functools import wraps
@@ -16,13 +15,12 @@ from flask import Blueprint, g, jsonify, request
 from audit import get_audit_log, record_audit
 from config_store import get_config, update_config
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
-from core import col
 from web.bot_service import get_bot_service
 from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from features import FEATURE_TOGGLES
 from sanctions_store import (
     claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_submitted_appeals,
-    get_sanction_stats, get_warnlist, get_warns,
+    get_warnlist, get_warns,
     log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns,
 )
 
@@ -136,18 +134,6 @@ def guild_stats(guild_id):
     if snapshot is None:
         return jsonify({"error": "Bot not ready"}), 503
 
-    warned_count = col.warns.count_documents({"guild_id": str(guild_id), "count": {"$gt": 0}})
-    today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    warns_today = col.sanctions.count_documents({
-        "guild_id": str(guild_id), "type": "warn", "timestamp": {"$gte": today_start},
-    })
-    activity_7d = [count for _, count in get_sanction_stats(guild_id, days=7)]
-
-    snapshot.update({
-        "warned_count": warned_count,
-        "warns_today": warns_today,
-        "activity_7d": activity_7d,
-    })
     return jsonify(snapshot)
 
 
