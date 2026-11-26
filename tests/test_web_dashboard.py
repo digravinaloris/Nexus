@@ -591,3 +591,18 @@ def test_read_only_dashboard_pages_use_guild_name_service(dash, monkeypatch):
     appeals = dash.client.get(dash.url("/appeals"))
     assert cases.status_code == 200 and "Service Guild Name" in cases.get_data(as_text=True)
     assert appeals.status_code == 200 and "Service Guild Name" in appeals.get_data(as_text=True)
+
+
+def test_feature_and_template_marketplace_pages_use_guild_name_service(dash, monkeypatch):
+    import web.dashboard as dashboard_module
+
+    class GuildNameService:
+        def guild_name(self, guild_id):
+            assert guild_id == GID
+            return "Service Guild Name"
+
+    monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: GuildNameService())
+    features = dash.client.get(dash.url("/features"))
+    marketplace = dash.client.get(dash.url("/templates"))
+    assert features.status_code == 200 and "Service Guild Name" in features.get_data(as_text=True)
+    assert marketplace.status_code == 200 and "Service Guild Name" in marketplace.get_data(as_text=True)
