@@ -1035,7 +1035,11 @@ def test_api_deny_appeal_best_effort_dm(monkeypatch):
 
 
 def test_api_guild_id_candidates_returns_string_ids_for_ready_bot(monkeypatch):
-    guilds = [FakeGuild(123), FakeGuild(456)]
+    class Guild:
+        def __init__(self, guild_id):
+            self.id = guild_id
+
+    guilds = [Guild(123), Guild(456)]
     class ReadyBot:
         def is_ready(self):
             return True
