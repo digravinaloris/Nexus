@@ -106,7 +106,9 @@ Ticket priorities and staff assignments are stored in the channel topic and rema
 
 ### GitHub Release Announcements
 
-The bot owner can configure one announcement channel on their own server with `/updates channel <channel>`. Nexus checks its GitHub releases every 10 minutes and posts a plain-text announcement when a new stable release is published. Use `/updates check` to publish the latest release immediately, `/updates status` to view the configuration, and `/updates disable` to turn it off. Only the Discord application owner who also owns the configured server can manage this feature.
+The bot owner can configure one announcement channel on their own server with `/updates channel <channel>`. Nexus posts plain-text announcements for new stable releases; a GitHub webhook can deliver them immediately, with the 10-minute polling check retained as a fallback. Use `/updates check` to publish the latest release immediately, `/updates status` to view the configuration, and `/updates disable` to turn it off. Only the Discord application owner who also owns the configured server can manage this feature.
+
+**Instant webhook setup (optional):** Set `GITHUB_RELEASE_WEBHOOK_SECRET` in the bot host's environment to a long, random secret. In the GitHub repository, open **Settings → Webhooks → Add webhook**, set the Payload URL to `https://YOUR_NEXUS_HOST/webhooks/github/releases`, Content type to `application/json`, and enter the same secret. Choose **Let me select individual events → Releases** and save the webhook. Configure the announcement channel first with `/updates channel`. Nexus verifies the signature and ignores drafts, prereleases, unrelated repositories, and duplicate delivery IDs.
 
 ### Invites, Backups & Data
 | Command | Access | Description |
