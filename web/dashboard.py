@@ -15,19 +15,16 @@ from urllib.parse import urlparse
 import calendar_store
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
-from audit import build_sparkline_svg, get_audit_log, record_audit
+from audit import build_sparkline_svg
 from audit_export import _build_audit_csv_bytes, _build_audit_pdf_bytes, _get_audit_records
 from bridge import run_coroutine
 from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
-from config_store import add_command_role, get_config, remove_command_role, update_config
 from cogs.calendar import parse_event_datetime, make_embed, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from moderation_actions import _dm_user_appeal_result, reverse_sanction
 from sanctions_store import (
-    claim_sanction_appeal, get_ban_appeal, get_sanction_stats, get_sanction_cases,
-    get_sanction_types, get_submitted_appeals, release_sanction_appeal_claim,
-    resolve_sanction_appeal,
+    claim_sanction_appeal, get_ban_appeal, get_submitted_appeals, release_sanction_appeal_claim,
 )
 from template_ops import _apply_template_base_config
 from template_store import get_template_by_code, list_public_templates
@@ -86,7 +83,7 @@ def dash_presence_who(guild_id):
     return jsonify({"viewers": active})
 
 
-# Valeurs par défaut utilisées à l'AFFICHAGE : get_config() ne remplit les
+# Valeurs par défaut utilisées à l'AFFICHAGE : le snapshot de configuration ne remplit les
 # défauts qu'à la création d'un doc, donc un vieux serveur peut ne pas avoir
 # certaines clés (ex: remindme_enabled est actif par défaut dans le code).
 SETTINGS_DEFAULTS = {
@@ -213,7 +210,7 @@ def dash_features_page(guild_id):
     """Équivalent web de /feature enable|disable|list -- construit depuis
     FEATURE_TOGGLES, donc tout nouveau toggle côté Discord apparaît ici tout seul."""
     guild_name = get_bot_service().guild_name(guild_id)
-    cfg = get_config(guild_id)
+    cfg = get_bot_service().api_config_snapshot(guild_id)
 
     def is_enabled(meta):
         return bool(cfg.get(meta["config_key"], FEATURE_DEFAULT_ENABLED.get(meta["config_key"], False)))
@@ -230,7 +227,7 @@ def dash_features_page(guild_id):
             # dépend jamais de la parité avec les défauts du code. L'audit, lui, ne
             # note que les changements EFFECTIFS (défaut implicite compris).
             effective_old = bool(FEATURE_DEFAULT_ENABLED.get(config_key, False)) if stored is _UNSET else bool(stored)
-            update_config(guild_id, config_key, new_value)
+            get_bot_service().api_update_config(guild_id, {config_key: new_value})
             if effective_old != new_value:
                 (enabled_now if new_value else disabled_now).append(key)
         if enabled_now or disabled_now:
@@ -258,7 +255,7 @@ def dash_calendar_page(guild_id):
     guild = get_bot_service().dashboard_settings_snapshot(guild_id)
     if guild is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    cfg = get_config(guild_id)
+    cfg = get_bot_service().api_config_snapshot(guild_id)
     timezone_name = cfg.get("calendar_timezone") or "Europe/Paris"
     if request.method == "POST":
         action = request.form.get("action", "")
@@ -275,8 +272,8 @@ def dash_calendar_page(guild_id):
             except ValueError:
                 flash("Invalid timezone." if current_lang() == "en" else "Fuseau horaire invalide.", "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-            update_config(guild_id, "calendar_timezone", timezone_name)
-            update_config(guild_id, "calendar_channel_id", channel_id)
+            get_bot_service().api_update_config(guild_id, {"calendar_timezone": timezone_name})
+            get_bot_service().api_update_config(guild_id, {"calendar_channel_id": channel_id})
             dash_log_action(guild_id, "Updated calendar settings", f"timezone={timezone_name}; channel={channel_id}")
             flash("Calendar settings saved." if current_lang() == "en" else "Réglages du calendrier enregistrés.", "calendar")
         elif action == "create":
@@ -333,7 +330,7 @@ def dash_calendar_page(guild_id):
             manager_ids = set(str(x) for x in cfg.get("calendar_manager_role_ids", []))
             if request.form.get("manager_action") == "remove": manager_ids.discard(str(role["id"]))
             else: manager_ids.add(str(role["id"]))
-            update_config(guild_id, "calendar_manager_role_ids", sorted(manager_ids))
+            get_bot_service().api_update_config(guild_id, {"calendar_manager_role_ids": sorted(manager_ids)})
             dash_log_action(guild_id, "Updated calendar manager roles", role["name"])
             flash("Calendar manager roles saved." if current_lang() == "en" else "Rôles gestionnaires enregistrés.", "calendar")
         else:
@@ -357,7 +354,7 @@ def dash_settings_page(guild_id):
     snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
     if snapshot is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    cfg = get_config(guild_id)
+    cfg = get_bot_service().api_config_snapshot(guild_id)
     values = {key: cfg.get(key, default) for key, default in SETTINGS_DEFAULTS.items()}
     user_id = (session.get("dash_user") or {}).get("id")
     return render_template(
@@ -382,7 +379,7 @@ def dash_settings_save(guild_id, section):
     guild = get_bot_service().dashboard_settings_snapshot(guild_id)
     if guild is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    cfg = get_config(guild_id)
+    cfg = get_bot_service().api_config_snapshot(guild_id)
     updates = {}
     try:
         if section == "automod":
@@ -439,7 +436,7 @@ def dash_settings_save(guild_id, section):
         # Même principe que les features : on écrit dès que la valeur stockée
         # diffère ou manque, mais on n'audite que ce qui change réellement.
         effective_old = SETTINGS_DEFAULTS.get(key) if stored is _UNSET else stored
-        update_config(guild_id, key, value)
+        get_bot_service().api_update_config(guild_id, {key: value})
         if effective_old != value:
             changes.append(_describe_change(key, effective_old, value))
     if changes:
@@ -480,12 +477,12 @@ def dash_template_import(guild_id, code):
             selected = request.form.get(f"map__{i}", "")
             if selected:
                 name_to_new_id[old_name] = int(selected)
-        new_command_roles = get_config(guild_id).get("command_roles", {})
+        new_command_roles = get_bot_service().api_config_snapshot(guild_id).get("command_roles", {})
         for command, old_names in command_roles_by_name.items():
             mapped_ids = [name_to_new_id[n] for n in old_names if n in name_to_new_id]
             if mapped_ids:
                 new_command_roles[command] = mapped_ids
-        update_config(guild_id, "command_roles", new_command_roles)
+        get_bot_service().api_update_config(guild_id, {"command_roles": new_command_roles})
         dash_log_action(guild_id, f"Imported template '{doc.get('name', doc['code'])}' from {doc['created_guild_name']}")
         flash("Template applied." if current_lang() == "en" else "Template appliqué.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
@@ -519,7 +516,7 @@ def dash_actor():
 def dash_log_action(guild_id, action, details=""):
     """Record the dashboard audit event and delegate optional Discord logging."""
     actor_id, actor_name = dash_actor()
-    record_audit(guild_id, actor_id, actor_name, action, details)
+    get_bot_service().api_record_audit(guild_id, actor_id, actor_name, action, details)
     try:
         posted, error = get_bot_service().api_log_dashboard_action(
             guild_id, actor_name, action, details
@@ -557,7 +554,7 @@ def dash_home():
 @dash_login_required
 @dash_guild_admin_required
 def dash_guild_page(guild_id):
-    cfg = get_config(guild_id)
+    cfg = get_bot_service().api_config_snapshot(guild_id)
     service = get_bot_service()
     guild = service.dashboard_overview_snapshot(guild_id, cfg.get("ticket_category_id"))
     if guild is None:
@@ -571,25 +568,25 @@ def dash_guild_page(guild_id):
         if logs_channel_id.isdigit():
             channel = channels_by_id.get(int(logs_channel_id))
             if channel is not None:
-                update_config(guild_id, "logs_channel", channel["name"])
+                get_bot_service().api_update_config(guild_id, {"logs_channel": channel["name"]})
                 changes.append(f"logs channel → #{channel['name']}")
 
         autorole_id = request.form.get("autorole", "none")
         risky_perms = ("administrator", "manage_guild", "ban_members", "kick_members", "manage_roles")
         if autorole_id == "none":
-            update_config(guild_id, "autorole", None)
+            get_bot_service().api_update_config(guild_id, {"autorole": None})
             changes.append("autorole → none")
         elif autorole_id.isdigit():
             role = roles_by_id.get(int(autorole_id))
             if role is not None:
-                update_config(guild_id, "autorole", int(role["id"]))
+                get_bot_service().api_update_config(guild_id, {"autorole": int(role["id"])})
                 changes.append(f"autorole → @{role['name']}")
                 if any(role["permissions"].get(permission, False) for permission in risky_perms):
                     flash(f"⚠️ {role['name']}: " + ("sensitive permissions, given to every new member." if current_lang() == "en" else "permissions sensibles, donné à tout nouveau membre."))
 
         log_toggle = request.form.get("log_dashboard_actions") == "on"
-        if log_toggle != bool(get_config(guild_id).get("log_dashboard_actions")):
-            update_config(guild_id, "log_dashboard_actions", log_toggle)
+        if log_toggle != bool(get_bot_service().api_config_snapshot(guild_id).get("log_dashboard_actions")):
+            get_bot_service().api_update_config(guild_id, {"log_dashboard_actions": log_toggle})
             changes.append(f"Discord logging of dashboard actions → {'on' if log_toggle else 'off'}")
 
         if changes:
@@ -621,7 +618,7 @@ def dash_guild_page(guild_id):
 
     open_tickets = guild["open_tickets"]
 
-    stats_series = get_sanction_stats(guild_id, days=30)
+    stats_series = get_bot_service().dashboard_sanction_stats_snapshot(guild_id, days=30)
     has_any_activity = any(v for _, v in stats_series)
     sanction_chart = build_sparkline_svg(stats_series) if has_any_activity else ""
 
@@ -634,7 +631,7 @@ def dash_guild_page(guild_id):
         moderation_commands=MODERATION_COMMANDS,
         templates=COMMAND_TEMPLATES,
         custom_templates=cfg.get("command_templates", {}),
-        audit_entries=get_audit_log(guild_id) if is_owner else [],
+        audit_entries=get_bot_service().api_audit_snapshot(guild_id) if is_owner else [],
         onboarding_missing=onboarding_missing,
         open_tickets=open_tickets,
         sanction_chart=sanction_chart,
@@ -657,7 +654,7 @@ def dash_automod(guild_id):
     valid_role_ids = {int(role["id"]) for role in roles}
     # ne garde que des ids qui correspondent à de vrais rôles de CE serveur
     clean = [int(rid) for rid in submitted if rid.isdigit() and int(rid) in valid_role_ids]
-    update_config(guild_id, "allowed_roles", clean)
+    get_bot_service().api_update_config(guild_id, {"allowed_roles": clean})
     role_names = ", ".join(f"@{role['name']}" for role in roles if int(role["id"]) in clean) or "none"
     dash_log_action(guild_id, "Updated anti-raid exemptions", f"exempt roles: {role_names}")
     flash("Anti-raid exemptions updated." if current_lang() == "en" else "Exemptions anti-raid mises à jour.")
@@ -680,7 +677,7 @@ def dash_permission_add(guild_id):
         role = roles.get(int(role_id))
         if role is not None:
             for cmd in valid_commands:
-                add_command_role(guild_id, cmd, int(role["id"]))
+                get_bot_service().dashboard_add_command_role(guild_id, cmd, int(role["id"]))
             cmd_list = ", ".join(f"/{c}" for c in valid_commands)
             dash_log_action(guild_id, "Added command permissions", f"@{role['name']}: {cmd_list}")
             if current_lang() == "en":
@@ -716,7 +713,7 @@ def dash_permission_template(guild_id):
         commands_list = tpl["commands"]
         label = t(tpl["label_key"])
     elif source == "custom":
-        cfg = get_config(guild_id)
+        cfg = get_bot_service().api_config_snapshot(guild_id)
         custom_templates = cfg.get("command_templates", {})
         if key in custom_templates:
             commands_list = custom_templates[key]
@@ -724,7 +721,7 @@ def dash_permission_template(guild_id):
 
     if commands_list:
         for cmd in commands_list:
-            add_command_role(guild_id, cmd, int(role["id"]))
+            get_bot_service().dashboard_add_command_role(guild_id, cmd, int(role["id"]))
         dash_log_action(guild_id, "Applied permission template", f"template « {label} » → @{role['name']}")
         if current_lang() == "en":
             flash(f"Template « {label} » applied to {role['name']} ({len(commands_list)} commands).")
@@ -751,7 +748,7 @@ def dash_permission_remove(guild_id):
     # (ex: ajouté via /config allow avec une casse différente, ou une
     # commande hors de notre liste curatée).
     if command and role_id.isdigit():
-        remove_command_role(guild_id, command, int(role_id))
+        get_bot_service().dashboard_remove_command_role(guild_id, command, int(role_id))
         role = roles.get(int(role_id))
         dash_log_action(guild_id, "Removed command permission", f"/{command} for {'@' + role['name'] if role else role_id}")
         flash(f"Permission removed for /{command}." if current_lang() == "en" else f"Permission retirée pour /{command}.")
@@ -764,7 +761,7 @@ def dash_permission_remove(guild_id):
 @dash_owner_required
 def dash_apikey_regen(guild_id):
     new_key = secrets.token_hex(16)
-    update_config(guild_id, "api_key", new_key)
+    get_bot_service().api_update_config(guild_id, {"api_key": new_key})
     dash_log_action(guild_id, "Regenerated mobile API key")
     flash("New API key generated — the old one no longer works." if current_lang() == "en" else "Nouvelle clé API générée — l'ancienne ne fonctionne plus.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
@@ -824,8 +821,8 @@ def dash_toggle_lock(guild_id):
 def dash_cases_page(guild_id):
     guild_name = get_bot_service().guild_name(guild_id)
     filter_type = request.args.get("type", "")
-    cases = get_sanction_cases(guild_id, filter_type, 200)
-    all_types = get_sanction_types(guild_id)
+    cases = get_bot_service().api_sanction_cases_snapshot(guild_id, filter_type, 200)
+    all_types = get_bot_service().dashboard_sanction_types_snapshot(guild_id)
     return render_template("cases.html", guild_id=guild_id, guild_name=guild_name, cases=cases,
         all_types=all_types, filter_type=filter_type, user=session.get("dash_user"),
     )
@@ -864,7 +861,7 @@ def dash_appeal_accept(guild_id, token):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
-    record_audit(guild_id, actor_id, actor_name, "Accepted appeal (via dashboard)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
+    get_bot_service().api_record_audit(guild_id, actor_id, actor_name, "Accepted appeal (via dashboard)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
     service.api_notify_appeal_result(guild_id, str(appeal["user_id"]), str(appeal["case_id"]), True, result)
     flash(f"Case #{appeal['case_id']} accepted — {result}.")
     return redirect(url_for("dash_appeals_page", guild_id=guild_id))
@@ -886,7 +883,7 @@ def dash_appeal_deny(guild_id, token):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
-    record_audit(guild_id, actor_id, actor_name, "Denied appeal (via dashboard)", f"Case #{appeal['case_id']}")
+    get_bot_service().api_record_audit(guild_id, actor_id, actor_name, "Denied appeal (via dashboard)", f"Case #{appeal['case_id']}")
     get_bot_service().api_notify_appeal_result(
         guild_id, str(appeal["user_id"]), str(appeal["case_id"]), False, None
     )
