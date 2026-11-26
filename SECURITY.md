@@ -54,6 +54,7 @@ This isn't a claim of being bulletproof — it's a list of what's actually imple
 **Input validation**
 - Mobile REST routes reject malformed guild and user snowflake IDs before database lookups or Discord operations; moderation reasons, broadcast messages/channel IDs, mute durations, FAQ payloads, feature toggles, and pagination limits are validated server-side.
 - Sanction appeals are atomically claimed before acceptance or denial across the dashboard and mobile API, preventing concurrent reviewers from applying duplicate resolutions.
+- The GitHub release webhook caps streamed request-body reads at 256 KiB plus one byte before parsing or signature processing, including lengthless requests.
 - Audit CSV exports escape formula-like cell values before returning them to spreadsheet software.
 - Guild, channel, and role IDs submitted through any form are re-validated against the real objects of the *target* server before anything is written — a forged or cross-server ID is rejected rather than trusted
 - Command-permission changes are checked against a fixed list of real bot commands
