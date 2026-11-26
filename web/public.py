@@ -13,10 +13,10 @@ import pyotp
 
 from audit import record_audit
 from config_store import get_global_lock, set_global_lock
-from core import col
-from sanctions_store import get_ban_appeal
+from sanctions_store import get_ban_appeal, submit_ban_appeal
 import utils
 from web.bot_service import get_bot_service
+from killswitch_store import get_killswitch_token, increment_killswitch_attempts, mark_killswitch_token_used
 from web.routing import Routes
 
 routes = Routes()
@@ -40,7 +40,7 @@ def favicon():
 
 
 def _killswitch_token_doc(token):
-    doc = col.killswitch_tokens.find_one({"token": token})
+    doc = get_killswitch_token(token)
     if not doc:
         return None
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -87,7 +87,7 @@ def killswitch_submit(token):
 
     if not valid:
         new_attempts = doc.get("attempts", 0) + 1
-        col.killswitch_tokens.update_one({"token": token}, {"$inc": {"attempts": 1}})
+        increment_killswitch_attempts(token)
         attempts_left = max(0, 5 - new_attempts)
         record_audit("global", None, f"Unknown (IP {ip})", "Failed kill-switch code attempt", f"{new_attempts}/5 attempts used")
         if new_attempts >= 5:
@@ -100,7 +100,7 @@ def killswitch_submit(token):
 
     # Code correct : le token est consommé immédiatement (usage unique),
     # avant même de faire quoi que ce soit d'autre.
-    col.killswitch_tokens.update_one({"token": token}, {"$set": {"used": True}})
+    mark_killswitch_token_used(token)
     new_state = not get_global_lock()
     set_global_lock(new_state)
     record_audit("global", None, f"Owner (email + authenticator, IP {ip})", "Locked bot globally" if new_state else "Unlocked bot globally")
@@ -150,14 +150,7 @@ def appeal_form_submit(token):
             ban_reason=appeal["ban_reason"] or "No reason provided",
         )
 
-    col.ban_appeals.update_one(
-        {"token": token},
-        {"$set": {
-            "status": "submitted",
-            "appeal_text": appeal_text,
-            "submitted_at": datetime.datetime.now(datetime.timezone.utc),
-        }},
-    )
+    submit_ban_appeal(token, appeal_text, datetime.datetime.now(datetime.timezone.utc))
 
     try:
         posted, error = get_bot_service().api_post_appeal_for_review(
