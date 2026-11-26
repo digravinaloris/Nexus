@@ -595,3 +595,85 @@ def test_api_broadcast_service_returns_none_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().api_broadcast("123", "5", "hi") is None
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().api_broadcast("123", "5", "hi") is None
+
+
+def test_api_mute_member_applies_timeout_and_logs(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Member:
+        top_role = 2
+
+        def __init__(self):
+            self.calls = []
+
+        async def timeout(self, duration, reason=None):
+            self.calls.append((duration, reason))
+
+    member = Member()
+    sanctions = []
+    muted_logs = []
+
+    class Guild:
+        me = type("BotMember", (), {"top_role": 5})()
+
+        def get_member(self, uid):
+            return member if uid == 10 else None
+
+    guild = Guild()
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    monkeypatch.setattr(service_module, "log_sanction", lambda *args: sanctions.append(args))
+    async def fake_log_mute(g, m, minutes, reason):
+        muted_logs.append((g, m, minutes, reason))
+    monkeypatch.setattr(service_module, "log_mute", fake_log_mute)
+
+    import datetime
+    assert InProcessBotService().api_mute_member("123", "10", 30, "test reason") == (True, None)
+    assert member.calls == [(datetime.timedelta(minutes=30), "test reason")]
+    assert sanctions == [("123", "10", "mute", "test reason (30 min)", "mobile_app")]
+    assert muted_logs == [(guild, member, 30, "test reason")]
+
+
+def test_api_mute_member_checks_member_and_role_hierarchy(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Member:
+        top_role = 9
+
+        async def timeout(self, duration, reason=None):
+            raise AssertionError("too-high member must not be timed out")
+
+    member = Member()
+    class Guild:
+        me = type("BotMember", (), {"top_role": 5})()
+        def get_member(self, uid):
+            return member if uid == 10 else None
+
+    guild = Guild()
+    class ReadyBot:
+        def is_ready(self):
+            return True
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    assert InProcessBotService().api_mute_member("123", "99", 10, "x") == (False, "Member not found")
+    assert InProcessBotService().api_mute_member("123", "10", 10, "x") == (False, "Role too high")
+
+
+def test_api_mute_member_returns_none_when_bot_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().api_mute_member("123", "10", 10, "x") is None
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_mute_member("123", "10", 10, "x") is None
