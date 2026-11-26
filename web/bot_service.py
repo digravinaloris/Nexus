@@ -16,9 +16,19 @@ class BotService:
     def health_snapshot(self) -> Dict[str, object]:
         raise NotImplementedError
 
+    def guild_presence(self, guild_id: str) -> Dict[str, bool]:
+        """Return bot readiness and guild presence without exposing Discord objects."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
+
+    def guild_presence(self, guild_id: str) -> Dict[str, bool]:
+        bot = core.bot
+        bot_ready = bool(bot is not None and bot.is_ready())
+        guild_present = bool(bot_ready and bot.get_guild(int(guild_id)) is not None)
+        return {"bot_ready": bot_ready, "guild_present": guild_present}
 
     def health_snapshot(self) -> Dict[str, object]:
         bot = core.bot
