@@ -12,6 +12,7 @@ import time
 
 import core
 import discord
+import calendar_store
 from config_store import add_command_role, get_config, remove_command_role, update_config
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
@@ -159,6 +160,22 @@ class BotService:
 
     def dashboard_sanction_types_snapshot(self, guild_id: str) -> List[str]:
         """Return the sanction types currently present for one guild."""
+        raise NotImplementedError
+
+    def dashboard_calendar_has_duplicate_event(self, guild_id: str, title: str, starts_at) -> bool:
+        """Check whether an equivalent calendar event already exists."""
+        raise NotImplementedError
+
+    def dashboard_calendar_insert_event(self, event: Dict[str, object]):
+        """Persist a prepared calendar event and return its database ID."""
+        raise NotImplementedError
+
+    def dashboard_calendar_delete_event(self, guild_id: str, event_id) -> bool:
+        """Delete one calendar event belonging to the guild."""
+        raise NotImplementedError
+
+    def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> List[Dict[str, object]]:
+        """Return upcoming calendar event documents for dashboard rendering."""
         raise NotImplementedError
 
     def api_handle_github_release(self, delivery_id: str, release: Dict[str, object]) -> str:
@@ -509,6 +526,18 @@ class InProcessBotService(BotService):
 
     def dashboard_sanction_types_snapshot(self, guild_id: str) -> List[str]:
         return get_sanction_types(guild_id)
+
+    def dashboard_calendar_has_duplicate_event(self, guild_id: str, title: str, starts_at) -> bool:
+        return calendar_store.find_duplicate_event(guild_id, title, starts_at)
+
+    def dashboard_calendar_insert_event(self, event: Dict[str, object]):
+        return calendar_store.insert_event(event)
+
+    def dashboard_calendar_delete_event(self, guild_id: str, event_id) -> bool:
+        return calendar_store.delete_event(guild_id, event_id)
+
+    def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> List[Dict[str, object]]:
+        return calendar_store.list_upcoming_events(guild_id, now, limit=limit)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None) -> Optional[Dict[str, object]]:
         bot = core.bot
