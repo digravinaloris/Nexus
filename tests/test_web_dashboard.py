@@ -320,6 +320,53 @@ def test_features_page_and_toggle_audit(dash):
     assert len(dash.audit()) == count  # rien à auditer
 
 
+def test_calendar_page_uses_bot_service_snapshot_for_guild_data(dash, monkeypatch):
+    import web.dashboard as dashboard_module
+
+    class SnapshotService:
+        def dashboard_settings_snapshot(self, guild_id):
+            assert guild_id == GID
+            return {
+                "id": GID, "name": "Snapshot Guild", "owner_id": OWNER_ID,
+                "text_channels": [{"id": "55", "name": "general"}],
+                "voice_channels": [],
+                "roles": [{"id": "9", "name": "Mods"}],
+            }
+
+        def is_guild_owner(self, guild_id, user_id):
+            assert guild_id == GID and user_id == OWNER_ID
+            return True
+
+    monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: SnapshotService())
+    monkeypatch.setattr(dashboard_module.calendar_store, "list_upcoming_events", lambda *args, **kwargs: [])
+    response = dash.client.get(dash.url("/calendar"))
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Snapshot Guild" in body and "#general" in body and "Mods" in body
+
+
+def test_calendar_manager_role_update_uses_snapshot_and_owner_service(dash, monkeypatch):
+    import web.dashboard as dashboard_module
+
+    class SnapshotService:
+        def dashboard_settings_snapshot(self, guild_id):
+            return {
+                "id": GID, "name": "Snapshot Guild", "owner_id": OWNER_ID,
+                "text_channels": [{"id": "55", "name": "general"}],
+                "voice_channels": [], "roles": [{"id": "9", "name": "Mods"}],
+            }
+
+        def is_guild_owner(self, guild_id, user_id):
+            return guild_id == GID and user_id == OWNER_ID
+
+    monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: SnapshotService())
+    response = dash.client.post(dash.url("/calendar"), data={
+        "action": "manager", "manager_action": "add", "role_id": "9",
+    })
+    assert response.status_code == 302
+    assert dash.cfg()["calendar_manager_role_ids"] == ["9"]
+
+
 # ------------------------------------------------------------------- settings
 
 def test_settings_page_renders(dash):
