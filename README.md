@@ -236,7 +236,7 @@ Every dashboard request fetches the user's current server permissions directly f
 
 Built with Kotlin + Jetpack Compose, connecting to the bot's REST API to let server admins moderate, check stats, and manage configuration from their phone. Each server gets its own API key via `/config apikey`. API keys are checked using constant-time comparisons.
 
-The mobile REST API validates Discord guild and user IDs before processing requests, rejects malformed FAQ and feature-toggle payloads, limits mute durations to Discord's 28-day maximum, and clamps audit/case pagination. Keep each server's API key private and regenerate it from the dashboard or `/config apikey` if it is exposed.
+The mobile REST API validates Discord guild and user IDs before processing requests, rejects malformed moderation and broadcast payloads, bounds moderation reasons and message lengths, validates FAQ and feature-toggle payloads, limits mute durations to Discord's 28-day maximum, and clamps audit/case pagination. Appeal reviews are claimed atomically so concurrent dashboard and mobile actions cannot resolve the same appeal twice. Keep each server's API key private and regenerate it from the dashboard or `/config apikey` if it is exposed.
 
 ---
 
