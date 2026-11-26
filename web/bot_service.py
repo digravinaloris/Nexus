@@ -96,6 +96,10 @@ class BotService:
         """Record a member warning and attempt the existing Discord log."""
         raise NotImplementedError
 
+    def api_unwarn_member(self, guild_id: str, user_id: str):
+        """Remove one warning and best-effort log the updated count."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
@@ -364,6 +368,24 @@ class InProcessBotService(BotService):
             run_coroutine(log_warn(guild, member, reason, count))
         except Exception:
             pass  # The warning is already recorded; Discord logging is secondary.
+        return True, count
+
+    def api_unwarn_member(self, guild_id: str, user_id: str):
+        count = get_warns(guild_id, user_id)
+        if count <= 0:
+            return False, "No warnings to remove"
+        count -= 1
+        set_warns(guild_id, user_id, count)
+
+        bot = core.bot
+        if bot is not None and bot.is_ready():
+            guild = bot.get_guild(int(guild_id))
+            member = guild.get_member(int(user_id)) if guild is not None else None
+            if member is not None:
+                try:
+                    run_coroutine(log_unwarn(guild, member, count))
+                except Exception:
+                    pass  # Warning removal remains successful if the log fails.
         return True, count
 
     def public_status_snapshot(self) -> Dict[str, object]:
