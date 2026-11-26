@@ -180,10 +180,10 @@ def get_guild_config(guild_id):
 @bp.route('/api/guilds/<guild_id>/config', methods=['POST'])
 @require_api_key
 def update_guild_config(guild_id):
-    if not core.bot.is_ready():
+    presence = get_bot_service().guild_presence(guild_id)
+    if not presence["bot_ready"]:
         return jsonify({"error": "Bot not ready"}), 503
-    guild = core.bot.get_guild(int(guild_id))
-    if not guild:
+    if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
 
     data = request.get_json(silent=True)
