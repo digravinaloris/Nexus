@@ -628,11 +628,25 @@ def guild_faq_list_route(guild_id):
 @bp.route('/api/guilds/<guild_id>/faq', methods=['POST'])
 @require_api_key
 def guild_faq_add_route(guild_id):
-    data = request.get_json(silent=True) or {}
-    keywords = [k.strip() for k in data.get("keywords", []) if k.strip()]
-    response_text = data.get("response", "").strip()
-    if not keywords or not response_text:
-        return jsonify({"error": "keywords and response are required"}), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "keywords must be a list of 1 to 25 strings (max 100 characters each) and response must be 1 to 2000 characters"}), 400
+
+    raw_keywords = data.get("keywords")
+    raw_response = data.get("response")
+    if not isinstance(raw_keywords, list) or not 1 <= len(raw_keywords) <= 25:
+        return jsonify({"error": "keywords must be a list of 1 to 25 strings (max 100 characters each) and response must be 1 to 2000 characters"}), 400
+    if any(not isinstance(keyword, str) for keyword in raw_keywords):
+        return jsonify({"error": "keywords must be a list of 1 to 25 strings (max 100 characters each) and response must be 1 to 2000 characters"}), 400
+
+    keywords = [keyword.strip() for keyword in raw_keywords]
+    response_text = raw_response.strip() if isinstance(raw_response, str) else ""
+    if (
+        any(not keyword or len(keyword) > 100 for keyword in keywords)
+        or not response_text
+        or len(response_text) > 2000
+    ):
+        return jsonify({"error": "keywords must be a list of 1 to 25 strings (max 100 characters each) and response must be 1 to 2000 characters"}), 400
 
     doc = col.faq.find_one({"guild_id": str(guild_id)}) or {"guild_id": str(guild_id), "enabled": False, "entries": []}
     existing_ids = {e["id"] for e in doc["entries"]}
