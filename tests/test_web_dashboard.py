@@ -416,7 +416,7 @@ def test_calendar_page_uses_bot_service_snapshot_for_guild_data(dash, monkeypatc
             return True
 
     monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: SnapshotService())
-    monkeypatch.setattr(dashboard_module.calendar_store, "list_upcoming_events", lambda *args, **kwargs: [])
+    monkeypatch.setattr(real_service, "dashboard_calendar_upcoming_events", lambda *args, **kwargs: [])
     response = dash.client.get(dash.url("/calendar"))
     body = response.get_data(as_text=True)
     assert response.status_code == 200
