@@ -164,7 +164,11 @@ def test_dashboard_home_requires_login(env):
 def test_guild_page_uses_overview_snapshot_dtos(dash, monkeypatch):
     import web.dashboard as dashboard_module
 
+    real_service = dashboard_module.get_bot_service()
     class OverviewService:
+        def __getattr__(self, name):
+            return getattr(real_service, name)
+
         def dashboard_overview_snapshot(self, guild_id, ticket_category_id=None):
             assert guild_id == GID and ticket_category_id is None
             return {
@@ -195,7 +199,11 @@ def test_guild_page_uses_overview_snapshot_dtos(dash, monkeypatch):
 def test_guild_page_post_validates_roles_and_channels_from_snapshot(dash, monkeypatch):
     import web.dashboard as dashboard_module
 
+    real_service = dashboard_module.get_bot_service()
     class OverviewService:
+        def __getattr__(self, name):
+            return getattr(real_service, name)
+
         def dashboard_overview_snapshot(self, guild_id, ticket_category_id=None):
             return {
                 "id": GID, "name": "DTO Guild", "owner_id": OWNER_ID,
@@ -389,7 +397,11 @@ def test_features_page_and_toggle_audit(dash):
 def test_calendar_page_uses_bot_service_snapshot_for_guild_data(dash, monkeypatch):
     import web.dashboard as dashboard_module
 
+    real_service = dashboard_module.get_bot_service()
     class SnapshotService:
+        def __getattr__(self, name):
+            return getattr(real_service, name)
+
         def dashboard_settings_snapshot(self, guild_id):
             assert guild_id == GID
             return {
@@ -414,7 +426,11 @@ def test_calendar_page_uses_bot_service_snapshot_for_guild_data(dash, monkeypatc
 def test_calendar_manager_role_update_uses_snapshot_and_owner_service(dash, monkeypatch):
     import web.dashboard as dashboard_module
 
+    real_service = dashboard_module.get_bot_service()
     class SnapshotService:
+        def __getattr__(self, name):
+            return getattr(real_service, name)
+
         def dashboard_settings_snapshot(self, guild_id):
             return {
                 "id": GID, "name": "Snapshot Guild", "owner_id": OWNER_ID,
@@ -594,7 +610,11 @@ def test_dashboard_failed_appeal_reversal_releases_claim(dash, monkeypatch):
 
     _submitted(dash, "failed-accept")
 
+    real_service = dashboard_module.get_bot_service()
     class FailedAppealService:
+        def __getattr__(self, name):
+            return getattr(real_service, name)
+
         def api_accept_appeal(self, *_args):
             return False, "Discord temporarily unavailable"
 
@@ -617,20 +637,16 @@ def test_dashboard_appeal_claim_prevents_concurrent_resolution(dash, monkeypatch
     dash.col.ban_appeals.update_one(
         {"token": token}, {"$set": {"status": "processing"}}
     )
+    service = dashboard_module.get_bot_service()
     monkeypatch.setattr(
-        dashboard_module, "get_ban_appeal",
+        service, "api_get_appeal",
         lambda _token: {**stale_appeal, "status": "submitted"},
     )
-    side_effects = []
-    monkeypatch.setattr(
-        dashboard_module, "run_coroutine",
-        lambda coroutine: side_effects.append(coroutine) or "unexpected",
-    )
+    monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: service)
 
     response = dash.client.post(dash.url(f"/appeals/{token}/{action}"))
     assert response.status_code == 302
     assert dash.col.ban_appeals.find_one({"token": token})["status"] == "processing"
-    assert side_effects == []
 
 
 @pytest.mark.parametrize("session_token, supplied_token", [
@@ -702,7 +718,11 @@ def test_dashboard_owner_guard_uses_bot_service(dash, monkeypatch, is_owner):
 def test_read_only_dashboard_pages_use_guild_name_service(dash, monkeypatch):
     import web.dashboard as dashboard_module
 
+    real_service = dashboard_module.get_bot_service()
     class GuildNameService:
+        def __getattr__(self, name):
+            return getattr(real_service, name)
+
         def guild_name(self, guild_id):
             assert guild_id == GID
             return "Service Guild Name"
@@ -717,7 +737,11 @@ def test_read_only_dashboard_pages_use_guild_name_service(dash, monkeypatch):
 def test_feature_and_template_marketplace_pages_use_guild_name_service(dash, monkeypatch):
     import web.dashboard as dashboard_module
 
+    real_service = dashboard_module.get_bot_service()
     class GuildNameService:
+        def __getattr__(self, name):
+            return getattr(real_service, name)
+
         def guild_name(self, guild_id):
             assert guild_id == GID
             return "Service Guild Name"
