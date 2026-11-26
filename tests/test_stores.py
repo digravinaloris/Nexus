@@ -248,6 +248,8 @@ def test_rest_sanction_query_helpers_are_guild_scoped_and_sorted(mongo_db):
     older = sanctions_store.log_sanction(1, 42, "warn", "older", 7)
     newer = sanctions_store.log_sanction(1, 43, "ban", "newer", 7)
     sanctions_store.log_sanction(2, 44, "warn", "other guild", 7)
+    mongo_db["sanctions"].update_one({"guild_id": "1", "case_id": older}, {"$set": {"timestamp": datetime.datetime.now(UTC) - datetime.timedelta(days=1)}})
+    mongo_db["sanctions"].update_one({"guild_id": "1", "case_id": newer}, {"$set": {"timestamp": datetime.datetime.now(UTC)}})
     assert sanctions_store.get_sanction_cases(1, limit=1)[0]["case_id"] == newer
     assert [c["case_id"] for c in sanctions_store.get_sanction_cases(1, "warn", 10)] == [older]
 
