@@ -120,18 +120,33 @@ class GitHubUpdates(commands.Cog):
         channel = guild.get_channel(int(channel_id)) if guild else None
         if channel is None or not isinstance(channel, discord.TextChannel):
             return False
-        await channel.send(
-            content=build_release_message(release),
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-        self.state().update_one(
-            {"_id": STATE_ID, "guild_id": str(guild_id)},
+
+        # Atomically claim this release before sending: webhook and polling can run
+        # concurrently, so a read-then-send-then-write check can double announce.
+        release_id = str(release["id"])
+        claim = self.state().update_one(
+            {"_id": STATE_ID, "guild_id": str(guild_id), "last_release_id": {"$ne": release_id}},
             {"$set": {
-                "last_release_id": str(release["id"]),
+                "last_release_id": release_id,
                 "last_release_tag": release["tag_name"],
                 "last_release_published_at": release.get("published_at"),
             }},
         )
+        if getattr(claim, "matched_count", 0) != 1:
+            return False
+
+        try:
+            await channel.send(
+                content=build_release_message(release),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except Exception:
+            # Release the claim only if it still belongs to this failed send.
+            self.state().update_one(
+                {"_id": STATE_ID, "guild_id": str(guild_id), "last_release_id": release_id},
+                {"$set": {"last_release_id": ""}},
+            )
+            raise
         return True
 
     async def poll_once(self):
