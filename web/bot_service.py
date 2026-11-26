@@ -117,6 +117,10 @@ class BotService:
         """Publish a calendar event through the bot runtime without exposing Discord objects."""
         raise NotImplementedError
 
+    def api_grant_verified(self, guild_id: str, user_id: str):
+        """Apply verification roles without exposing Discord guild/member objects to web routes."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
@@ -436,6 +440,16 @@ class InProcessBotService(BotService):
         except Exception as exc:
             print(f"[APPEAL] Failed to DM user: {exc}", flush=True)
         return True, None
+
+    def api_grant_verified(self, guild_id: str, user_id: str):
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return False, "Bot not ready"
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            return False, "Guild not found"
+        from verification import grant_verified
+        return run_coroutine(grant_verified(guild, user_id))
 
     def api_announce_calendar_event(self, guild_id: str, channel_id: str, event: Dict[str, object]):
         bot = core.bot
