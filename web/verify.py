@@ -6,9 +6,7 @@ main.py (bot -> `core.bot`).
 """
 from flask import make_response, render_template, request
 
-from audit import record_audit
-from verification import (MAX_ATTEMPTS, check_turnstile, get_valid_challenge, mark_used,
-                          record_failed_attempt, site_key, turnstile_configured)
+from verification import MAX_ATTEMPTS, check_turnstile, site_key, turnstile_configured
 from web.public import get_client_ip
 from web.bot_service import get_bot_service
 from web.routing import Routes
@@ -37,7 +35,7 @@ def _form(doc, status=200, error=None):
 def verify_page(token):
     if not turnstile_configured():
         return _message("Verification unavailable", "Web verification isn't enabled on this bot.", 503)
-    doc = get_valid_challenge(token)
+    doc = get_bot_service().verify_get_valid_challenge(token)
     if doc is None:
         return _message("Link expired", "This verification link is invalid, expired or already used. "
                                         "Go back to Discord and click the Verify button again.", 410)
@@ -48,7 +46,7 @@ def verify_page(token):
 def verify_submit(token):
     if not turnstile_configured():
         return _message("Verification unavailable", "Web verification isn't enabled on this bot.", 503)
-    doc = get_valid_challenge(token)
+    doc = get_bot_service().verify_get_valid_challenge(token)
     if doc is None:
         return _message("Link expired", "This verification link is invalid, expired or already used. "
                                         "Go back to Discord and click the Verify button again.", 410)
@@ -61,14 +59,14 @@ def verify_submit(token):
     if not ok:
         if reason == "service_unavailable":  # panne côté Cloudflare : pas la faute du membre
             return _form(doc, 503, "The verification service is unreachable. Please try again in a moment.")
-        attempts = record_failed_attempt(token)
+        attempts = get_bot_service().verify_record_failed_attempt(token)
         if attempts >= doc.get("max_attempts", MAX_ATTEMPTS):
             return _message("Too many attempts", "This link has been disabled. Go back to Discord and click "
                                                  "the Verify button again.", 410)
         doc["attempts"] = attempts
         return _form(doc, 400, "The check failed. Please try again.")
 
-    if not mark_used(token):  # deux requêtes simultanées : une seule passe
+    if not get_bot_service().verify_mark_used(token):  # deux requêtes simultanées : une seule passe
         return _message("Link expired", "This verification link was already used.", 410)
 
     try:
@@ -79,5 +77,5 @@ def verify_submit(token):
     if not granted:
         return _message("Verification failed", error, 500)
 
-    record_audit(doc["guild_id"], doc["user_id"], "Member (web verification)", "Verified via Cloudflare Turnstile")
+    get_bot_service().api_record_audit(doc["guild_id"], doc["user_id"], "Member (web verification)", "Verified via Cloudflare Turnstile")
     return _message("You're verified ✅", "You can close this tab and go back to Discord: the server is now unlocked.")

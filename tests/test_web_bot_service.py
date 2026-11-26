@@ -410,6 +410,23 @@ def test_set_guild_locked_fails_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().set_guild_locked("123", False) is False
 
 
+def test_verification_challenge_operations_are_exposed_by_bot_service(monkeypatch):
+    import web.bot_service as service_module
+
+    challenge = {"token": "verify-token", "guild_id": "123", "user_id": "456"}
+    calls = []
+    monkeypatch.setattr(service_module, "get_valid_challenge", lambda token: challenge if token == "verify-token" else None)
+    monkeypatch.setattr(service_module, "record_failed_attempt", lambda token: calls.append(("failed", token)) or 2)
+    monkeypatch.setattr(service_module, "mark_used", lambda token: calls.append(("used", token)) or True)
+
+    service = InProcessBotService()
+    assert service.verify_get_valid_challenge("verify-token") == challenge
+    assert service.verify_get_valid_challenge("invalid") is None
+    assert service.verify_record_failed_attempt("verify-token") == 2
+    assert service.verify_mark_used("verify-token") is True
+    assert calls == [("failed", "verify-token"), ("used", "verify-token")]
+
+
 def test_api_config_snapshot_and_updates_use_config_store(monkeypatch):
     import web.bot_service as service_module
 
