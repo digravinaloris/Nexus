@@ -408,3 +408,57 @@ def test_set_guild_locked_fails_when_bot_unavailable(monkeypatch):
     assert InProcessBotService().set_guild_locked("123", True) is False
     monkeypatch.setattr(core, "bot", None)
     assert InProcessBotService().set_guild_locked("123", False) is False
+
+
+def test_api_guild_stats_snapshot_serializes_guild_metrics(monkeypatch):
+    import asyncio
+    import web.bot_service as service_module
+
+    class Member:
+        def __init__(self, timed_out=False):
+            self.timed_out = timed_out
+
+        def is_timed_out(self):
+            return self.timed_out
+
+    class Guild:
+        id = 123
+        name = "Alpha"
+        member_count = 25
+        members = [Member(True), Member(False)]
+        locked_channels = []
+        channels = []
+
+        async def bans(self):
+            yield object()
+            yield object()
+
+        def get_channel(self, channel_id):
+            return None
+
+    guild = Guild()
+
+    class ReadyBot:
+        def is_ready(self):
+            return True
+
+        locked_guilds = {123}
+
+        def get_guild(self, gid):
+            return guild if gid == 123 else None
+
+    monkeypatch.setattr(core, "bot", ReadyBot())
+    monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
+    snapshot = InProcessBotService().api_guild_stats_snapshot("123")
+    assert snapshot == {
+        "guild_id": "123", "name": "Alpha", "member_count": 25,
+        "ban_count": 2, "muted_count": 1, "open_tickets_count": 0, "locked": True,
+    }
+    assert InProcessBotService().api_guild_stats_snapshot("456") == {}
+
+
+def test_api_guild_stats_snapshot_returns_none_when_bot_unavailable(monkeypatch):
+    monkeypatch.setattr(core, "bot", FakeBot(ready=False))
+    assert InProcessBotService().api_guild_stats_snapshot("123") is None
+    monkeypatch.setattr(core, "bot", None)
+    assert InProcessBotService().api_guild_stats_snapshot("123") is None
