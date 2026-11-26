@@ -24,7 +24,6 @@ from config_store import add_command_role, get_config, remove_command_role, upda
 from cogs.calendar import parse_event_datetime, make_embed, local_when, validate_timezone
 import core
 from core import col
-from discord_logging import log_dashboard_action
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from moderation_actions import _dm_user_appeal_result, reverse_sanction
@@ -235,7 +234,7 @@ def dash_features_page(guild_id):
                 parts.append("enabled: " + ", ".join(enabled_now))
             if disabled_now:
                 parts.append("disabled: " + ", ".join(disabled_now))
-            dash_log_action(guild, guild_id, "Updated feature toggles", " | ".join(parts))
+            dash_log_action(guild_id, "Updated feature toggles", " | ".join(parts))
         flash(t("flash_features_saved"))
         return redirect(url_for("dash_features_page", guild_id=guild_id))
 
@@ -273,7 +272,7 @@ def dash_calendar_page(guild_id):
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
             update_config(guild_id, "calendar_timezone", timezone_name)
             update_config(guild_id, "calendar_channel_id", channel_id)
-            dash_log_action(guild, guild_id, "Updated calendar settings", f"timezone={timezone_name}; channel={channel_id}")
+            dash_log_action(guild_id, "Updated calendar settings", f"timezone={timezone_name}; channel={channel_id}")
             flash("Calendar settings saved." if current_lang() == "en" else "Réglages du calendrier enregistrés.", "calendar")
         elif action == "create":
             title = request.form.get("title", "").strip()
@@ -303,7 +302,7 @@ def dash_calendar_page(guild_id):
             sent = False
             if str(target_id).isdigit():
                 sent, _error = get_bot_service().api_announce_calendar_event(guild_id, str(target_id), event)
-            dash_log_action(guild, guild_id, "Created calendar event", title)
+            dash_log_action(guild_id, "Created calendar event", title)
             flash(("Event created and announced." if sent else "Event saved; announcement could not be sent.") if current_lang() == "en"
                   else ("Événement créé et annoncé." if sent else "Événement enregistré, annonce non envoyée."), "calendar")
         elif action == "delete":
@@ -315,7 +314,7 @@ def dash_calendar_page(guild_id):
                 oid = None
             deleted = calendar_store.delete_event(guild_id, oid) if oid else False
             if deleted:
-                dash_log_action(guild, guild_id, "Deleted calendar event", raw_id)
+                dash_log_action(guild_id, "Deleted calendar event", raw_id)
                 flash("Event deleted." if current_lang() == "en" else "Événement supprimé.", "calendar")
             else:
                 flash("Event not found." if current_lang() == "en" else "Événement introuvable.", "error-calendar")
@@ -329,7 +328,7 @@ def dash_calendar_page(guild_id):
             if request.form.get("manager_action") == "remove": manager_ids.discard(str(role.id))
             else: manager_ids.add(str(role.id))
             update_config(guild_id, "calendar_manager_role_ids", sorted(manager_ids))
-            dash_log_action(guild, guild_id, "Updated calendar manager roles", role.name)
+            dash_log_action(guild_id, "Updated calendar manager roles", role.name)
             flash("Calendar manager roles saved." if current_lang() == "en" else "Rôles gestionnaires enregistrés.", "calendar")
         else:
             flash("Unknown action." if current_lang() == "en" else "Action inconnue.", "error-calendar")
@@ -431,7 +430,7 @@ def dash_settings_save(guild_id, section):
         if effective_old != value:
             changes.append(_describe_change(key, effective_old, value))
     if changes:
-        dash_log_action(guild, guild_id, f"Updated settings ({section})", "; ".join(changes)[:900])
+        dash_log_action(guild_id, f"Updated settings ({section})", "; ".join(changes)[:900])
     flash(t("flash_settings_saved"), section)
     return redirect(url_for("dash_settings_page", guild_id=guild_id) + f"#sec-{section}")
 
@@ -472,7 +471,7 @@ def dash_template_import(guild_id, code):
             if mapped_ids:
                 new_command_roles[command] = mapped_ids
         update_config(guild_id, "command_roles", new_command_roles)
-        dash_log_action(guild, guild_id, f"Imported template '{doc.get('name', doc['code'])}' from {doc['created_guild_name']}")
+        dash_log_action(guild_id, f"Imported template '{doc.get('name', doc['code'])}' from {doc['created_guild_name']}")
         flash("Template applied." if current_lang() == "en" else "Template appliqué.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -501,17 +500,18 @@ def dash_actor():
     return user.get("id"), name
 
 
-def dash_log_action(guild, guild_id, action, details=""):
-    """Enregistre une action dashboard dans l'audit log Mongo, et poste dans
-    le salon Discord si l'option log_dashboard_actions est activée."""
+def dash_log_action(guild_id, action, details=""):
+    """Record the dashboard audit event and delegate optional Discord logging."""
     actor_id, actor_name = dash_actor()
     record_audit(guild_id, actor_id, actor_name, action, details)
-    coro = log_dashboard_action(guild, actor_name, action, details)
-    if coro is not None:
-        try:
-            run_coroutine(coro)
-        except Exception as e:
-            print(f"[DASHLOG] Failed to send Discord log: {e}", flush=True)
+    try:
+        posted, error = get_bot_service().api_log_dashboard_action(
+            guild_id, actor_name, action, details
+        )
+        if not posted:
+            print(f"[DASHLOG] Failed to send Discord log: {error}", flush=True)
+    except Exception as e:
+        print(f"[DASHLOG] Failed to send Discord log: {e}", flush=True)
 
 
 def dash_owner_required(f):
@@ -575,7 +575,7 @@ def dash_guild_page(guild_id):
             changes.append(f"Discord logging of dashboard actions → {'on' if log_toggle else 'off'}")
 
         if changes:
-            dash_log_action(guild, guild_id, "Updated general config", "; ".join(changes))
+            dash_log_action(guild_id, "Updated general config", "; ".join(changes))
 
         flash("Configuration updated." if current_lang() == "en" else "Configuration mise à jour.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
@@ -648,7 +648,7 @@ def dash_automod(guild_id):
     clean = [int(rid) for rid in submitted if rid.isdigit() and int(rid) in valid_role_ids]
     update_config(guild_id, "allowed_roles", clean)
     role_names = ", ".join(f"@{r.name}" for r in guild.roles if r.id in clean) or "none"
-    dash_log_action(guild, guild_id, "Updated anti-raid exemptions", f"exempt roles: {role_names}")
+    dash_log_action(guild_id, "Updated anti-raid exemptions", f"exempt roles: {role_names}")
     flash("Anti-raid exemptions updated." if current_lang() == "en" else "Exemptions anti-raid mises à jour.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -668,7 +668,7 @@ def dash_permission_add(guild_id):
             for cmd in valid_commands:
                 add_command_role(guild_id, cmd, role.id)
             cmd_list = ", ".join(f"/{c}" for c in valid_commands)
-            dash_log_action(guild, guild_id, "Added command permissions", f"@{role.name}: {cmd_list}")
+            dash_log_action(guild_id, "Added command permissions", f"@{role.name}: {cmd_list}")
             if current_lang() == "en":
                 flash(f"{role.name} can now use {len(valid_commands)} command(s): {cmd_list}.")
             else:
@@ -708,7 +708,7 @@ def dash_permission_template(guild_id):
     if commands_list:
         for cmd in commands_list:
             add_command_role(guild_id, cmd, role.id)
-        dash_log_action(guild, guild_id, "Applied permission template", f"template « {label} » → @{role.name}")
+        dash_log_action(guild_id, "Applied permission template", f"template « {label} » → @{role.name}")
         if current_lang() == "en":
             flash(f"Template « {label} » applied to {role.name} ({len(commands_list)} commands).")
         else:
@@ -733,7 +733,7 @@ def dash_permission_remove(guild_id):
     if command and role_id.isdigit():
         remove_command_role(guild_id, command, int(role_id))
         role = guild.get_role(int(role_id)) if guild else None
-        dash_log_action(guild, guild_id, "Removed command permission", f"/{command} for {'@' + role.name if role else role_id}")
+        dash_log_action(guild_id, "Removed command permission", f"/{command} for {'@' + role.name if role else role_id}")
         flash(f"Permission removed for /{command}." if current_lang() == "en" else f"Permission retirée pour /{command}.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -743,10 +743,9 @@ def dash_permission_remove(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_apikey_regen(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
     new_key = secrets.token_hex(16)
     update_config(guild_id, "api_key", new_key)
-    dash_log_action(guild, guild_id, "Regenerated mobile API key")
+    dash_log_action(guild_id, "Regenerated mobile API key")
     flash("New API key generated — the old one no longer works." if current_lang() == "en" else "Nouvelle clé API générée — l'ancienne ne fonctionne plus.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -785,17 +784,16 @@ def dash_export_audit_pdf(guild_id):
 @dash_guild_admin_required
 @dash_owner_required
 def dash_toggle_lock(guild_id):
-    guild = core.bot.get_guild(int(guild_id))
     service = get_bot_service()
     currently_locked = service.api_health_snapshot(guild_id).get("locked", False)
     if not service.set_guild_locked(guild_id, not currently_locked):
         flash("Bot is unavailable; lock state was not changed." if current_lang() == "en" else "Le bot est indisponible ; le verrouillage n'a pas été modifié.", "error")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))
     if currently_locked:
-        dash_log_action(guild, guild_id, "Unlocked the bot")
+        dash_log_action(guild_id, "Unlocked the bot")
         flash("Bot unlocked." if current_lang() == "en" else "Bot déverrouillé.")
     else:
-        dash_log_action(guild, guild_id, "Locked the bot")
+        dash_log_action(guild_id, "Locked the bot")
         flash("Bot locked — only you can use its commands here." if current_lang() == "en" else "Bot verrouillé — seul toi peux utiliser ses commandes ici.")
     return redirect(url_for("dash_guild_page", guild_id=guild_id))
 
@@ -827,7 +825,6 @@ def dash_appeals_page(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_appeal_accept(guild_id, token):
-    guild = core.bot.get_guild(int(guild_id))
     appeal = get_ban_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         flash("This appeal is no longer available.")
@@ -857,7 +854,6 @@ def dash_appeal_accept(guild_id, token):
 @dash_login_required
 @dash_guild_admin_required
 def dash_appeal_deny(guild_id, token):
-    guild = core.bot.get_guild(int(guild_id))
     appeal = get_ban_appeal(token)
     if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
         flash("This appeal is no longer available.")
