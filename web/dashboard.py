@@ -34,6 +34,7 @@ from sanctions_store import (
 from template_ops import _apply_template_base_config
 from utils import normalize_banned_word, normalize_domain, parse_bounded_number, parse_lines_list
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
+from web.bot_service import get_bot_service
 from web.routing import Routes
 
 routes = Routes()
@@ -537,7 +538,7 @@ def dash_home():
     if admin_guilds is None:
         return redirect(url_for("dash_login"))
     # ne montre que les serveurs où l'utilisateur est admin ET où le bot est présent
-    bot_guild_ids = {str(g_.id) for g_ in core.bot.guilds} if core.bot.is_ready() else set()
+    bot_guild_ids = set(get_bot_service().available_guild_ids([g_["id"] for g_ in admin_guilds]))
     manageable = [g_ for g_ in admin_guilds if g_["id"] in bot_guild_ids]
     return render_template("dashboard_list.html", guilds=manageable, user=session.get("dash_user")
     )
