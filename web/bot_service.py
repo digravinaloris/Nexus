@@ -24,9 +24,20 @@ class BotService:
         """Return candidate guild IDs currently available to the connected bot."""
         raise NotImplementedError
 
+    def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
+        """Check ownership using the bot's current guild cache."""
+        raise NotImplementedError
+
 
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
+
+    def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return False
+        guild = bot.get_guild(int(guild_id))
+        return bool(guild is not None and str(guild.owner_id) == str(user_id))
 
     def available_guild_ids(self, candidate_ids: List[str]) -> List[str]:
         bot = core.bot
