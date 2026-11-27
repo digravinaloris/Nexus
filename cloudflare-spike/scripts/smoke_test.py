@@ -42,7 +42,7 @@ def main():
         raise AssertionError("Worker did not become healthy")
 
     status, setup = call("/__spike/setup", "POST", {})
-    require(status == 200 and setup.get("ready"), "D1 schema setup failed")
+    require(status == 200 and setup.get("ready"), f"D1 schema setup failed: {setup}")
 
     status, state = call("/__spike/state", "POST", {})
     require(status == 200 and isinstance(state.get("state"), str), "State creation failed")
