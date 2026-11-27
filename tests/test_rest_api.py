@@ -871,3 +871,39 @@ def test_broadcast_hides_internal_exception_details(env, monkeypatch):
     assert response.status_code == 500
     assert response.get_json() == {"error": "Internal server error"}
     assert b"database password leaked" not in response.data
+
+
+
+def test_unhandled_service_exception_returns_generic_api_error(env, monkeypatch):
+    import web.rest_api as rest_module
+
+    service = rest_module.get_bot_service()
+
+    def fail_faq_lookup(_guild_id):
+        raise RuntimeError("database password leaked")
+
+    monkeypatch.setattr(service, "api_faq_snapshot", fail_faq_lookup)
+    monkeypatch.setattr(rest_module, "get_bot_service", lambda: service)
+
+    response = env.client.get(url("/faq"), headers=MASTER)
+
+    assert response.status_code == 500
+    assert response.get_json() == {"error": "Internal server error"}
+    assert b"database password leaked" not in response.data
+
+
+def test_http_exceptions_keep_their_status_code(env, monkeypatch):
+    import web.rest_api as rest_module
+    from werkzeug.exceptions import BadRequest
+
+    service = rest_module.get_bot_service()
+
+    def reject_faq_lookup(_guild_id):
+        raise BadRequest("invalid request")
+
+    monkeypatch.setattr(service, "api_faq_snapshot", reject_faq_lookup)
+    monkeypatch.setattr(rest_module, "get_bot_service", lambda: service)
+
+    response = env.client.get(url("/faq"), headers=MASTER)
+
+    assert response.status_code == 400
