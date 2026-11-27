@@ -115,19 +115,40 @@ def create_internal_bot_service_blueprint(
         if (
             not isinstance(payload, dict)
             or set(payload) != {"method", "args", "kwargs"}
-            or payload.get("args") != []
+            or not isinstance(payload.get("kwargs"), dict)
             or payload.get("kwargs") != {}
+            or not isinstance(payload.get("args"), list)
         ):
             return jsonify({"error": "unsupported internal operation"}), 403
 
         method_name = payload.get("method")
+        args = payload["args"]
         if not isinstance(method_name, str):
             return jsonify({"error": "unsupported internal operation"}), 403
+
         operations = {
-            "health_snapshot": getattr(service, "health_snapshot", None),
-            "public_status_snapshot": getattr(service, "public_status_snapshot", None),
+            "health_snapshot": (getattr(service, "health_snapshot", None), []),
+            "public_status_snapshot": (getattr(service, "public_status_snapshot", None), []),
         }
-        operation = operations.get(method_name)
+        if method_name == "is_guild_owner":
+            valid_ids = (
+                len(args) == 2
+                and all(
+                    isinstance(value, str)
+                    and re.fullmatch(r"[0-9]{1,20}", value)
+                    for value in args
+                )
+            )
+            if not valid_ids:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, "is_guild_owner", None), args)
+        elif args != []:
+            return jsonify({"error": "unsupported internal operation"}), 403
+
+        operation_entry = operations.get(method_name)
+        if operation_entry is None:
+            return jsonify({"error": "unsupported internal operation"}), 403
+        operation, operation_args = operation_entry
         if not callable(operation):
             return jsonify({"error": "unsupported internal operation"}), 403
 
@@ -144,7 +165,9 @@ def create_internal_bot_service_blueprint(
             return jsonify({"error": "request already used"}), 409
 
         try:
-            result = operation()
+            result = operation(*operation_args)
+            if method_name == "is_guild_owner" and not isinstance(result, bool):
+                return jsonify({"error": "internal service unavailable"}), 503
             return jsonify({"ok": True, "result": result})
         except Exception:
             return jsonify({"error": "internal service unavailable"}), 503
