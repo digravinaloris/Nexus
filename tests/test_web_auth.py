@@ -3,7 +3,7 @@ from urllib.parse import parse_qs, urlparse
 
 import os
 
-# web.auth reads OAuth configuration at import time, before pytest fixtures run.
+# Provide default OAuth settings for the app factory used by this test module.
 os.environ.setdefault("DISCORD_CLIENT_ID", "test-client-id")
 os.environ.setdefault("DISCORD_CLIENT_SECRET", "test-client-secret")
 os.environ.setdefault("DISCORD_REDIRECT_URI", "http://localhost/callback")
@@ -18,8 +18,8 @@ def test_login_encodes_oauth_parameters_and_sets_state(env):
     location = urlparse(response.headers["Location"])
     query = parse_qs(location.query)
     assert location.netloc == "discord.com"
-    assert query["client_id"] == [auth.DASH_CLIENT_ID]
-    assert query["redirect_uri"] == [auth.DASH_REDIRECT_URI]
+    assert query["client_id"] == [env.nexus.api.config["DISCORD_CLIENT_ID"]]
+    assert query["redirect_uri"] == [env.nexus.api.config["DISCORD_REDIRECT_URI"]]
     assert query["scope"] == ["identify guilds"]
     assert len(query["state"][0]) >= 32
     assert query["code_challenge_method"] == ["S256"]
