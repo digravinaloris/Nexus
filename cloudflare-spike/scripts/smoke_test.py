@@ -343,6 +343,25 @@ def main():
         ],
         f"Signed text-channel snapshot failed: {fetch_channels}",
     )
+    status, fetch_roles = call(
+        "/__spike/fetch-client/api_roles_snapshot", "POST", {}
+    )
+    require(
+        status == 200
+        and fetch_roles.get("result") == [
+            {"id": "321", "name": "Moderator"},
+            {"id": "654", "name": "Member"},
+        ],
+        f"Signed role snapshot failed: {fetch_roles}",
+    )
+    status, invalid_roles = call(
+        "/__spike/fetch-client/api_roles_snapshot_invalid", "POST", {}
+    )
+    require(
+        status == 503
+        and invalid_roles.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted malformed role DTOs: {invalid_roles}",
+    )
     status, invalid_channels = call(
         "/__spike/fetch-client/api_text_channels_snapshot_invalid", "POST", {}
     )
