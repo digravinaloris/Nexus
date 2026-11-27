@@ -129,11 +129,11 @@ def mock_internal_bot_service():
     if isinstance(method, str) and method in results and args == []:
         return jsonify({"ok": True, "result": results[method]})
     if (
-        method == "is_guild_owner"
+        method in {"is_guild_owner", "is_guild_admin"}
         and len(args) == 2
         and all(isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) for value in args)
     ):
-        return jsonify({"ok": True, "result": args == ["123", "42"]})
+        return jsonify({"ok": True, "result": args[0] == "123" and args[1] in {"42", "43"}})
     return jsonify({"error": "unsupported operation"}), 403
 
 
@@ -156,6 +156,10 @@ def exercise_fetch_bot_service_client(method):
             result = client.is_guild_owner("123", "42")
         elif method == "is_guild_owner_denied":
             result = client.is_guild_owner("123", "43")
+        elif method == "is_guild_admin":
+            result = client.is_guild_admin("123", "43")
+        elif method == "is_guild_admin_denied":
+            result = client.is_guild_admin("123", "44")
         else:
             return jsonify({"error": "unsupported operation"}), 403
     except Exception as exc:
