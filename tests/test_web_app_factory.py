@@ -147,12 +147,14 @@ import builtins
 import sys
 
 real_import = builtins.__import__
-blocked = {"main", "discord", "pymongo"}
+blocked = {"main", "discord", "pymongo", "core", "bridge", "bson", "cogs", "audit", "audit_export"}
 
-def guarded_import(name, *args, **kwargs):
-    if name.split(".", 1)[0] in blocked:
+def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    # Relative imports such as click.core pass only "core" as the name;
+    # only block absolute imports of Nexus runtime modules.
+    if level == 0 and name.split(".", 1)[0] in blocked:
         raise AssertionError("web app factory imported forbidden runtime module: " + name)
-    return real_import(name, *args, **kwargs)
+    return real_import(name, globals, locals, fromlist, level)
 
 builtins.__import__ = guarded_import
 from web.app_factory import create_web_app
