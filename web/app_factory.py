@@ -21,6 +21,7 @@ from web.rest_api import bp as rest_api_bp
 def create_web_app(
     *,
     config: Optional[Mapping[str, object]] = None,
+    environ: Optional[Mapping[str, str]] = None,
     template_folder: Optional[str] = None,
     bot_service=None,
     internal_bot_service=None,
@@ -31,22 +32,24 @@ def create_web_app(
     """Build the existing Nexus web surface without importing or starting main.py.
 
     Bot-dependent work remains behind the BotService boundary and is performed
-    only when a request actually needs it.
+    only when a request actually needs it. Runtime settings may be supplied
+    through an explicit environment mapping or Flask config.
     """
+    runtime_env = os.environ if environ is None else environ
     root_dir = Path(__file__).resolve().parent.parent
     app = Flask(
         "",
-        template_folder=template_folder or str(root_dir / "templates"),
-    )
+        template_folder=template_folder or str(root_dir / "templates",
+    ))
     app.config.update(
-        SECRET_KEY=os.environ.get("FLASK_SECRET_KEY"),
+        SECRET_KEY=runtime_env.get("FLASK_SECRET_KEY"),
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        DISCORD_CLIENT_ID=os.environ.get("DISCORD_CLIENT_ID", ""),
-        DISCORD_CLIENT_SECRET=os.environ.get("DISCORD_CLIENT_SECRET", ""),
-        DISCORD_REDIRECT_URI=os.environ.get("DISCORD_REDIRECT_URI", ""),
-        API_KEY=os.environ.get("API_KEY"),
+        DISCORD_CLIENT_ID=runtime_env.get("DISCORD_CLIENT_ID", ""),
+        DISCORD_CLIENT_SECRET=runtime_env.get("DISCORD_CLIENT_SECRET", ""),
+        DISCORD_REDIRECT_URI=runtime_env.get("DISCORD_REDIRECT_URI", ""),
+        API_KEY=runtime_env.get("API_KEY"),
     )
     if config:
         app.config.update(config)
