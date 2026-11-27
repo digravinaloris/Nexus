@@ -24,7 +24,7 @@ def _python_files():
 
 def test_scan_finds_the_modules():
     names = {os.path.relpath(f, ROOT).replace(os.sep, "/") for f in _python_files()}
-    assert {"core.py", "audit.py", "web/rest_api.py", "bridge.py"} <= names
+    assert {"nexus_runtime/core.py", "core.py", "audit.py", "web/rest_api.py", "bridge.py"} <= names
 
 
 @pytest.mark.parametrize("path", _python_files(), ids=lambda p: os.path.relpath(p, ROOT))
