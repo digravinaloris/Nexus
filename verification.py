@@ -23,7 +23,7 @@ from pymongo import ReturnDocument
 from config_store import get_config
 from core import col
 from discord_logging import _send_log_embed
-from jsonlog import log_json
+from nexus_logging.jsonlog import log_json
 from sanctions_store import log_sanction
 from turnstile import TURNSTILE_VERIFY_URL, MAX_ATTEMPTS, check_turnstile, public_base_url, site_key, turnstile_configured, verification_url
 
