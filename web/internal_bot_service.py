@@ -139,6 +139,18 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "api_guild_stats_snapshot":
+            if (
+                len(args) not in {1, 2}
+                or not valid_guild_id(args[0])
+                or (
+                    len(args) == 2
+                    and args[1] is not None
+                    and not valid_guild_id(args[1])
+                )
+            ):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name in {
             "guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot"
         }:
@@ -235,6 +247,41 @@ def create_internal_bot_service_blueprint(
                 )
             ):
                 return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_guild_stats_snapshot" and result not in (None, {}):
+                count_fields = {
+                    "ban_count", "muted_count", "open_tickets_count",
+                    "warned_count", "warns_today",
+                }
+                expected_fields = {
+                    "guild_id", "name", "member_count", *count_fields,
+                    "activity_7d", "locked",
+                }
+                if (
+                    not isinstance(result, dict)
+                    or set(result) != expected_fields
+                    or not valid_guild_id(result.get("guild_id"))
+                    or not isinstance(result.get("name"), str)
+                    or not 1 <= len(result["name"]) <= 100
+                    or (
+                        result.get("member_count") is not None
+                        and (
+                            type(result["member_count"]) is not int
+                            or result["member_count"] < 0
+                        )
+                    )
+                    or any(
+                        type(result.get(field)) is not int or result[field] < 0
+                        for field in count_fields
+                    )
+                    or not isinstance(result.get("activity_7d"), list)
+                    or len(result["activity_7d"]) != 7
+                    or any(
+                        type(value) is not int or value < 0
+                        for value in result["activity_7d"]
+                    )
+                    or not isinstance(result.get("locked"), bool)
+                ):
+                    return jsonify({"error": "internal service unavailable"}), 503
             return jsonify({"ok": True, "result": result})
         except Exception:
             return jsonify({"error": "internal service unavailable"}), 503
