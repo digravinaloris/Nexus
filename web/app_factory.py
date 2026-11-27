@@ -23,6 +23,9 @@ def create_web_app(
     config: Optional[Mapping[str, object]] = None,
     template_folder: Optional[str] = None,
     bot_service=None,
+    internal_bot_service=None,
+    internal_bot_service_keyring=None,
+    internal_nonce_store=None,
 ) -> Flask:
     """Build the existing Nexus web surface without importing or starting main.py.
 
@@ -50,6 +53,26 @@ def create_web_app(
         raise RuntimeError("A Flask SECRET_KEY must be configured before creating the web app")
     if bot_service is not None:
         app.extensions["nexus_bot_service"] = bot_service
+
+    internal_options = (
+        internal_bot_service,
+        internal_bot_service_keyring,
+        internal_nonce_store,
+    )
+    if any(option is not None for option in internal_options):
+        if not all(option is not None for option in internal_options):
+            raise ValueError(
+                "Internal BotService registration requires a service, keyring, and nonce store"
+            )
+        from web.internal_bot_service import create_internal_bot_service_blueprint
+
+        app.register_blueprint(
+            create_internal_bot_service_blueprint(
+                service=internal_bot_service,
+                keyring=internal_bot_service_keyring,
+                nonce_store=internal_nonce_store,
+            )
+        )
 
     app.register_blueprint(rest_api_bp)
     web_auth.routes.register(app)
