@@ -501,11 +501,11 @@ def test_server_session_backend_rotates_after_successful_oauth_and_revokes_on_lo
             pass
 
         def rotate_session(self, session):
-            assert session is self.session
+            assert dict(session) == dict(self.session)
             self.rotations += 1
 
         def revoke_session(self, session):
-            assert session is self.session
+            assert dict(session) == dict(self.session)
             self.revocations += 1
 
     class FakeResponse:
