@@ -143,6 +143,11 @@ def create_internal_bot_service_blueprint(
             if not valid_ids:
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, "is_guild_owner", None), args)
+        elif method_name == "is_guild_admin":
+            valid_ids = len(args) == 2 and all(isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) for value in args)
+            if not valid_ids:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, "is_guild_admin", None), args)
         elif args != []:
             return jsonify({"error": "unsupported internal operation"}), 403
 
@@ -167,7 +172,7 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
-            if method_name == "is_guild_owner" and not isinstance(result, bool):
+            if method_name in {"is_guild_owner", "is_guild_admin"} and not isinstance(result, bool):
                 return jsonify({"error": "internal service unavailable"}), 503
             return jsonify({"ok": True, "result": result})
         except Exception:

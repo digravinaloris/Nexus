@@ -53,6 +53,10 @@ class FakeBotService:
         self.calls.append(("is_guild_owner", guild_id, user_id))
         return guild_id == "123" and user_id == "42"
 
+    def is_guild_admin(self, guild_id, user_id):
+        self.calls.append(("is_guild_admin", guild_id, user_id))
+        return guild_id == "123" and user_id in {"42", "43"}
+
 
 def _request_body(payload=None):
     if payload is None:
@@ -146,6 +150,22 @@ def test_signed_dispatch_rejects_invalid_guild_owner_arguments(args):
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 403
     assert service.calls == []
+
+
+def test_signed_dispatch_checks_guild_administrator_permission():
+    client, service = _client()
+    body = _request_body({"method": "is_guild_admin", "args": ["123", "43"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200 and response.get_json() == {"ok": True, "result": True}
+    assert service.calls == [("is_guild_admin", "123", "43")]
+
+
+def test_signed_dispatch_denies_non_administrator_member():
+    client, service = _client()
+    body = _request_body({"method": "is_guild_admin", "args": ["123", "44"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200 and response.get_json() == {"ok": True, "result": False}
+    assert service.calls == [("is_guild_admin", "123", "44")]
 
 
 def test_replayed_nonce_is_rejected_before_second_dispatch():
