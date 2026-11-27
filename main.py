@@ -39,7 +39,7 @@ from sanctions_store import (
     create_sanction_appeal, get_ban_appeal, get_ban_appeal_by_case,
     get_sanction_stats,
 )
-from audit import record_audit, build_sparkline_svg, get_audit_log
+from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
 )
@@ -52,7 +52,7 @@ from web.app_factory import create_web_app
 from security.verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
                           account_days_left, kick_pass, SETTINGS_LIMITS)
 from catalogs.commands import MODERATION_COMMANDS, COMMAND_TEMPLATES
-from audit_export import _get_audit_records, _build_audit_csv_bytes
+from audit_services.export import _get_audit_records, _build_audit_csv_bytes
 from services.template_ops import _apply_template_base_config
 from nexus_logging.jsonlog import log_json
 from welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
