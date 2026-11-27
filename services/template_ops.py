@@ -28,6 +28,37 @@ TEMPLATE_AUTOMOD_BOUNDS = {
 }
 
 
+
+def _build_template_snapshot(guild, cfg):
+    """Build the portable server configuration snapshot shared by Discord and web."""
+    feature_toggles = {
+        key: bool(cfg.get(meta["config_key"]))
+        for key, meta in FEATURE_TOGGLES.items()
+    }
+    automod = {
+        key: cfg.get(key)
+        for key in (
+            "banned_words", "banned_domains", "automod_spam_count",
+            "automod_spam_window", "automod_caps_ratio",
+            "automod_raid_count", "automod_raid_window",
+        )
+    }
+    command_roles_by_name = {}
+    for command, role_ids in cfg.get("command_roles", {}).items():
+        names = [
+            role.name
+            for role_id in role_ids
+            if (role := guild.get_role(int(role_id)))
+        ]
+        if names:
+            command_roles_by_name[command] = names
+    return {
+        "feature_toggles": feature_toggles,
+        "automod": automod,
+        "warn_escalation_enabled": cfg.get("warn_escalation_enabled", False),
+        "command_roles_by_name": command_roles_by_name,
+    }
+
 def _apply_template_base_config(guild_id, snapshot):
     """Apply only the portable, explicitly supported part of a template.
 
