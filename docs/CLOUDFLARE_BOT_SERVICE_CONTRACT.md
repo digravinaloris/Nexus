@@ -25,7 +25,7 @@ The Worker must not import `discord.py`, `main`, `core`, `bridge`, or any module
 
 ## Verified implementation progress (2026-11-27)
 
-The following PRs validate isolated building blocks only; they do not enable production traffic:
+The following PRs validate isolated building blocks. The internal endpoint remains disabled unless an operator explicitly enables its environment flag; none of these PRs deploys Cloudflare resources or changes production hosting configuration.
 
 - [#196](https://github.com/digravinaloris/Nexus/pull/196): Flask WSGI startup, local D1 prepared statements, concurrent one-time state consumption, session rotation and atomic batch rollback in the actual Python Workers runtime.
 - [#197](https://github.com/digravinaloris/Nexus/pull/197): Web Crypto SHA-256 and AES-256-GCM through Python FFI, including tamper, wrong-key and wrong-AAD rejection.
@@ -33,8 +33,14 @@ The following PRs validate isolated building blocks only; they do not enable pro
 - [#199](https://github.com/digravinaloris/Nexus/pull/199): versioned v1-to-v2 key rotation, key-version-bound AAD, idle/absolute expiry and immediate revocation.
 - [#200](https://github.com/digravinaloris/Nexus/pull/200): standalone `web.app_factory.create_web_app()`, importable without `main.py`, discord.py or PyMongo.
 - [#201](https://github.com/digravinaloris/Nexus/pull/201): app-scoped BotService injection while preserving the existing in-process fallback.
+- [#203](https://github.com/digravinaloris/Nexus/pull/203): versioned HMAC-SHA256 signing primitives with timestamp, body/path binding and key rotation.
+- [#204](https://github.com/digravinaloris/Nexus/pull/204): signed internal dispatch with durable Mongo nonce replay protection.
+- [#205](https://github.com/digravinaloris/Nexus/pull/205): explicit all-or-nothing app-factory registration for the internal endpoint.
+- [#206](https://github.com/digravinaloris/Nexus/pull/206): partial signed HTTP client for the read-only health snapshot.
+- [#207](https://github.com/digravinaloris/Nexus/pull/207): strict environment keyring parsing and disabled-by-default endpoint configuration in `main.py`.
+- [#208](https://github.com/digravinaloris/Nexus/pull/208): adds the read-only public status snapshot to the signed client and endpoint.
 
-Still not implemented: production OAuth server-side sessions, production key provisioning/rotation, the signed HTTP BotService client/server, complete route parity on Workers, and Cloudflare resource creation or deployment. The local spike uses disposable fixtures and a local D1 database only.
+Still not implemented: production OAuth server-side sessions, production HMAC key provisioning/rotation, full BotService method parity, complete route parity on Workers, and Cloudflare resource creation or deployment. The local D1 spike uses disposable fixtures and a local database only.
 
 ## Service API principles
 
@@ -51,13 +57,13 @@ Still not implemented: production OAuth server-side sessions, production key pro
 ## Current transport proof (2026-11-27)
 
 - PR #203 adds the versioned HMAC-SHA256 helper in `web.bot_service_signing`. The canonical message binds `NEXUS-BOT-SERVICE-V1`, key ID, POST method, path, timestamp, nonce and SHA-256 digest of the exact body. Headers are `X-Nexus-Key-Id`, `X-Nexus-Timestamp`, `X-Nexus-Nonce` and `X-Nexus-Signature`; timestamp skew is limited to 60 seconds and bodies to 1 MiB.
-- PR #204 adds an opt-in `POST /internal/v1/dispatch` blueprint factory, verifies signatures before parsing, and consumes the nonce before dispatch. `MongoNonceStore` uses a unique compound `(key_id, nonce)` index and a TTL index on `expires_at`.
-- PR #205 lets the Flask factory register that blueprint only when a service, keyring and nonce store are all explicitly injected; the current production `main.py` supplies none, so the endpoint remains absent.
-- The blueprint currently allows only read-only `health_snapshot` and `public_status_snapshot`. The factory supports explicit opt-in registration, but the production `main.py` supplies no service/keyring/nonce-store dependencies, so the route remains absent. No HMAC key is configured and no remote Worker client is active.
-- The partial `SignedHttpBotService` client now implements those two snapshots with exact-body HMAC signing, HTTPS-only origins, bounded request/response sizes, disabled redirects and fail-closed errors. It remains opt-in and is not wired into the production app or Worker.
-- The first signed HTTP client is being added as a deliberately partial adapter for `health_snapshot` only. It requires an HTTPS origin, signs the exact JSON body, disables redirects, applies a bounded timeout, and fails closed on non-200 or malformed responses. It is not yet wired into the production app or Cloudflare Worker.
+- PR #204 adds `POST /internal/v1/dispatch`, verifies signatures before parsing, and consumes the nonce before dispatch. `MongoNonceStore` uses a unique compound `(key_id, nonce)` index and a TTL index on `expires_at`.
+- PR #205 makes app-factory registration all-or-nothing: a service, keyring and nonce store must all be explicitly supplied.
+- PR #207 adds the opt-in `NEXUS_BOT_SERVICE_INTERNAL_ENABLED=true` gate and strict `NEXUS_BOT_SERVICE_HMAC_KEYS` parser. When enabled, `main.py` injects the in-process BotService and a lazy Mongo nonce store; missing or malformed key material fails startup closed. With the flag unset, the endpoint is not registered.
+- The endpoint allowlist currently exposes only the read-only `health_snapshot` and `public_status_snapshot` methods. Arbitrary method names and arguments are rejected.
+- PRs #206 and #208 add a partial `SignedHttpBotService` client for those two methods. It signs the exact JSON body, requires HTTPS origins, disables redirects, applies bounded timeouts and response sizes, and fails closed on non-200 or malformed responses. The client is not yet wired into the Cloudflare Worker.
 
-The signed endpoint must remain disabled until a separately reviewed configuration change supplies the keyring and registers the blueprint. Add methods only with explicit schemas, permission checks and idempotency rules; never dispatch arbitrary BotService method names.
+The endpoint remains disabled by default. Enabling it requires the explicit environment flag and a correctly provisioned keyring; no hosting environment or production secret has been changed in these PRs. Add methods only with explicit schemas, permission checks and idempotency rules; never dispatch arbitrary BotService method names.
 
 ## Proposed operation groups
 
