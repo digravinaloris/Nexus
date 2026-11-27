@@ -1,8 +1,8 @@
-"""web.verify -- page publique de vérification Cloudflare Turnstile (/verify/<jeton>).
+"""web.verify -- public Cloudflare Turnstile verification page.
 
-Le jeton de l'URL est l'unique credential : lié à un serveur + un membre, 10 minutes, usage unique,
-3 échecs maximum. Aucune session ni connexion Discord n'est nécessaire. Ce module n'importe JAMAIS
-main.py (bot -> `core.bot`).
+The URL token is the only credential: bound to a guild and member, valid for
+10 minutes, single-use, with at most three failed attempts. No Discord login
+or browser session is required.
 """
 from flask import current_app, make_response, render_template, request
 
@@ -14,10 +14,24 @@ from web.routing import Routes
 routes = Routes()
 
 
+def _turnstile_settings():
+    config = current_app.config
+    return (
+        config.get("TURNSTILE_SITE_KEY", site_key()),
+        config.get("TURNSTILE_SECRET_KEY"),
+        config.get("PUBLIC_BASE_URL"),
+    )
+
+
+def _turnstile_is_configured():
+    site, secret, base_url = _turnstile_settings()
+    return turnstile_configured(site, secret, base_url)
+
+
 def _page(template, status=200, **ctx):
     resp = make_response(render_template(template, **ctx), status)
-    resp.headers["Cache-Control"] = "no-store"        # la page contient un lien personnel
-    resp.headers["Referrer-Policy"] = "no-referrer"   # le jeton de l'URL ne part pas dans le Referer
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
     return resp
 
 
@@ -26,14 +40,15 @@ def _message(title, message, status=200):
 
 
 def _form(doc, status=200, error=None):
-    return _page("verify.html", status, site_key=site_key(), error=error,
+    site, _, _ = _turnstile_settings()
+    return _page("verify.html", status, site_key=site, error=error,
                  guild_name=get_bot_service().guild_name(doc["guild_id"]),
                  attempts_left=max(0, doc.get("max_attempts", MAX_ATTEMPTS) - doc.get("attempts", 0)))
 
 
 @routes.route("/verify/<token>", methods=["GET"])
 def verify_page(token):
-    if not turnstile_configured():
+    if not _turnstile_is_configured():
         return _message("Verification unavailable", "Web verification isn't enabled on this bot.", 503)
     doc = get_bot_service().verify_get_valid_challenge(token)
     if doc is None:
@@ -44,7 +59,7 @@ def verify_page(token):
 
 @routes.route("/verify/<token>", methods=["POST"])
 def verify_submit(token):
-    if not turnstile_configured():
+    if not _turnstile_is_configured():
         return _message("Verification unavailable", "Web verification isn't enabled on this bot.", 503)
     doc = get_bot_service().verify_get_valid_challenge(token)
     if doc is None:
@@ -52,16 +67,18 @@ def verify_submit(token):
                                         "Go back to Discord and click the Verify button again.", 410)
 
     response_token = request.form.get("cf-turnstile-response", "").strip()
-    if not response_token:  # widget pas encore résolu : on ne consomme pas d'essai
+    if not response_token:
         return _form(doc, 400, "Please complete the check before continuing.")
 
+    _, secret, _ = _turnstile_settings()
     ok, reason = check_turnstile(
         response_token,
         get_client_ip(),
         http_client=current_app.config.get("TURNSTILE_HTTP_CLIENT"),
+        secret_key=secret,
     )
     if not ok:
-        if reason == "service_unavailable":  # panne côté Cloudflare : pas la faute du membre
+        if reason == "service_unavailable":
             return _form(doc, 503, "The verification service is unreachable. Please try again in a moment.")
         attempts = get_bot_service().verify_record_failed_attempt(token)
         if attempts >= doc.get("max_attempts", MAX_ATTEMPTS):
@@ -70,7 +87,7 @@ def verify_submit(token):
         doc["attempts"] = attempts
         return _form(doc, 400, "The check failed. Please try again.")
 
-    if not get_bot_service().verify_mark_used(token):  # deux requêtes simultanées : une seule passe
+    if not get_bot_service().verify_mark_used(token):
         return _message("Link expired", "This verification link was already used.", 410)
 
     try:
