@@ -262,3 +262,60 @@ def test_guild_read_snapshots_reject_invalid_remote_dtos(method, result):
 
     with pytest.raises(BotServiceTransportError, match="invalid response"):
         getattr(_client(session), method)("123456789012345678")
+
+
+@pytest.mark.parametrize("method", ["api_text_channels_snapshot", "api_roles_snapshot"])
+def test_dashboard_collection_snapshots_send_signed_guild_scoped_requests(method):
+    result_value = [{"id": "123456789012345678", "name": "general"}]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result_value}))
+
+    result = getattr(_client(session), method)("123456789012345678")
+
+    assert result == result_value
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {
+        "method": method,
+        "args": ["123456789012345678"],
+        "kwargs": {},
+    }
+    verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+
+
+@pytest.mark.parametrize("method", ["api_text_channels_snapshot", "api_roles_snapshot"])
+def test_dashboard_collection_snapshots_allow_offline_none(method):
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": None}))
+    assert getattr(_client(session), method)("123456789012345678") is None
+
+
+@pytest.mark.parametrize("method", ["api_text_channels_snapshot", "api_roles_snapshot"])
+@pytest.mark.parametrize(
+    "result",
+    [
+        "not-a-list",
+        [{"id": "123456789012345678"}],
+        [{"id": "abc", "name": "general"}],
+        [{"id": "123456789012345678", "name": ""}],
+        [{"id": "123456789012345678", "name": "x" * 101}],
+        [{"id": "123456789012345678", "name": "general", "extra": True}],
+        [{"id": "123456789012345678", "name": "general"}] * 501,
+    ],
+)
+def test_dashboard_collection_snapshots_reject_malformed_dtos(method, result):
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        getattr(_client(session), method)("123456789012345678")
+
+
+@pytest.mark.parametrize("method", ["api_text_channels_snapshot", "api_roles_snapshot"])
+@pytest.mark.parametrize("guild_id", ["", "0", "-1", "abc", "1" * 21, 123])
+def test_dashboard_collection_snapshots_reject_invalid_guild_ids(method, guild_id):
+    session = FakeSession()
+    with pytest.raises(ValueError, match="guild ID"):
+        getattr(_client(session), method)(guild_id)
+    assert session.calls == []
