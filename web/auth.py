@@ -6,11 +6,9 @@ vient de `core.bot`). Les routes sont enregistrées sur l'app par main.py via
 `routes.register(api)` en gardant les noms d'endpoints d'origine (cf. web/routing.py).
 """
 from functools import wraps
-import base64
-import hashlib
 import math
-import os
 import re
+import os
 import secrets
 import time
 from urllib.parse import urlencode
@@ -18,6 +16,7 @@ from urllib.parse import urlencode
 from flask import jsonify, redirect, request, session, url_for
 import requests
 
+from web.oauth_utils import OAUTH_STATE_MAX_AGE, create_code_challenge, is_fresh_state_timestamp, is_valid_code_verifier, is_valid_oauth_code
 from web.bot_service import get_bot_service
 from web.routing import Routes
 
@@ -29,7 +28,6 @@ DASH_CLIENT_SECRET = os.environ["DISCORD_CLIENT_SECRET"]
 DASH_REDIRECT_URI = os.environ["DISCORD_REDIRECT_URI"]
 DISCORD_API_BASE = "https://discord.com/api"
 ADMINISTRATOR_PERM = 0x8
-OAUTH_STATE_MAX_AGE = 600
 GUILD_ID_RE = re.compile(r"^\d{17,20}$")  # valide un vrai snowflake Discord
 
 
@@ -131,9 +129,7 @@ def dash_guild_admin_required(f):
 def dash_login():
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
-    code_challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(code_verifier.encode("ascii")).digest()
-    ).rstrip(b"=").decode("ascii")
+    code_challenge = create_code_challenge(code_verifier)
     session["oauth_state"] = state
     session["oauth_state_created_at"] = time.time()
     session["oauth_code_verifier"] = code_verifier
@@ -165,17 +161,8 @@ def dash_callback():
     state_created_at = session.pop("oauth_state_created_at", None)
     code_verifier = session.pop("oauth_code_verifier", None)
     now = time.time()
-    state_is_fresh = (
-        not isinstance(state_created_at, bool)
-        and isinstance(state_created_at, (int, float))
-        and math.isfinite(state_created_at)
-        and -30 <= now - state_created_at <= OAUTH_STATE_MAX_AGE
-    )
-    verifier_is_valid = (
-        isinstance(code_verifier, str)
-        and 43 <= len(code_verifier) <= 128
-        and re.fullmatch(r"[A-Za-z0-9._~-]+", code_verifier) is not None
-    )
+    state_is_fresh = is_fresh_state_timestamp(state_created_at, now)
+    verifier_is_valid = is_valid_code_verifier(code_verifier)
     if (
         not isinstance(state, str)
         or not state
@@ -193,11 +180,7 @@ def dash_callback():
     if len(codes) != 1:
         return jsonify({"error": "Invalid code"}), 400
     code = codes[0]
-    if (
-        not isinstance(code, str)
-        or len(code) > 2048
-        or re.search(r"[\x00-\x20\x7f]", code) is not None
-    ):
+    if not is_valid_oauth_code(code):
         return jsonify({"error": "Invalid code"}), 400
 
     # Consume the one-time state and discard any pre-authentication session data.
