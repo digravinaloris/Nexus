@@ -233,7 +233,14 @@ def create_internal_bot_service_blueprint(
                 )
             ):
                 return jsonify({"error": "internal service unavailable"}), 503
-            if method_name == "api_health_snapshot" and not isinstance(result, dict):
+            if method_name == "api_health_snapshot" and (
+                not isinstance(result, dict)
+                or set(result) != {"online", "locked", "guild_count"}
+                or not isinstance(result["online"], bool)
+                or not isinstance(result["locked"], bool)
+                or type(result["guild_count"]) is not int
+                or result["guild_count"] < 0
+            ):
                 return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "api_guild_list_snapshot" and result is not None:
                 if (
