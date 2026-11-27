@@ -66,7 +66,7 @@ from security.verification import (turnstile_configured, create_challenge, verif
                           account_days_left, kick_pass, SETTINGS_LIMITS)
 from catalogs.commands import MODERATION_COMMANDS, COMMAND_TEMPLATES
 from audit_services.export import _get_audit_records, _build_audit_csv_bytes
-from services.template_ops import _apply_template_base_config
+from services.template_ops import _apply_template_base_config, _build_template_snapshot
 from nexus_logging.jsonlog import log_json
 from services.welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
 from services.server_backups import create_server_backup, restore_server_backup
@@ -2503,26 +2503,6 @@ template_transfer_group = app_commands.Group(
 )
 # Distinct de /config template (templates de permissions internes à CE serveur) --
 # celui-ci exporte/importe de la config ENTRE serveurs via un code partageable.
-
-
-def _build_template_snapshot(guild, cfg):
-    """Partagé par /template create (Discord) et la marketplace web."""
-    feature_toggles = {key: bool(cfg.get(meta["config_key"])) for key, meta in FEATURE_TOGGLES.items()}
-    automod = {k: cfg.get(k) for k in (
-        "banned_words", "banned_domains", "automod_spam_count", "automod_spam_window",
-        "automod_caps_ratio", "automod_raid_count", "automod_raid_window",
-    )}
-    command_roles_by_name = {}
-    for command, role_ids in cfg.get("command_roles", {}).items():
-        names = [role.name for rid in role_ids if (role := guild.get_role(int(rid)))]
-        if names:
-            command_roles_by_name[command] = names
-    return {
-        "feature_toggles": feature_toggles,
-        "automod": automod,
-        "warn_escalation_enabled": cfg.get("warn_escalation_enabled", False),
-        "command_roles_by_name": command_roles_by_name,
-    }
 
 
 @template_transfer_group.command(name="create", description="Snapshot this server's config into a shareable code — admin only")

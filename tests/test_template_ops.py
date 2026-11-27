@@ -67,3 +67,46 @@ def test_template_apply_rejects_out_of_range_automod_numbers(monkeypatch):
     })
 
     assert updates == [("warn_escalation_enabled", False)]
+
+
+
+def test_template_snapshot_builds_portable_settings_and_role_names(monkeypatch):
+    monkeypatch.setattr(template_ops, "FEATURE_TOGGLES", {
+        "tickets": {"config_key": "tickets_enabled"},
+        "antinuke": {"config_key": "antinuke_enabled"},
+    })
+
+    class Guild:
+        roles = {10: type("Role", (), {"name": "Moderators"})(), 11: None, 12: type("Role", (), {"name": "Helpers"})()}
+
+        def get_role(self, role_id):
+            return self.roles.get(role_id)
+
+    snapshot = template_ops._build_template_snapshot(Guild(), {
+        "tickets_enabled": True,
+        "antinuke_enabled": False,
+        "banned_words": ["spam"],
+        "automod_spam_count": 8,
+        "command_roles": {"ban": ["10", "11"], "kick": ["12"], "empty": ["999"]},
+        "warn_escalation_enabled": True,
+    })
+
+    assert snapshot["feature_toggles"] == {"tickets": True, "antinuke": False}
+    assert snapshot["automod"]["banned_words"] == ["spam"]
+    assert snapshot["automod"]["automod_spam_count"] == 8
+    assert snapshot["command_roles_by_name"] == {"ban": ["Moderators"], "kick": ["Helpers"]}
+    assert snapshot["warn_escalation_enabled"] is True
+
+
+def test_template_snapshot_uses_defaults_for_missing_values(monkeypatch):
+    monkeypatch.setattr(template_ops, "FEATURE_TOGGLES", {"tickets": {"config_key": "tickets_enabled"}})
+
+    class Guild:
+        def get_role(self, role_id):
+            return None
+
+    snapshot = template_ops._build_template_snapshot(Guild(), {})
+
+    assert snapshot["feature_toggles"] == {"tickets": False}
+    assert snapshot["warn_escalation_enabled"] is False
+    assert snapshot["command_roles_by_name"] == {}
