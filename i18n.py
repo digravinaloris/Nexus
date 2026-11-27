@@ -8,7 +8,7 @@ import yaml
 from flask import session
 
 
-TRANSLATIONS_DIR = os.path.dirname(os.path.abspath(__file__))
+TRANSLATIONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "locales")
 
 
 _FALLBACK_TRANSLATIONS = {
