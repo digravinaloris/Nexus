@@ -106,7 +106,7 @@ class CloudflareFetchBotService:
         )
         if method in {"health_snapshot", "public_status_snapshot", "api_guild_id_candidates"}:
             expected = dict if method != "api_guild_id_candidates" else list
-            if args != [] or expected_type is not expected:
+            if args != [] or expected_type != expected:
                 raise ValueError("Invalid snapshot BotService arguments")
         elif method in {"is_guild_owner", "is_guild_admin"}:
             if (
@@ -117,11 +117,11 @@ class CloudflareFetchBotService:
                 raise ValueError("Invalid guild owner check arguments")
         elif method in {"guild_presence", "guild_name"}:
             expected = dict if method == "guild_presence" else str
-            if expected_type is not expected or len(args) != 1 or not valid_id(args[0]):
+            if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid guild read arguments")
         elif method in {"api_health_snapshot", "api_guild_list_snapshot"}:
             expected = dict if method == "api_health_snapshot" else (list, type(None))
-            if expected_type is not expected or len(args) > 1 or (args and not valid_id(args[0])):
+            if expected_type != expected or len(args) > 1 or (args and not valid_id(args[0])):
                 raise ValueError("Invalid API snapshot arguments")
         elif method == "available_guild_ids":
             if (
