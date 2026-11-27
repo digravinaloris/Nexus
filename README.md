@@ -36,6 +36,7 @@ Nexus works across multiple servers — each has its own independent configurati
 
 ## Documentation
 
+- [Project structure](docs/PROJECT_STRUCTURE.md)
 - [Changelog](docs/releases/CHANGELOG.md)
 - [Privacy policy](PRIVACY.md)
 - [Terms of service](TERMS.md)
