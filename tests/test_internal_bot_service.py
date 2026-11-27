@@ -1,5 +1,7 @@
 import json
 import time
+
+import pytest
 from threading import Lock
 
 from flask import Flask
@@ -143,6 +145,15 @@ def test_invalid_signature_and_expired_timestamp_are_rejected():
 def test_only_allowlisted_read_method_is_dispatchable():
     client, service = _client()
     body = _request_body({"method": "ban_member", "args": [], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+@pytest.mark.parametrize("method", [["health_snapshot"], {"name": "health_snapshot"}, None])
+def test_non_string_operation_names_are_rejected(method):
+    client, service = _client()
+    body = _request_body({"method": method, "args": [], "kwargs": {}})
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 403
     assert service.calls == []
