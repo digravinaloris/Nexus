@@ -59,7 +59,7 @@ OAuth session storage is a Worker/web-runtime responsibility; it must not be hid
 - The browser receives only a cryptographically random opaque session ID (at least 256 bits of entropy). Store a SHA-256 digest of that ID as the session record key; never store the raw cookie value.
 - The cookie is host-only, Secure, HttpOnly, SameSite=Lax, and Path=/. Do not set a broad parent-domain cookie unless a tested cross-subdomain requirement exists.
 - The durable record contains the minimum server-side session state: encrypted Discord access token, token expiry, validated Discord user identity, CSRF secret, creation/last-seen timestamps, and absolute/idle expiry.
-- Encrypt bearer credentials at the application layer with authenticated encryption (for example AES-GCM) using a dedicated secret unavailable to browsers and separate from Flask's signing key. Bind the session ID and record version as authenticated associated data. Never log plaintext tokens or ciphertext payloads.
+- Encrypt bearer credentials at the application layer with authenticated encryption (for example AES-GCM) using a dedicated secret unavailable to browsers and separate from Flask's signing key. Prefer the Workers Web Crypto runtime API through Python Workers' FFI rather than assuming a native Python crypto wheel is compatible. Bind the session ID and record version as authenticated associated data. Never log plaintext tokens or ciphertext payloads.
 - OAuth state and PKCE verifier must also be server-side, single-use, short-lived, and bound to the pre-authentication session. Consume them atomically before accepting the callback.
 - On successful OAuth callback, issue a new opaque session ID and atomically invalidate the pre-authentication ID. This is the session-rotation boundary; merely calling session.clear() on a client-side cookie is not server-side revocation.
 - Logout, Discord 401 responses, account/session invalidation, and expiry must revoke/delete the server-side record. Cookie deletion alone is not sufficient.
@@ -71,12 +71,12 @@ Do not use process memory or Cloudflare Workers KV as the authoritative session 
 
 | Candidate | Strength | Risk / validation required |
 |---|---|---|
-| Cloudflare D1 | Durable SQL records, indexed lookup, transactional updates for state consumption and rotation | Prove D1 binding access from the selected Python Worker/Flask adapter; define migrations, transaction behavior, backup/restore and cleanup. |
+| Cloudflare D1 | Durable SQL records, indexed lookup, transactional updates for state consumption and rotation; Python Workers expose D1 bindings through the runtime FFI | Verify transaction semantics and integration with the selected Flask adapter; define migrations, backup/restore and cleanup. |
 | Durable Objects | Per-session strongly coordinated state and transactional storage | Validate Python Worker integration, object lifecycle, per-session routing, cost and operational complexity. |
 | Existing MongoDB through bot service | Reuses the current durable database | Couples web login availability to the bot-service network/API and expands the bot service's trust boundary; not the default choice. |
 | Workers KV | Simple global key/value API | Eventual consistency makes it unsuitable as the authority for immediate logout/revocation and atomic one-time state consumption. |
 
-D1 is the first candidate to validate, not an approved implementation choice. Select a backend only after a minimal compatibility spike demonstrates atomic create/consume/rotate/revoke behavior from the actual Worker runtime. If D1 cannot meet that contract, evaluate Durable Objects before considering bot-service-backed storage.
+D1 is the leading candidate: Cloudflare documents direct D1 binding access from Python Workers. This confirms API availability, not that the planned Flask adapter or all required atomic workflows are already proven. Select it only after a minimal compatibility spike demonstrates atomic create/consume/rotate/revoke behavior from the actual Worker runtime. If D1 cannot meet that contract, evaluate Durable Objects before considering bot-service-backed storage. References: https://developers.cloudflare.com/d1/examples/query-d1-from-python-workers/ and https://developers.cloudflare.com/workers/languages/python/ffi/.
 
 ### Required session tests
 
