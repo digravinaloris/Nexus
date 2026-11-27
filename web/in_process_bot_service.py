@@ -21,12 +21,12 @@ from config_store import add_command_role, get_config, get_global_lock, remove_c
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
 from audit_export import _get_audit_records
-from bridge import run_coroutine
-from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
+from services.bridge import run_coroutine
+from services.discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_dashboard_warning_counts, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns, submit_ban_appeal
 import utils
-from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
-from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
+from services.moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
+from services.owner_notify import notify_owner_bruteforce, notify_owner_killswitch
 from web.bot_service import BotService
 
 
