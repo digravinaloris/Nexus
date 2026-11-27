@@ -17,6 +17,14 @@ TEMPLATE_AUTOMOD_KEYS = frozenset({
     "automod_raid_window",
 })
 
+TEMPLATE_AUTOMOD_BOUNDS = {
+    "automod_spam_count": (1, 1000),
+    "automod_spam_window": (1, 3600),
+    "automod_caps_ratio": (0.1, 1),
+    "automod_raid_count": (2, 1000),
+    "automod_raid_window": (2, 3600),
+}
+
 
 def _apply_template_base_config(guild_id, snapshot):
     """Apply only the portable, explicitly supported part of a template.
@@ -41,8 +49,15 @@ def _apply_template_base_config(guild_id, snapshot):
             if key in {"banned_words", "banned_domains"}:
                 if isinstance(value, list) and all(isinstance(item, str) for item in value):
                     update_config(guild_id, key, value)
-            elif isinstance(value, (int, float)) and not isinstance(value, bool):
-                update_config(guild_id, key, value)
+            elif key in TEMPLATE_AUTOMOD_BOUNDS:
+                minimum, maximum = TEMPLATE_AUTOMOD_BOUNDS[key]
+                if (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and math.isfinite(value)
+                    and minimum <= value <= maximum
+                ):
+                    update_config(guild_id, key, value)
 
     warn_escalation_enabled = snapshot.get("warn_escalation_enabled", False)
     if isinstance(warn_escalation_enabled, bool):
