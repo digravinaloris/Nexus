@@ -280,6 +280,20 @@ def test_invalid_user_snowflakes_are_rejected(env):
         assert response.get_json() == {"error": "Invalid user_id"}
 
 
+def test_oversized_api_key_is_rejected_before_guild_lookup(env, monkeypatch):
+    import web.rest_api as rest_module
+
+    def unexpected_lookup():
+        raise AssertionError("oversized API key reached guild key lookup")
+
+    monkeypatch.setattr(rest_module, "get_bot_service", unexpected_lookup)
+    response = env.client.get(
+        url("/features"), headers={"X-API-Key": "x" * 513}
+    )
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized"}
+
+
 def test_wrong_key_is_401(env):
     resp = env.client.get("/api/health", headers={"X-API-Key": "nope"})
     assert resp.status_code == 401
