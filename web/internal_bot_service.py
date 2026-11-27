@@ -139,7 +139,9 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
-        elif method_name in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot"}:
+        elif method_name in {
+            "guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot"
+        }:
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
