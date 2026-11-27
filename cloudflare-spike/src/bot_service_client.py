@@ -139,6 +139,18 @@ class CloudflareFetchBotService:
                 or not valid_id(args[0])
             ):
                 raise ValueError("Invalid guild collection snapshot arguments")
+        elif method == "api_guild_stats_snapshot":
+            if (
+                expected_type != (dict, type(None))
+                or len(args) not in {1, 2}
+                or not valid_id(args[0])
+                or (
+                    len(args) == 2
+                    and args[1] is not None
+                    and not valid_id(args[1])
+                )
+            ):
+                raise ValueError("Invalid guild stats snapshot arguments")
         else:
             raise ValueError("Unsupported internal BotService operation")
 
@@ -233,6 +245,43 @@ class CloudflareFetchBotService:
             raise CloudflareBotServiceError(
                 "Internal BotService returned invalid guild collection"
             )
+        if method == "api_guild_stats_snapshot" and result not in (None, {}):
+            count_fields = {
+                "ban_count", "muted_count", "open_tickets_count",
+                "warned_count", "warns_today",
+            }
+            expected_fields = {
+                "guild_id", "name", "member_count", *count_fields,
+                "activity_7d", "locked",
+            }
+            if (
+                not isinstance(result, dict)
+                or set(result) != expected_fields
+                or not valid_id(result.get("guild_id"))
+                or not isinstance(result.get("name"), str)
+                or not 1 <= len(result["name"]) <= 100
+                or (
+                    result.get("member_count") is not None
+                    and (
+                        type(result["member_count"]) is not int
+                        or result["member_count"] < 0
+                    )
+                )
+                or any(
+                    type(result.get(field)) is not int or result[field] < 0
+                    for field in count_fields
+                )
+                or not isinstance(result.get("activity_7d"), list)
+                or len(result["activity_7d"]) != 7
+                or any(
+                    type(value) is not int or value < 0
+                    for value in result["activity_7d"]
+                )
+                or not isinstance(result.get("locked"), bool)
+            ):
+                raise CloudflareBotServiceError(
+                    "Internal BotService returned invalid guild stats"
+                )
         return result
 
     def _dispatch_snapshot(self, method: str) -> dict:
@@ -275,3 +324,9 @@ class CloudflareFetchBotService:
 
     def api_roles_snapshot(self, guild_id: str) -> list | None:
         return self._dispatch("api_roles_snapshot", [guild_id], (list, type(None)))
+
+    def api_guild_stats_snapshot(
+        self, guild_id: str, ticket_category_id: str | None = None
+    ) -> dict | None:
+        args = [guild_id] if ticket_category_id is None else [guild_id, ticket_category_id]
+        return self._dispatch("api_guild_stats_snapshot", args, (dict, type(None)))
