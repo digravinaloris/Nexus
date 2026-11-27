@@ -119,11 +119,14 @@ def create_internal_bot_service_blueprint(
         ):
             return jsonify({"error": "unsupported internal operation"}), 403
 
+        method_name = payload.get("method")
+        if not isinstance(method_name, str):
+            return jsonify({"error": "unsupported internal operation"}), 403
         operations = {
             "health_snapshot": getattr(service, "health_snapshot", None),
             "public_status_snapshot": getattr(service, "public_status_snapshot", None),
         }
-        operation = operations.get(payload.get("method"))
+        operation = operations.get(method_name)
         if not callable(operation):
             return jsonify({"error": "unsupported internal operation"}), 403
 
