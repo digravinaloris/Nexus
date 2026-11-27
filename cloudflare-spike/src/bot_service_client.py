@@ -326,7 +326,9 @@ class CloudflareFetchBotService:
         return self._dispatch("api_roles_snapshot", [guild_id], (list, type(None)))
 
     def api_guild_stats_snapshot(
-        self, guild_id: str, ticket_category_id: str | None = None
+        self, guild_id: str, ticket_category_id: str | int | None = None
     ) -> dict | None:
+        if type(ticket_category_id) is int and ticket_category_id > 0:
+            ticket_category_id = str(ticket_category_id)
         args = [guild_id] if ticket_category_id is None else [guild_id, ticket_category_id]
         return self._dispatch("api_guild_stats_snapshot", args, (dict, type(None)))
