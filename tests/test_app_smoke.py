@@ -191,6 +191,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     from services import pagination
     from services import ticket_survey
     from services import ticket_helpers
+    from services import ticket_transcripts
     from services import server_backups
 
     for mod, names in {
@@ -237,6 +238,8 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     assert nexus._find_ticket_panel is ticket_helpers._find_ticket_panel
     assert nexus._ticket_topic_update is ticket_helpers._ticket_topic_update
     assert nexus.TICKET_PRIORITIES is ticket_helpers.TICKET_PRIORITIES
+    assert nexus._render_ticket_transcript is ticket_transcripts._render_ticket_transcript
+    assert nexus._generate_ticket_transcript is ticket_transcripts._generate_ticket_transcript
     assert nexus.is_automod_exempt is automod_checks.is_automod_exempt
     assert nexus.check_spam is automod_checks.check_spam
     assert nexus.check_raid is automod_checks.check_raid
