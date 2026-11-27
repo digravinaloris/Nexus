@@ -151,10 +151,15 @@ class D1SessionInterface(SessionInterface):
 
         try:
             key_version = int(self._row_value(row, "key_version"))
+            key = self._key_getter(key_version)
+        except Exception:
+            return self._new_session(unavailable=True)
+
+        try:
             ciphertext = bytes.fromhex(self._row_value(row, "ciphertext_hex"))
             nonce = bytes.fromhex(self._row_value(row, "nonce_hex"))
             plaintext = aes_gcm_decrypt(
-                self._key_getter(key_version),
+                key,
                 nonce,
                 ciphertext,
                 self._aad(session_hash, key_version),
@@ -307,11 +312,11 @@ class D1SessionInterface(SessionInterface):
         new_hash = self._digest(new_sid)
         now = int(time.time())
         expires_at = now + self.absolute_timeout
-        session_hash, ciphertext_hex, nonce_hex, key_version = self._encrypt(
-            new_sid, dict(session)
-        )
-        db = self._db_getter()
         try:
+            session_hash, ciphertext_hex, nonce_hex, key_version = self._encrypt(
+                new_sid, dict(session)
+            )
+            db = self._db_getter()
             self._awaiter(
                 db.batch(
                     [
