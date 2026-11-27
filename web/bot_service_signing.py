@@ -7,6 +7,7 @@ caller must atomically consume the returned (key_id, nonce) claim before dispatc
 from __future__ import annotations
 
 import hashlib
+import json
 import hmac
 import re
 import secrets
@@ -67,6 +68,33 @@ def _validate_body(body: bytes) -> bytes:
         raise BotServiceAuthError("Invalid internal service authentication")
     return body
 
+
+
+def parse_hmac_keyring(raw: str) -> dict[str, bytes]:
+    """Parse a JSON object of key IDs to hex-encoded 256-bit-or-stronger secrets."""
+    if not isinstance(raw, str) or not raw:
+        raise ValueError("BotService HMAC keyring is required")
+    try:
+        values = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("BotService HMAC keyring must be valid JSON") from exc
+    if not isinstance(values, dict) or not 1 <= len(values) <= 2:
+        raise ValueError("BotService HMAC keyring must contain one or two keys")
+
+    keyring: dict[str, bytes] = {}
+    for key_id, encoded_secret in values.items():
+        if not isinstance(key_id, str) or not _KEY_ID_RE.fullmatch(key_id):
+            raise ValueError("BotService HMAC keyring contains an invalid key ID")
+        if (
+            not isinstance(encoded_secret, str)
+            or not re.fullmatch(r"(?:[a-fA-F0-9]{2}){32,}", encoded_secret)
+        ):
+            raise ValueError("BotService HMAC keyring contains an invalid secret")
+        try:
+            keyring[key_id] = _validate_secret(bytes.fromhex(encoded_secret))
+        except ValueError as exc:
+            raise ValueError("BotService HMAC keyring contains an invalid secret") from exc
+    return keyring
 
 def _canonical_message(
     key_id: str,
