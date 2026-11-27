@@ -56,6 +56,8 @@ def _api_key_matches(provided, expected):
     return (
         isinstance(provided, str)
         and isinstance(expected, str)
+        and provided.isascii()
+        and expected.isascii()
         and 0 < len(provided) <= MAX_API_KEY_LENGTH
         and 0 < len(expected) <= MAX_API_KEY_LENGTH
         and secrets.compare_digest(provided, expected)
