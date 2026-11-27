@@ -319,3 +319,99 @@ def test_dashboard_collection_snapshots_reject_invalid_guild_ids(method, guild_i
     with pytest.raises(ValueError, match="guild ID"):
         getattr(_client(session), method)(guild_id)
     assert session.calls == []
+
+
+def test_remote_faq_snapshot_sends_signed_guild_scoped_request():
+    result_value = {
+        "enabled": True,
+        "entries": [{"id": "faq_1", "keywords": ["help", "support"], "response": "Open a ticket."}],
+    }
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result_value}))
+    assert _client(session).api_faq_snapshot("123456789012345678") == result_value
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {
+        "method": "api_faq_snapshot",
+        "args": ["123456789012345678"],
+        "kwargs": {},
+    }
+    verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+
+
+def test_remote_faq_snapshot_allows_missing_guild_data():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": None}))
+    assert _client(session).api_faq_snapshot("123456789012345678") is None
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        [],
+        {"enabled": 1, "entries": []},
+        {"enabled": True, "entries": "bad"},
+        {"enabled": True, "entries": [{"id": "bad id", "keywords": ["help"], "response": "ok"}]},
+        {"enabled": True, "entries": [{"id": "faq", "keywords": [], "response": "ok"}]},
+        {"enabled": True, "entries": [{"id": "faq", "keywords": ["help"], "response": ""}]},
+        {"enabled": True, "entries": [{"id": "faq", "keywords": ["x" * 101], "response": "ok"}]},
+    ],
+)
+def test_remote_faq_snapshot_rejects_malformed_dtos(result):
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(session).api_faq_snapshot("123456789012345678")
+
+
+def test_remote_members_snapshot_sends_signed_guild_scoped_request():
+    result_value = [{
+        "id": "123456789012345678",
+        "name": "Example User",
+        "username": "example",
+        "avatar_url": "https://cdn.discordapp.com/avatars/123456789012345678/hash.png",
+        "is_muted": False,
+    }]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result_value}))
+    assert _client(session).api_members_snapshot("123456789012345678") == result_value
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {
+        "method": "api_members_snapshot",
+        "args": ["123456789012345678"],
+        "kwargs": {},
+    }
+    verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {},
+        [{"id": "abc", "name": "Name", "username": "user", "avatar_url": "https://cdn.discordapp.com/a", "is_muted": False}],
+        [{"id": "123", "name": "Name", "username": "user", "avatar_url": "http://cdn.discordapp.com/a", "is_muted": False}],
+        [{"id": "123", "name": "Name", "username": "user", "avatar_url": "https://evil.example/a", "is_muted": False}],
+        [{"id": "123", "name": "Name", "username": "user", "avatar_url": "https://cdn.discordapp.com/a", "is_muted": 0}],
+        [{"id": "123", "name": "Name", "username": "user", "avatar_url": "https://cdn.discordapp.com/a", "is_muted": False, "extra": True}],
+    ],
+)
+def test_remote_members_snapshot_rejects_malformed_dtos(result):
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(session).api_members_snapshot("123456789012345678")
+
+
+@pytest.mark.parametrize("method", ["api_faq_snapshot", "api_members_snapshot"])
+@pytest.mark.parametrize("guild_id", ["", "0", "-1", "abc", "1" * 21, 123])
+def test_faq_and_member_snapshots_reject_invalid_guild_ids(method, guild_id):
+    session = FakeSession()
+    with pytest.raises(ValueError, match="guild ID"):
+        getattr(_client(session), method)(guild_id)
+    assert session.calls == []
