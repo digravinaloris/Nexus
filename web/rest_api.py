@@ -7,11 +7,10 @@ module s'appelle `__main__`, l'importer le rechargerait avec un 2e bot) : le
 bot vient de `core.bot`, la base de `core.col`.
 """
 import logging
-import os
 import secrets
 from functools import wraps
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 from web.bot_service import get_bot_service
@@ -30,7 +29,6 @@ def handle_unexpected_api_error(error):
     return jsonify({"error": "Internal server error"}), 500
 
 
-API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à définir sur Render
 MAX_API_KEY_LENGTH = 512
 MAX_API_REQUEST_BYTES = 1024 * 1024
 
@@ -106,7 +104,8 @@ def require_api_key(f):
             value = kwargs.get(parameter)
             if value is not None and not _is_valid_snowflake(value):
                 return jsonify({"error": f"Invalid {parameter}"}), 400
-        if API_KEY and _api_key_matches(key, API_KEY):
+        master_api_key = current_app.config.get("API_KEY")
+        if master_api_key and _api_key_matches(key, master_api_key):
             g.auth_guild_id = None
             return _invoke_authorized(f, args, kwargs)
         guild_id = kwargs.get("guild_id")
