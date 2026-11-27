@@ -1,0 +1,14 @@
+[project]
+name = "nexus-cloudflare-spike"
+version = "0.1.0"
+description = "Isolated local compatibility spike for Nexus on Cloudflare Python Workers"
+requires-python = ">=3.12"
+dependencies = [
+    "flask",
+]
+
+[dependency-groups]
+dev = [
+    "workers-py",
+    "workers-runtime-sdk",
+]
