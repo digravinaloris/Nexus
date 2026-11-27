@@ -6,7 +6,7 @@ or browser session is required.
 """
 from flask import current_app, make_response, render_template, request
 
-from turnstile import MAX_ATTEMPTS, check_turnstile, turnstile_configured
+from security.turnstile import MAX_ATTEMPTS, check_turnstile, turnstile_configured
 from web.public import get_client_ip
 from web.bot_service import get_bot_service
 from web.routing import Routes
