@@ -181,6 +181,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     import i18n
     import sanctions_store
     from stores import reaction_roles_store, sticky_store
+    from services import automod_checks
     from services import server_backups
 
     for mod, names in {
@@ -208,6 +209,14 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     assert nexus.delete_reaction_roles is reaction_roles_store.delete_reaction_roles
     for name in ("get_sanction_history", "save_tempban", "remove_tempban", "get_active_tempbans"):
         assert getattr(nexus, name) is getattr(sanctions_store, name)
+
+    assert nexus.is_automod_exempt is automod_checks.is_automod_exempt
+    assert nexus.check_spam is automod_checks.check_spam
+    assert nexus.check_raid is automod_checks.check_raid
+    assert nexus.record_join_name_and_check_pattern is automod_checks.record_join_name_and_check_pattern
+    assert nexus.check_media_flood is automod_checks.check_media_flood
+    assert nexus.check_channel_burst is automod_checks.check_channel_burst
+    assert nexus.check_invite_link is automod_checks.check_invite_link
 
     # core.bot doit être branché dès l'import (get_audit_log en dépend)
     assert core.bot is nexus.bot
