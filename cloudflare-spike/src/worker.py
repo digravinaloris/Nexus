@@ -66,7 +66,7 @@ def mock_internal_bot_service():
     ):
         return jsonify({"error": "unauthorized"}), 401
 
-    canonical = "\\n".join(
+    canonical = "\n".join(
         (
             "NEXUS-BOT-SERVICE-V1",
             key_id,
