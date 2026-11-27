@@ -214,8 +214,7 @@ def update_guild_config(guild_id):
         if not valid:
             return jsonify({"error": f"Invalid {key}"}), 400
 
-    for key, value in updates.items():
-        get_bot_service().api_update_config(guild_id, {key: value})
+    get_bot_service().api_update_config(guild_id, updates)
 
     return jsonify({"success": True, "updated": updates})
 
