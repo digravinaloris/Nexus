@@ -151,7 +151,7 @@ def test_feature_toggle_updates_audit_only_effective_changes():
     updates, enabled, disabled = build_feature_toggle_updates(
         toggles,
         {"remindme_enabled": True, "tickets_enabled": False},
-        {"tickets"},
+        {"remindme", "tickets"},
         {"remindme_enabled": True},
     )
     assert updates == [("tickets_enabled", True)]
