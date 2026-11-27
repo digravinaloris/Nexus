@@ -114,7 +114,7 @@ class CloudflareFetchBotService:
         if not _NONCE_RE.fullmatch(nonce):
             raise CloudflareBotServiceError("Could not create an internal request nonce")
 
-        canonical = "\\n".join(
+        canonical = "\n".join(
             (
                 "NEXUS-BOT-SERVICE-V1",
                 self._key_id,
