@@ -234,7 +234,7 @@ Every dashboard request fetches the user's current server permissions directly f
 - **MongoDB Atlas** — cases, config, tickets, backups, appeals, and everything else
 - **pyotp** — the kill-switch's authenticator-app verification
 - **Resend** — transactional email for the kill-switch (Render blocks outbound SMTP)
-- **PyYAML** — dashboard translations (`en_us.yml`, `fr_fr.yml`)
+- **PyYAML** — dashboard translations (`locales/en_us.yml`, `locales/fr_fr.yml`)
 - **Render** — hosting
 
 ---
