@@ -1,6 +1,6 @@
 # Cloudflare web-to-bot service contract
 
-Status: proposal for the full-site Cloudflare migration. This document defines the boundary between the stateless web runtime (Cloudflare Pages + Python Worker) and the long-lived Nexus Discord bot service. It does not implement or enable a network endpoint.
+Status: architecture contract for the full-site Cloudflare migration. The isolated Flask/Python Worker, D1 and Web Crypto primitives have now been validated in CI; the production session store and signed network endpoint are not implemented or enabled.
 
 ## Architecture boundary
 
@@ -22,6 +22,19 @@ Nexus Bot Service (persistent host; Discord Gateway + bot event loop)
 ```
 
 The Worker must not import `discord.py`, `main`, `core`, `bridge`, or any module that opens a MongoDB client. The bot service must not trust a request merely because it came from Cloudflare.
+
+## Verified implementation progress (2026-11-27)
+
+The following PRs validate isolated building blocks only; they do not enable production traffic:
+
+- [#196](https://github.com/digravinaloris/Nexus/pull/196): Flask WSGI startup, local D1 prepared statements, concurrent one-time state consumption, session rotation and atomic batch rollback in the actual Python Workers runtime.
+- [#197](https://github.com/digravinaloris/Nexus/pull/197): Web Crypto SHA-256 and AES-256-GCM through Python FFI, including tamper, wrong-key and wrong-AAD rejection.
+- [#198](https://github.com/digravinaloris/Nexus/pull/198): encrypted D1 fixture persistence across requests, digest-only session lookup keys and fail-closed ciphertext tamper handling.
+- [#199](https://github.com/digravinaloris/Nexus/pull/199): versioned v1-to-v2 key rotation, key-version-bound AAD, idle/absolute expiry and immediate revocation.
+- [#200](https://github.com/digravinaloris/Nexus/pull/200): standalone `web.app_factory.create_web_app()`, importable without `main.py`, discord.py or PyMongo.
+- [#201](https://github.com/digravinaloris/Nexus/pull/201): app-scoped BotService injection while preserving the existing in-process fallback.
+
+Still not implemented: production OAuth server-side sessions, production key provisioning/rotation, the signed HTTP BotService client/server, complete route parity on Workers, and Cloudflare resource creation or deployment. The local spike uses disposable fixtures and a local D1 database only.
 
 ## Service API principles
 
@@ -71,12 +84,12 @@ Do not use process memory or Cloudflare Workers KV as the authoritative session 
 
 | Candidate | Strength | Risk / validation required |
 |---|---|---|
-| Cloudflare D1 | Durable SQL records, indexed lookup, transactional updates for state consumption and rotation; Python Workers expose D1 bindings through the runtime FFI | Verify transaction semantics and integration with the selected Flask adapter; define migrations, backup/restore and cleanup. |
+| Cloudflare D1 | Durable SQL records, indexed lookup and atomic batches; PRs #196-#199 validate local Python Worker integration, one-time state consumption, rotation, encrypted records, expiry and revocation | Production migrations, key management, backup/restore, cleanup, outage behavior and full OAuth lifecycle still require implementation and operational validation. |
 | Durable Objects | Per-session strongly coordinated state and transactional storage | Validate Python Worker integration, object lifecycle, per-session routing, cost and operational complexity. |
 | Existing MongoDB through bot service | Reuses the current durable database | Couples web login availability to the bot-service network/API and expands the bot service's trust boundary; not the default choice. |
 | Workers KV | Simple global key/value API | Eventual consistency makes it unsuitable as the authority for immediate logout/revocation and atomic one-time state consumption. |
 
-D1 is the leading candidate: Cloudflare documents direct D1 binding access from Python Workers. This confirms API availability, not that the planned Flask adapter or all required atomic workflows are already proven. Select it only after a minimal compatibility spike demonstrates atomic create/consume/rotate/revoke behavior from the actual Worker runtime. If D1 cannot meet that contract, evaluate Durable Objects before considering bot-service-backed storage. References: https://developers.cloudflare.com/d1/examples/query-d1-from-python-workers/ and https://developers.cloudflare.com/workers/languages/python/ffi/.
+D1 remains the leading candidate. The isolated compatibility spike now demonstrates Flask WSGI + D1 in the actual Python Worker runtime, conditional one-time state consumption, atomic batch rollback, encrypted record persistence, key-version rotation, idle/absolute expiry and revocation. This is stronger than API-availability evidence, but it is still not a production session store: production key provisioning, schema migrations, backup/restore, storage-outage behavior, cookie integration and full OAuth lifecycle tests remain mandatory. Re-evaluate Durable Objects only if production D1 consistency or operational requirements cannot be met. References: https://developers.cloudflare.com/d1/examples/query-d1-from-python-workers/ and https://developers.cloudflare.com/workers/languages/python/ffi/.
 
 ### Required session tests
 
