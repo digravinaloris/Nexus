@@ -139,7 +139,7 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
-        elif method_name in {"guild_presence", "guild_name", "api_text_channels_snapshot"}:
+        elif method_name in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot"}:
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
@@ -216,19 +216,19 @@ def create_internal_bot_service_blueprint(
                 )
             ):
                 return jsonify({"error": "internal service unavailable"}), 503
-            if method_name == "api_text_channels_snapshot" and (
+            if method_name in {"api_text_channels_snapshot", "api_roles_snapshot"} and (
                 result is not None
                 and (
                     not isinstance(result, list)
                     or len(result) > 500
                     or not all(
-                        isinstance(channel, dict)
-                        and set(channel) == {"id", "name"}
-                        and isinstance(channel["id"], str)
-                        and re.fullmatch(r"[0-9]{1,20}", channel["id"])
-                        and isinstance(channel["name"], str)
-                        and 1 <= len(channel["name"]) <= 100
-                        for channel in result
+                        isinstance(item, dict)
+                        and set(item) == {"id", "name"}
+                        and isinstance(item["id"], str)
+                        and re.fullmatch(r"[0-9]{1,20}", item["id"])
+                        and isinstance(item["name"], str)
+                        and 1 <= len(item["name"]) <= 100
+                        for item in result
                     )
                 )
             ):
