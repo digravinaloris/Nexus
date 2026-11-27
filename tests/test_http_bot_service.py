@@ -205,3 +205,60 @@ def test_response_is_closed_after_success():
     result = _client(FakeSession(response=response)).health_snapshot()
     assert result == {"status": "alive"}
     assert response.closed is True
+
+
+@pytest.mark.parametrize("method,args", [
+    ("guild_presence", ["123456789012345678"]),
+    ("guild_name", ["123456789012345678"]),
+])
+def test_guild_read_snapshots_send_bounded_signed_arguments(method, args):
+    result_value = (
+        {"bot_ready": True, "guild_present": True}
+        if method == "guild_presence"
+        else "Nexus Community"
+    )
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result_value}))
+
+    result = getattr(_client(session), method)(*args)
+
+    assert result == result_value
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {"method": method, "args": args, "kwargs": {}}
+    verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+
+
+@pytest.mark.parametrize("guild_id", ["", "0", "-1", "abc", "1" * 21, 123])
+def test_guild_read_snapshots_reject_invalid_guild_ids_before_transport(guild_id):
+    session = FakeSession()
+    client = _client(session)
+
+    with pytest.raises(ValueError, match="guild ID"):
+        client.guild_presence(guild_id)
+
+    assert session.calls == []
+
+
+@pytest.mark.parametrize(
+    "method,result",
+    [
+        ("guild_presence", {"bot_ready": True}),
+        ("guild_presence", {"bot_ready": 1, "guild_present": False}),
+        ("guild_presence", {"bot_ready": True, "guild_present": False, "extra": False}),
+        ("guild_name", ""),
+        ("guild_name", "x" * 257),
+        ("guild_name", None),
+    ],
+)
+def test_guild_read_snapshots_reject_invalid_remote_dtos(method, result):
+    session = FakeSession(
+        response=FakeResponse(payload={"ok": True, "result": result})
+    )
+
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        getattr(_client(session), method)("123456789012345678")
