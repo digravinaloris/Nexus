@@ -17,8 +17,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _python_files():
     files = []
-    for pattern in ("*.py", "web/**/*.py", "cogs/**/*.py"):
-        files.extend(glob.glob(os.path.join(ROOT, pattern), recursive=True))
+    for path in glob.glob(os.path.join(ROOT, "**", "*.py"), recursive=True):
+        relative = os.path.relpath(path, ROOT).replace(os.sep, "/")
+        if relative.startswith("tests/"):
+            continue
+        files.append(path)
     return sorted(f for f in files if os.path.basename(f) != "main.py")
 
 
