@@ -8,7 +8,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dashboard_utils import (
     read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
     is_safe_relative_redirect, build_feature_toggle_updates,
-    build_settings_update_plan,
+    build_settings_update_plan, get_template_role_names,
+    build_template_command_role_mapping,
 )
 
 FIELDS = [
@@ -207,3 +208,44 @@ def test_settings_update_plan_formats_list_change_counts():
     )
     assert writes == [("banned_words", ["one", "two"])]
     assert changes == ["banned_words: 1 -> 2 entries"]
+
+def test_template_role_names_are_sorted_and_unique():
+    assert get_template_role_names({"ban": ["Mods", "Helpers"], "kick": ["Mods"]}) == [
+        "Helpers", "Mods"
+    ]
+
+
+def test_template_role_names_reject_malformed_snapshot_data():
+    import pytest
+    with pytest.raises(ValueError):
+        get_template_role_names({"ban": "Mods"})
+    with pytest.raises(ValueError):
+        get_template_role_names({"ban": ["", 42]})
+
+
+def test_template_role_mapping_accepts_only_roles_from_current_guild():
+    mapping = build_template_command_role_mapping(
+        {"ban": ["Mods"], "kick": ["Mods", "Helpers"]},
+        {"map__0": "9", "map__1": ""},
+        [{"id": "9", "name": "Mods"}],
+        {"warn": [10]},
+    )
+    assert mapping == {"warn": [10], "ban": [9], "kick": [9]}
+
+
+def test_template_role_mapping_rejects_non_numeric_and_unknown_ids():
+    import pytest
+    source = {"ban": ["Mods"]}
+    roles = [{"id": "9", "name": "Mods"}]
+    with pytest.raises(ValueError):
+        build_template_command_role_mapping(source, {"map__0": "abc"}, roles)
+    with pytest.raises(ValueError):
+        build_template_command_role_mapping(source, {"map__0": "10"}, roles)
+
+
+def test_template_role_mapping_rejects_invalid_guild_role_data():
+    import pytest
+    with pytest.raises(ValueError):
+        build_template_command_role_mapping(
+            {"ban": ["Mods"]}, {"map__0": "9"}, [{"id": "invalid"}]
+        )
