@@ -73,6 +73,7 @@ def setup_schema():
             nonce_hex TEXT NOT NULL,
             key_version INTEGER NOT NULL,
             expires_at INTEGER NOT NULL,
+            idle_expires_at INTEGER NOT NULL,
             revoked_at INTEGER
         )
         """,
@@ -271,9 +272,10 @@ def batch_rollback():
         return jsonify({"rolled_back": count == 0})
 
 
-def _test_encryption_key() -> bytes:
-    """Read the disposable key supplied by the local smoke workflow only."""
-    raw_key = str(request.environ["workers.env"].SPIKE_TEST_ENCRYPTION_KEY)
+def _test_encryption_key(key_version: int) -> bytes:
+    """Read one disposable versioned key supplied by the local smoke workflow."""
+    env = request.environ["workers.env"]
+    raw_key = str(getattr(env, f"SPIKE_TEST_ENCRYPTION_KEY_V{key_version}"))
     try:
         key = bytes.fromhex(raw_key)
     except ValueError as exc:
@@ -281,7 +283,6 @@ def _test_encryption_key() -> bytes:
     if len(key) != 32:
         raise RuntimeError("local test encryption key must be 32 bytes")
     return key
-
 
 def _session_aad(session_hash: str, key_version: int) -> bytes:
     return f"nexus-spike:session:v{key_version}:{session_hash}".encode("ascii")
@@ -294,45 +295,60 @@ def _row_value(row, name):
         return getattr(row, name)
 
 
-@app.post("/__spike/encrypted-session")
-def create_encrypted_session():
-    """Persist only ciphertext; the raw opaque ID is returned once for the test."""
+def _create_encrypted_session(key_version: int):
     raw_id = secrets.token_urlsafe(32)
     session_hash = _digest(raw_id)
-    key_version = 1
     nonce = secrets.token_bytes(12)
     fixture = b"nexus-cloudflare-spike-persisted-non-sensitive-fixture"
+    now = int(time.time())
+    ciphertext = aes_gcm_encrypt(
+        _test_encryption_key(key_version),
+        nonce,
+        fixture,
+        _session_aad(session_hash, key_version),
+    )
+    _await(
+        _db()
+        .prepare(
+            """
+            INSERT INTO spike_encrypted_sessions
+                (session_hash, ciphertext_hex, nonce_hex, key_version,
+                 expires_at, idle_expires_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """
+        )
+        .bind(
+            session_hash,
+            ciphertext.hex(),
+            nonce.hex(),
+            key_version,
+            now + 3600,
+            now + 900,
+        )
+        .run()
+    )
+    return raw_id
+
+
+@app.post("/__spike/encrypted-session")
+def create_encrypted_session():
+    """Create new records with the active local test key (version 2)."""
     try:
-        ciphertext = aes_gcm_encrypt(
-            _test_encryption_key(),
-            nonce,
-            fixture,
-            _session_aad(session_hash, key_version),
-        )
-        now = int(time.time())
-        _await(
-            _db()
-            .prepare(
-                """
-                INSERT INTO spike_encrypted_sessions
-                    (session_hash, ciphertext_hex, nonce_hex, key_version, expires_at)
-                VALUES (?, ?, ?, ?, ?)
-                """
-            )
-            .bind(
-                session_hash,
-                ciphertext.hex(),
-                nonce.hex(),
-                key_version,
-                now + 3600,
-            )
-            .run()
-        )
+        raw_id = _create_encrypted_session(2)
     except Exception as exc:
         print(f"Local encrypted D1 session creation failed: {type(exc).__name__}: {exc}", flush=True)
         return jsonify({"error": "local encrypted session unavailable"}), 503
-    return jsonify({"session_id": raw_id})
+    return jsonify({"session_id": raw_id, "key_version": 2})
 
+
+@app.post("/__spike/encrypted-session/legacy")
+def create_legacy_encrypted_session():
+    """Create a version-1 fixture to exercise a version-1 to version-2 rotation."""
+    try:
+        raw_id = _create_encrypted_session(1)
+    except Exception:
+        return jsonify({"error": "local encrypted session unavailable"}), 503
+    return jsonify({"session_id": raw_id, "key_version": 1})
 
 @app.get("/__spike/encrypted-session/<session_id>")
 def read_encrypted_session(session_id):
@@ -345,13 +361,14 @@ def read_encrypted_session(session_id):
             _db()
             .prepare(
                 """
-                SELECT ciphertext_hex, nonce_hex, key_version
-                FROM spike_encrypted_sessions
-                WHERE session_hash = ? AND revoked_at IS NULL AND expires_at > ?
-                LIMIT 1
+                UPDATE spike_encrypted_sessions
+                SET idle_expires_at = MIN(expires_at, ?)
+                WHERE session_hash = ? AND revoked_at IS NULL
+                  AND expires_at > ? AND idle_expires_at > ?
+                RETURNING ciphertext_hex, nonce_hex, key_version
                 """
             )
-            .bind(session_hash, now)
+            .bind(now + 900, session_hash, now, now)
             .first()
         )
         if row is None:
@@ -360,17 +377,129 @@ def read_encrypted_session(session_id):
         ciphertext = bytes.fromhex(_row_value(row, "ciphertext_hex"))
         nonce = bytes.fromhex(_row_value(row, "nonce_hex"))
         plaintext = aes_gcm_decrypt(
-            _test_encryption_key(),
+            _test_encryption_key(key_version),
             nonce,
             ciphertext,
             _session_aad(session_hash, key_version),
         )
     except Exception:
-        # Missing keys, malformed rows, and authentication failures all fail closed.
+        # Missing keys, malformed rows, expiry, and authentication failures fail closed.
         return jsonify({"active": False})
     fixture = b"nexus-cloudflare-spike-persisted-non-sensitive-fixture"
     return jsonify({"active": plaintext == fixture})
 
+
+@app.post("/__spike/encrypted-session/<session_id>/rotate-key")
+def rotate_encrypted_session_key(session_id):
+    if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
+        return jsonify({"rotated": False}), 400
+    now = int(time.time())
+    session_hash = _digest(session_id)
+    db = _db()
+    try:
+        row = _await(
+            db.prepare(
+                """
+                SELECT ciphertext_hex, nonce_hex, key_version
+                FROM spike_encrypted_sessions
+                WHERE session_hash = ? AND revoked_at IS NULL
+                  AND expires_at > ? AND idle_expires_at > ?
+                LIMIT 1
+                """
+            )
+            .bind(session_hash, now, now)
+            .first()
+        )
+        if row is None:
+            return jsonify({"rotated": False}), 404
+        old_version = int(_row_value(row, "key_version"))
+        if old_version == 2:
+            return jsonify({"rotated": False, "key_version": 2})
+        ciphertext = bytes.fromhex(_row_value(row, "ciphertext_hex"))
+        old_nonce = bytes.fromhex(_row_value(row, "nonce_hex"))
+        plaintext = aes_gcm_decrypt(
+            _test_encryption_key(old_version),
+            old_nonce,
+            ciphertext,
+            _session_aad(session_hash, old_version),
+        )
+        new_version = 2
+        new_nonce = secrets.token_bytes(12)
+        new_ciphertext = aes_gcm_encrypt(
+            _test_encryption_key(new_version),
+            new_nonce,
+            plaintext,
+            _session_aad(session_hash, new_version),
+        )
+        _await(
+            db.prepare(
+                """
+                UPDATE spike_encrypted_sessions
+                SET ciphertext_hex = ?, nonce_hex = ?, key_version = ?
+                WHERE session_hash = ? AND key_version = ? AND revoked_at IS NULL
+                  AND expires_at > ? AND idle_expires_at > ?
+                """
+            )
+            .bind(
+                new_ciphertext.hex(),
+                new_nonce.hex(),
+                new_version,
+                session_hash,
+                old_version,
+                now,
+                now,
+            )
+            .run()
+        )
+        current = _await(
+            db.prepare(
+                "SELECT key_version FROM spike_encrypted_sessions WHERE session_hash = ?"
+            )
+            .bind(session_hash)
+            .first()
+        )
+        current_version = int(_row_value(current, "key_version")) if current else None
+    except Exception:
+        return jsonify({"error": "local key rotation unavailable"}), 503
+    if current_version != new_version:
+        return jsonify({"rotated": False}), 409
+    return jsonify({"rotated": True, "key_version": new_version})
+
+
+@app.post("/__spike/encrypted-session/<session_id>/revoke")
+def revoke_encrypted_session(session_id):
+    if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
+        return jsonify({"revoked": False}), 400
+    try:
+        _await(
+            _db()
+            .prepare(
+                "UPDATE spike_encrypted_sessions SET revoked_at = ? WHERE session_hash = ? AND revoked_at IS NULL"
+            )
+            .bind(int(time.time()), _digest(session_id))
+            .run()
+        )
+    except Exception:
+        return jsonify({"error": "local D1 unavailable"}), 503
+    return jsonify({"revoked": True})
+
+
+@app.post("/__spike/encrypted-session/<session_id>/expire-idle")
+def expire_encrypted_session_idle(session_id):
+    if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
+        return jsonify({"expired": False}), 400
+    try:
+        _await(
+            _db()
+            .prepare(
+                "UPDATE spike_encrypted_sessions SET idle_expires_at = ? WHERE session_hash = ?"
+            )
+            .bind(int(time.time()) - 1, _digest(session_id))
+            .run()
+        )
+    except Exception:
+        return jsonify({"error": "local D1 unavailable"}), 503
+    return jsonify({"expired": True})
 
 @app.post("/__spike/encrypted-session/<session_id>/tamper")
 def tamper_encrypted_session(session_id):
