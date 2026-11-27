@@ -83,12 +83,14 @@ class SignedHttpBotService(BotService):
             "guild_name": 1,
             "api_text_channels_snapshot": 1,
             "api_roles_snapshot": 1,
+            "api_faq_snapshot": 1,
+            "api_members_snapshot": 1,
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
         if not isinstance(args, (list, tuple)) or len(args) != allowed_argument_counts[method]:
             raise ValueError("Invalid internal BotService arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
 
         body = json.dumps(
@@ -199,6 +201,50 @@ class SignedHttpBotService(BotService):
                 )
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "api_faq_snapshot":
+            if result is not None:
+                if (
+                    not isinstance(result, dict)
+                    or set(result) != {"enabled", "entries"}
+                    or not isinstance(result["enabled"], bool)
+                    or not isinstance(result["entries"], list)
+                    or len(result["entries"]) > 500
+                ):
+                    raise BotServiceTransportError("Internal BotService returned an invalid response")
+                for entry in result["entries"]:
+                    if (
+                        not isinstance(entry, dict)
+                        or set(entry) != {"id", "keywords", "response"}
+                        or not isinstance(entry["id"], str)
+                        or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", entry["id"]) is None
+                        or not isinstance(entry["keywords"], list)
+                        or not 1 <= len(entry["keywords"]) <= 25
+                        or any(not isinstance(word, str) or not word.strip() or len(word) > 100 for word in entry["keywords"])
+                        or not isinstance(entry["response"], str)
+                        or not entry["response"].strip()
+                        or len(entry["response"]) > 2000
+                    ):
+                        raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "api_members_snapshot":
+            if result is not None and (
+                not isinstance(result, list)
+                or len(result) > 500
+                or not all(
+                    isinstance(member, dict)
+                    and set(member) == {"id", "name", "username", "avatar_url", "is_muted"}
+                    and self._valid_guild_id(member["id"])
+                    and isinstance(member["name"], str)
+                    and 1 <= len(member["name"]) <= 100
+                    and isinstance(member["username"], str)
+                    and 1 <= len(member["username"]) <= 100
+                    and isinstance(member["avatar_url"], str)
+                    and len(member["avatar_url"]) <= 2048
+                    and member["avatar_url"].startswith("https://cdn.discordapp.com/")
+                    and isinstance(member["is_muted"], bool)
+                    for member in result
+                )
+            ):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
         return result
 
     def health_snapshot(self):
@@ -218,3 +264,9 @@ class SignedHttpBotService(BotService):
 
     def api_roles_snapshot(self, guild_id: str):
         return self._dispatch_snapshot("api_roles_snapshot", (guild_id,))
+
+    def api_faq_snapshot(self, guild_id: str):
+        return self._dispatch_snapshot("api_faq_snapshot", (guild_id,))
+
+    def api_members_snapshot(self, guild_id: str):
+        return self._dispatch_snapshot("api_members_snapshot", (guild_id,))
