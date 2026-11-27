@@ -34,6 +34,13 @@ Nexus works across multiple servers — each has its own independent configurati
 
 ---
 
+## Documentation
+
+- [Changelog](docs/releases/CHANGELOG.md)
+- [Privacy policy](PRIVACY.md)
+- [Terms of service](TERMS.md)
+- [Security policy](SECURITY.md)
+
 ## Getting Started
 
 1. [Invite the bot](https://discord.com/api/oauth2/authorize?client_id=1510263826455466004&permissions=1099917519958&scope=bot%20applications.commands) to your server.
