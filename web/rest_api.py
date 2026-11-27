@@ -30,6 +30,7 @@ def _is_valid_snowflake(value):
         isinstance(value, str)
         and value.isascii()
         and value.isdecimal()
+        and len(value) <= 20
         and 0 < int(value) <= (2**64 - 1)
     )
 
