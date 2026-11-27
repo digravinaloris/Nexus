@@ -35,9 +35,13 @@ def test_factory_registers_existing_routes_and_security_hooks():
     assert "/callback" in rules
     assert "/dashboard/<guild_id>/calendar" in rules
     assert "/api/guilds" in rules
+    assert app.config["SESSION_COOKIE_NAME"] == "__Host-nexus_session"
+    assert app.config["SESSION_COOKIE_DOMAIN"] is None
+    assert app.config["SESSION_COOKIE_PATH"] == "/"
     assert app.config["SESSION_COOKIE_SECURE"] is True
     assert app.config["SESSION_COOKIE_HTTPONLY"] is True
     assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+    assert app.config["SESSION_REFRESH_EACH_REQUEST"] is False
     assert callable(app.jinja_env.globals["t"])
     assert callable(app.jinja_env.globals["lang"])
     assert callable(app.jinja_env.globals["theme"])
