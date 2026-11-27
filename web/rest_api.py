@@ -14,7 +14,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 from web.bot_service import get_bot_service
-from features import FEATURE_TOGGLES
+from catalogs.features import FEATURE_TOGGLES
 
 bp = Blueprint("rest_api", __name__)
 logger = logging.getLogger(__name__)
