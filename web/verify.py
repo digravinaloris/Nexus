@@ -6,7 +6,7 @@ or browser session is required.
 """
 from flask import current_app, make_response, render_template, request
 
-from turnstile import MAX_ATTEMPTS, check_turnstile, site_key, turnstile_configured
+from turnstile import MAX_ATTEMPTS, check_turnstile, turnstile_configured
 from web.public import get_client_ip
 from web.bot_service import get_bot_service
 from web.routing import Routes
@@ -17,9 +17,9 @@ routes = Routes()
 def _turnstile_settings():
     config = current_app.config
     return (
-        config.get("TURNSTILE_SITE_KEY", site_key()),
-        config.get("TURNSTILE_SECRET_KEY"),
-        config.get("PUBLIC_BASE_URL"),
+        config.get("TURNSTILE_SITE_KEY", ""),
+        config.get("TURNSTILE_SECRET_KEY", ""),
+        config.get("PUBLIC_BASE_URL", ""),
     )
 
 
