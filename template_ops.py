@@ -54,8 +54,8 @@ def _apply_template_base_config(guild_id, snapshot):
                 if (
                     isinstance(value, (int, float))
                     and not isinstance(value, bool)
-                    and math.isfinite(value)
                     and minimum <= value <= maximum
+                    and math.isfinite(value)
                 ):
                     update_config(guild_id, key, value)
 
