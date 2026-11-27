@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s\\n' 'SPIKE_TEST_ENCRYPTION_KEY=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff' > .dev.vars
+          printf '%s\n' 'SPIKE_TEST_ENCRYPTION_KEY=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff' > .dev.vars
           uv run pywrangler dev --ip 127.0.0.1 --port 8787 > /tmp/nexus-worker-spike.log 2>&1 &
           worker_pid=$!
           cleanup() {
