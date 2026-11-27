@@ -91,6 +91,7 @@ def mock_internal_bot_service():
             "spike-role-malformed",
             "spike-stats-malformed",
             "spike-faq-malformed",
+            "spike-members-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -180,6 +181,15 @@ def mock_internal_bot_service():
                 }
             ],
         },
+        "api_members_snapshot": [
+            {
+                "id": "123456789012345678",
+                "name": "Sample Member",
+                "username": "sample",
+                "avatar_url": "https://cdn.discordapp.com/avatars/123456789012345678/sample.png",
+                "is_muted": False,
+            }
+        ],
     }
     method = payload.get("method")
     args = payload["args"]
@@ -202,6 +212,12 @@ def mock_internal_bot_service():
     if method == "api_roles_snapshot" and args == ["123"]:
         if key_id == "spike-role-malformed":
             return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "Moderator"}]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "api_members_snapshot" and args == ["123"]:
+        if key_id == "spike-members-malformed":
+            malformed = dict(results[method][0])
+            malformed["is_muted"] = 0
+            return jsonify({"ok": True, "result": [malformed]})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_faq_snapshot" and args == ["123"]:
         if key_id == "spike-faq-malformed":
@@ -308,6 +324,23 @@ def exercise_fetch_bot_service_client(method):
         elif method == "api_faq_snapshot_invalid_args":
             try:
                 client.api_faq_snapshot("not-decimal")
+            except ValueError:
+                result = {"rejected": True}
+            else:
+                result = {"rejected": False}
+        elif method == "api_members_snapshot":
+            result = client.api_members_snapshot("123")
+        elif method == "api_members_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-members-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_members_snapshot("123")
+        elif method == "api_members_snapshot_invalid_args":
+            try:
+                client.api_members_snapshot("not-decimal")
             except ValueError:
                 result = {"rejected": True}
             else:

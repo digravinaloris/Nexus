@@ -437,6 +437,37 @@ def main():
         status == 200 and invalid_faq_args.get("result") == {"rejected": True},
         f"Workers Fetch client accepted invalid FAQ arguments: {invalid_faq_args}",
     )
+    status, fetch_members = call(
+        "/__spike/fetch-client/api_members_snapshot", "POST", {}
+    )
+    expected_members = [
+        {
+            "id": "123456789012345678",
+            "name": "Sample Member",
+            "username": "sample",
+            "avatar_url": "https://cdn.discordapp.com/avatars/123456789012345678/sample.png",
+            "is_muted": False,
+        }
+    ]
+    require(
+        status == 200 and fetch_members.get("result") == expected_members,
+        f"Signed members snapshot failed: {fetch_members}",
+    )
+    status, invalid_members = call(
+        "/__spike/fetch-client/api_members_snapshot_invalid", "POST", {}
+    )
+    require(
+        status == 503
+        and invalid_members.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted malformed members: {invalid_members}",
+    )
+    status, invalid_members_args = call(
+        "/__spike/fetch-client/api_members_snapshot_invalid_args", "POST", {}
+    )
+    require(
+        status == 200 and invalid_members_args.get("result") == {"rejected": True},
+        f"Workers Fetch client accepted invalid members arguments: {invalid_members_args}",
+    )
     status, invalid_channels = call(
         "/__spike/fetch-client/api_text_channels_snapshot_invalid", "POST", {}
     )

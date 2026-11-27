@@ -154,6 +154,9 @@ class CloudflareFetchBotService:
         elif method == "api_faq_snapshot":
             if expected_type != (dict, type(None)) or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid FAQ snapshot arguments")
+        elif method == "api_members_snapshot":
+            if expected_type != (list, type(None)) or len(args) != 1 or not valid_id(args[0]):
+                raise ValueError("Invalid members snapshot arguments")
         else:
             raise ValueError("Unsupported internal BotService operation")
 
@@ -248,6 +251,29 @@ class CloudflareFetchBotService:
             raise CloudflareBotServiceError(
                 "Internal BotService returned invalid guild collection"
             )
+        if method == "api_members_snapshot" and result is not None:
+            expected_member_fields = {"id", "name", "username", "avatar_url", "is_muted"}
+            if (
+                not isinstance(result, list)
+                or len(result) > 500
+                or not all(
+                    isinstance(member, dict)
+                    and set(member) == expected_member_fields
+                    and valid_id(member["id"])
+                    and isinstance(member["name"], str)
+                    and 1 <= len(member["name"]) <= 100
+                    and isinstance(member["username"], str)
+                    and 1 <= len(member["username"]) <= 100
+                    and isinstance(member["avatar_url"], str)
+                    and len(member["avatar_url"]) <= 2048
+                    and member["avatar_url"].startswith("https://cdn.discordapp.com/")
+                    and isinstance(member["is_muted"], bool)
+                    for member in result
+                )
+            ):
+                raise CloudflareBotServiceError(
+                    "Internal BotService returned invalid members snapshot"
+                )
         if method == "api_faq_snapshot" and result is not None:
             if (
                 not isinstance(result, dict)
@@ -372,3 +398,6 @@ class CloudflareFetchBotService:
 
     def api_faq_snapshot(self, guild_id: str) -> dict | None:
         return self._dispatch("api_faq_snapshot", [guild_id], (dict, type(None)))
+
+    def api_members_snapshot(self, guild_id: str) -> list | None:
+        return self._dispatch("api_members_snapshot", [guild_id], (list, type(None)))

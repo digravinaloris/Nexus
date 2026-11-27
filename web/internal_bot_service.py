@@ -166,7 +166,7 @@ def create_internal_bot_service_blueprint(
             )
         elif method_name in {
             "guild_presence", "guild_name", "api_text_channels_snapshot",
-            "api_roles_snapshot", "api_faq_snapshot",
+            "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot",
         }:
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -261,6 +261,29 @@ def create_internal_bot_service_blueprint(
                 )
             ):
                 return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_members_snapshot" and result is not None:
+                expected_member_fields = {
+                    "id", "name", "username", "avatar_url", "is_muted"
+                }
+                if (
+                    not isinstance(result, list)
+                    or len(result) > 500
+                    or not all(
+                        isinstance(member, dict)
+                        and set(member) == expected_member_fields
+                        and valid_guild_id(member.get("id"))
+                        and isinstance(member.get("name"), str)
+                        and 1 <= len(member["name"]) <= 100
+                        and isinstance(member.get("username"), str)
+                        and 1 <= len(member["username"]) <= 100
+                        and isinstance(member.get("avatar_url"), str)
+                        and len(member["avatar_url"]) <= 2048
+                        and member["avatar_url"].startswith("https://cdn.discordapp.com/")
+                        and isinstance(member.get("is_muted"), bool)
+                        for member in result
+                    )
+                ):
+                    return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "api_faq_snapshot" and result is not None:
                 if not isinstance(result, dict):
                     return jsonify({"error": "internal service unavailable"}), 503
