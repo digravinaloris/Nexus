@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à définir sur Render
 MAX_API_KEY_LENGTH = 512
+MAX_API_REQUEST_BYTES = 1024 * 1024
 
 
 def _is_valid_snowflake(value):
@@ -60,6 +61,16 @@ def _api_key_matches(provided, expected):
     )
 
 
+def _invoke_authorized(f, args, kwargs):
+    """Reject oversized API bodies before JSON parsing or service work."""
+    if (
+        request.content_length is not None
+        and request.content_length > MAX_API_REQUEST_BYTES
+    ):
+        return jsonify({"error": "Request body too large"}), 413
+    return f(*args, **kwargs)
+
+
 def require_api_key(f):
     """Décorateur : vérifie le header X-API-Key sur chaque requête protégée.
     Deux clés sont acceptées :
@@ -83,13 +94,13 @@ def require_api_key(f):
                 return jsonify({"error": f"Invalid {parameter}"}), 400
         if API_KEY and _api_key_matches(key, API_KEY):
             g.auth_guild_id = None
-            return f(*args, **kwargs)
+            return _invoke_authorized(f, args, kwargs)
         guild_id = kwargs.get("guild_id")
         if guild_id:
             cfg = get_bot_service().api_config_snapshot(guild_id)
             if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
                 g.auth_guild_id = str(guild_id)
-                return f(*args, **kwargs)
+                return _invoke_authorized(f, args, kwargs)
         else:
             # API endpoints without a guild ID resolve a per-guild key using
             # serializable service snapshots, never Discord objects in this route.
@@ -97,7 +108,7 @@ def require_api_key(f):
                 cfg = get_bot_service().api_config_snapshot(candidate_guild_id)
                 if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
                     g.auth_guild_id = candidate_guild_id
-                    return f(*args, **kwargs)
+                    return _invoke_authorized(f, args, kwargs)
         return jsonify({"error": "Unauthorized"}), 401
     return wrapper
 
