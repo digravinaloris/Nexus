@@ -53,6 +53,7 @@ from stores.quarantine_store import create_quarantine_entry, get_pending_quarant
 from stores.role_menu_store import save_role_menu, get_role_menu
 from stores.invite_tracking_store import record_invite_use, get_inviter_leaderboard, get_invite_for_member
 from stores.template_store import template_code_exists, create_template, get_template_by_code
+from stores.killswitch_store import create_killswitch_token
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
@@ -275,17 +276,7 @@ def send_email(subject, body):
         return False, error
 
 
-def create_killswitch_token():
-    token = secrets.token_urlsafe(32)
-    now = datetime.datetime.now(datetime.timezone.utc)
-    killswitch_tokens_col.insert_one({
-        "token": token,
-        "created_at": now,
-        "expires_at": now + datetime.timedelta(minutes=30),
-        "used": False,
-        "attempts": 0,
-    })
-    return token
+
 
 
 def send_daily_killswitch_email():
