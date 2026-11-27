@@ -28,7 +28,7 @@ from sentry_sdk.integrations.flask import FlaskIntegration
 import json as _json
 import zipfile
 from helpers import utils
-from nexus_runtime from nexus_runtime import core
+from nexus_runtime import core
 from stores.config_store import (
     get_config, update_config, add_command_role, remove_command_role,
     set_command_template, get_global_lock, set_global_lock,
