@@ -26,8 +26,14 @@ def insert_event(event):
 
 
 def delete_event(guild_id, event_id):
+    """Delete an event by its public hexadecimal ID inside the persistence layer."""
+    from bson import ObjectId
+    try:
+        object_id = ObjectId(event_id)
+    except (TypeError, ValueError):
+        return False
     result = _collection().delete_one({
-        "_id": event_id,
+        "_id": object_id,
         "guild_id": str(guild_id),
     })
     return bool(result.deleted_count)
