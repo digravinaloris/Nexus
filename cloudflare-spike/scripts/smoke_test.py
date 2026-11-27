@@ -405,6 +405,38 @@ def main():
         status == 200 and invalid_stats_args.get("result") == {"rejected": True},
         f"Workers Fetch client accepted invalid guild stats arguments: {invalid_stats_args}",
     )
+    status, fetch_faq = call(
+        "/__spike/fetch-client/api_faq_snapshot", "POST", {}
+    )
+    expected_faq = {
+        "enabled": True,
+        "entries": [
+            {
+                "id": "a" * 32,
+                "keywords": ["help", "support"],
+                "response": "Contact the support team.",
+            }
+        ],
+    }
+    require(
+        status == 200 and fetch_faq.get("result") == expected_faq,
+        f"Signed FAQ snapshot failed: {fetch_faq}",
+    )
+    status, invalid_faq = call(
+        "/__spike/fetch-client/api_faq_snapshot_invalid", "POST", {}
+    )
+    require(
+        status == 503
+        and invalid_faq.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted malformed FAQ data: {invalid_faq}",
+    )
+    status, invalid_faq_args = call(
+        "/__spike/fetch-client/api_faq_snapshot_invalid_args", "POST", {}
+    )
+    require(
+        status == 200 and invalid_faq_args.get("result") == {"rejected": True},
+        f"Workers Fetch client accepted invalid FAQ arguments: {invalid_faq_args}",
+    )
     status, invalid_channels = call(
         "/__spike/fetch-client/api_text_channels_snapshot_invalid", "POST", {}
     )
