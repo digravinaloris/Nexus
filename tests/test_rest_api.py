@@ -200,14 +200,8 @@ def env(nexus, monkeypatch, event_loop_thread):
     core.reset()
     nexus.init_mongo()
 
-    # Clé maîtresse : à l'endroit où vit le décorateur (main.py avant l'extraction,
-    # web.rest_api après).
-    monkeypatch.setattr(nexus, "API_KEY", "master-key", raising=False)
-    try:
-        import web.rest_api as rest_module
-        monkeypatch.setattr(rest_module, "API_KEY", "master-key")
-    except ImportError:
-        pass
+    # Master key is configured on the Flask app, not captured at module import.
+    nexus.api.config["API_KEY"] = "master-key"
 
     e = Env()
     e.nexus = nexus
