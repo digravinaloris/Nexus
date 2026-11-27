@@ -165,7 +165,8 @@ def create_internal_bot_service_blueprint(
                 operation_args,
             )
         elif method_name in {
-            "guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot"
+            "guild_presence", "guild_name", "api_text_channels_snapshot",
+            "api_roles_snapshot", "api_faq_snapshot",
         }:
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -260,6 +261,50 @@ def create_internal_bot_service_blueprint(
                 )
             ):
                 return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_faq_snapshot" and result is not None:
+                if not isinstance(result, dict):
+                    return jsonify({"error": "internal service unavailable"}), 503
+                enabled = result.get("enabled", False)
+                entries = result.get("entries", [])
+                if (
+                    not isinstance(enabled, bool)
+                    or not isinstance(entries, list)
+                    or len(entries) > 500
+                ):
+                    return jsonify({"error": "internal service unavailable"}), 503
+                safe_entries = []
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        return jsonify({"error": "internal service unavailable"}), 503
+                    entry_id = entry.get("id")
+                    keywords = entry.get("keywords")
+                    response_text = entry.get("response")
+                    if (
+                        not isinstance(entry_id, str)
+                        or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", entry_id)
+                        or not isinstance(keywords, list)
+                        or not 1 <= len(keywords) <= 25
+                        or any(
+                            not isinstance(keyword, str)
+                            or not keyword.strip()
+                            or len(keyword) > 100
+                            for keyword in keywords
+                        )
+                        or not isinstance(response_text, str)
+                        or not response_text.strip()
+                        or len(response_text) > 2000
+                    ):
+                        return jsonify({"error": "internal service unavailable"}), 503
+                    safe_entries.append(
+                        {
+                            "id": entry_id,
+                            "keywords": keywords,
+                            "response": response_text,
+                        }
+                    )
+                result = {"enabled": enabled, "entries": safe_entries}
+                if len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024:
+                    return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "api_guild_stats_snapshot" and result not in (None, {}):
                 count_fields = {
                     "ban_count", "muted_count", "open_tickets_count",
