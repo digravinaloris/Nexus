@@ -134,7 +134,11 @@ def mock_internal_bot_service():
         and len(args) == 2
         and all(isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) for value in args)
     ):
-        return jsonify({"ok": True, "result": args[0] == "123" and args[1] in {"42", "43"}})
+        if method == "is_guild_owner":
+            allowed = args == ["123", "42"]
+        else:
+            allowed = args[0] == "123" and args[1] in {"42", "43"}
+        return jsonify({"ok": True, "result": allowed})
     return jsonify({"error": "unsupported operation"}), 403
 
 
