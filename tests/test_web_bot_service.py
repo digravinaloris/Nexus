@@ -487,16 +487,11 @@ def test_api_guild_stats_snapshot_serializes_guild_metrics(monkeypatch):
         def get_guild(self, gid):
             return guild if gid == 123 else None
 
-    class CountCollection:
-        def __init__(self, count):
-            self.count = count
-
-        def count_documents(self, query):
-            return self.count
-
-    monkeypatch.setattr(core, "col", type("FakeCollections", (), {
-        "warns": CountCollection(1), "sanctions": CountCollection(2),
-    })())
+    monkeypatch.setattr(
+        service_module,
+        "get_dashboard_warning_counts",
+        lambda guild_id, since: {"warned_count": 1, "warns_today": 2},
+    )
     monkeypatch.setattr(core, "bot", ReadyBot())
     monkeypatch.setattr(service_module, "run_coroutine", lambda coro: asyncio.run(coro))
     monkeypatch.setattr(service_module, "get_sanction_stats", lambda guild_id, days: [(str(i), i) for i in range(days)])
