@@ -38,7 +38,8 @@ from stores.sanctions_store import (
     create_sanction_appeal, get_ban_appeal, get_ban_appeal_by_case,
     get_sanction_stats, get_sanction_history, save_tempban, remove_tempban, get_active_tempbans,
     get_warnlist, update_case_reason, add_case_followup_note, delete_user_moderation_data,
-    list_guild_sanctions, list_sanctions_since,
+    list_guild_sanctions, list_sanctions_since, submit_ban_appeal,
+    resolve_submitted_sanction_appeal,
 )
 from stores.sticky_store import set_sticky_message, remove_sticky_message, get_sticky_message, mark_sticky_message_posted
 from stores.reaction_roles_store import save_reaction_role, get_reaction_role, delete_reaction_roles
@@ -2508,9 +2509,8 @@ async def appeal_accept(interaction: discord.Interaction, case_id: int):
     sanction_type = appeal.get("sanction_type", "ban")
     result = await reverse_sanction(interaction.guild, sanction_type, appeal["user_id"])
 
-    ban_appeals_col.update_one(
-        {"token": appeal["token"]},
-        {"$set": {"status": "accepted", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}},
+    resolve_submitted_sanction_appeal(
+        appeal["token"], "accepted", datetime.datetime.now(datetime.timezone.utc),
     )
     record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), "Accepted appeal", f"Case #{case_id} ({sanction_type}) — {result}")
     try:
@@ -2532,9 +2532,8 @@ async def appeal_deny(interaction: discord.Interaction, case_id: int, note: str 
     if appeal["status"] != "submitted":
         await interaction.response.send_message(f"⚠️ This appeal is already **{appeal['status']}**.", ephemeral=True)
         return
-    ban_appeals_col.update_one(
-        {"token": appeal["token"]},
-        {"$set": {"status": "denied", "resolved_at": datetime.datetime.now(datetime.timezone.utc)}},
+    resolve_submitted_sanction_appeal(
+        appeal["token"], "denied", datetime.datetime.now(datetime.timezone.utc),
     )
     record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), "Denied appeal", f"Case #{case_id}" + (f" — {note}" if note else ""))
     try:
@@ -3466,13 +3465,8 @@ class AppealModal(discord.ui.Modal, title="Submit your appeal"):
         if not appeal or appeal["status"] != "pending":
             await interaction.response.send_message("This appeal is no longer available.", ephemeral=True)
             return
-        ban_appeals_col.update_one(
-            {"token": self.token},
-            {"$set": {
-                "status": "submitted",
-                "appeal_text": self.reason.value,
-                "submitted_at": datetime.datetime.now(datetime.timezone.utc),
-            }},
+        submit_ban_appeal(
+            self.token, self.reason.value, datetime.datetime.now(datetime.timezone.utc),
         )
         guild = bot.get_guild(int(appeal["guild_id"]))
         if guild:

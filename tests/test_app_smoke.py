@@ -219,7 +219,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     assert nexus.save_reaction_role is reaction_roles_store.save_reaction_role
     assert nexus.get_reaction_role is reaction_roles_store.get_reaction_role
     assert nexus.delete_reaction_roles is reaction_roles_store.delete_reaction_roles
-    for name in ("get_sanction_history", "save_tempban", "remove_tempban", "get_active_tempbans"):
+    for name in ("get_sanction_history", "save_tempban", "remove_tempban", "get_active_tempbans", "submit_ban_appeal", "resolve_submitted_sanction_appeal"):
         assert getattr(nexus, name) is getattr(sanctions_store, name)
 
     assert nexus.is_automod_exempt is automod_checks.is_automod_exempt
