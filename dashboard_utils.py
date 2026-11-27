@@ -55,3 +55,21 @@ def validate_role_selection(raw, guild):
             if role is not None and not role.is_default():
                 return role.id
     raise ValueError("invalid role selection")
+
+
+
+def is_safe_relative_redirect(target):
+    """Return whether target is a safe, same-site absolute-path redirect."""
+    from urllib.parse import urlparse
+
+    if not isinstance(target, str):
+        return False
+    parsed = urlparse(target)
+    return (
+        target.startswith("/")
+        and not target.startswith("//")
+        and "\\" not in target
+        and not any(ord(char) < 32 or ord(char) == 127 for char in target)
+        and not parsed.scheme
+        and not parsed.netloc
+    )
