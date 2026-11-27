@@ -58,6 +58,12 @@ def check_turnstile(response_token, remote_ip=None, http_client=None):
         # Provider, transport and malformed-response errors all fail closed.
         log_json("error", "turnstile_unreachable", error=repr(exc))
         return False, "service_unavailable"
+    if not isinstance(data, dict):
+        log_json("error", "turnstile_invalid_response", response_type=type(data).__name__)
+        return False, "service_unavailable"
     if data.get("success") is True:
         return True, None
-    return False, ",".join(data.get("error-codes", [])) or "failed"
+    error_codes = data.get("error-codes", [])
+    if not isinstance(error_codes, list) or not all(isinstance(code, str) for code in error_codes):
+        return False, "failed"
+    return False, ",".join(error_codes) or "failed"
