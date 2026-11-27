@@ -46,6 +46,7 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 
 ### Phase 3 — Worker-compatible web runtime
 - Add a separate Worker entry point and Wrangler configuration without changing the existing Render entry point.
+- Follow `docs/CLOUDFLARE_WORKER_SPIKE.md` for the isolated Flask/D1/Web Crypto compatibility proof. The spike must run locally and in CI before any session backend or production route is moved; it must not import `main.py` or connect to live Cloudflare resources.
 - Port/adapter-test Flask routes using Cloudflare's WSGI adapter.
 - Replace direct bot/database access with the service interfaces and authenticated bot-service client.
 - Replace process-local state (dashboard presence, OAuth transient state, rate limits, webhook delivery coordination) with durable Cloudflare-backed state or a safe external service.
