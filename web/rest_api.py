@@ -12,12 +12,23 @@ import secrets
 from functools import wraps
 
 from flask import Blueprint, g, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 from web.bot_service import get_bot_service
 from features import FEATURE_TOGGLES
 
 bp = Blueprint("rest_api", __name__)
 logger = logging.getLogger(__name__)
+
+
+@bp.errorhandler(Exception)
+def handle_unexpected_api_error(error):
+    """Return a stable JSON 500 for unexpected API failures without masking HTTP errors."""
+    if isinstance(error, HTTPException):
+        return error
+    logger.exception("REST API operation failed")
+    return jsonify({"error": "Internal server error"}), 500
+
 
 API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à définir sur Render
 MAX_API_KEY_LENGTH = 512
