@@ -102,7 +102,7 @@ def test_signed_dispatch_rejects_invalid_guild_stats_arguments():
     client, service = _client(VALID_STATS)
 
     for index, args in enumerate(
-        ([], ["invalid"], ["123", "not-decimal"], ["123", "456", "789"], [123])
+        ([], ["invalid"], ["123", "not-decimal"], ["123", "456", "789"], ["123", True], [123])
     ):
         response = _post(client, args, chr(100 + index) * 24)
         assert response.status_code == 403
