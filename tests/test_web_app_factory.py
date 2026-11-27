@@ -551,3 +551,43 @@ def test_server_session_backend_rotates_after_successful_oauth_and_revokes_on_lo
     assert backend.revocations == 1
     assert not backend.session
     assert "Set-Cookie" not in response.headers
+
+
+def test_expired_oauth_session_is_revoked_by_injected_backend():
+    import time
+    from flask.sessions import SessionInterface, SessionMixin
+
+    class BackendSession(dict, SessionMixin):
+        new = False
+        modified = False
+        accessed = False
+
+    class FakeSessionInterface(SessionInterface):
+        def __init__(self):
+            self.session = BackendSession(
+                access_token="expired-server-only-token",
+                token_expires_at=time.time() - 1,
+                dash_user={"id": "123456789012345678"},
+            )
+            self.revocations = 0
+
+        def open_session(self, app, request):
+            return self.session
+
+        def save_session(self, app, session, response):
+            pass
+
+        def revoke_session(self, session):
+            assert dict(session) == dict(self.session)
+            self.revocations += 1
+
+    backend = FakeSessionInterface()
+    app = _create_app(_config(), session_interface=backend)
+
+    response = app.test_client().get("/dashboard")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+    assert backend.revocations == 1
+    assert not backend.session
+    assert "Set-Cookie" not in response.headers
