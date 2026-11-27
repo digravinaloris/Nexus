@@ -45,6 +45,11 @@ from stores.reaction_roles_store import save_reaction_role, get_reaction_role, d
 from stores.server_backup_store import get_server_backup, list_server_backups
 from stores.guild_cleanup_store import cleanup_guild_data
 from stores.notes_store import add_member_note, get_member_notes
+from stores.scheduled_tasks_store import (
+    create_announcement, get_due_announcements, mark_announcement_sent,
+    create_reminder, get_due_reminders, mark_reminder_sent,
+)
+from stores.quarantine_store import create_quarantine_entry, get_pending_quarantine_reviews, mark_quarantine_reminded
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
@@ -2966,14 +2971,7 @@ async def weekly_digest_loop():
 
 
 def schedule_announcement(guild_id, channel_id, content, send_at, author_id):
-    scheduled_col.insert_one({
-        "guild_id": str(guild_id),
-        "channel_id": str(channel_id),
-        "content": content,
-        "send_at": send_at,
-        "author_id": str(author_id),
-        "sent": False,
-    })
+    create_announcement(guild_id, channel_id, content, send_at, author_id)
 
 
 async def scheduled_announcements_loop():
@@ -2984,7 +2982,7 @@ async def scheduled_announcements_loop():
     while not bot.is_closed():
         try:
             now = datetime.datetime.now(datetime.timezone.utc)
-            due = list(scheduled_col.find({"sent": False, "send_at": {"$lte": now}}))
+            due = get_due_announcements(now)
             for doc in due:
                 channel = bot.get_channel(int(doc["channel_id"]))
                 if channel:
@@ -2992,7 +2990,7 @@ async def scheduled_announcements_loop():
                         await channel.send(doc["content"])
                     except discord.HTTPException as e:
                         print(f"[SCHEDULE] Failed to send scheduled announcement: {e}", flush=True)
-                scheduled_col.update_one({"_id": doc["_id"]}, {"$set": {"sent": True}})
+                mark_announcement_sent(doc["_id"])
         except Exception as e:
             print(f"[SCHEDULE] loop error: {e}", flush=True)
         await asyncio.sleep(60)
@@ -3046,7 +3044,7 @@ async def reminders_loop():
     while not bot.is_closed():
         try:
             now = datetime.datetime.now(datetime.timezone.utc)
-            due = list(reminders_col.find({"sent": False, "due_at": {"$lte": now}}))
+            due = get_due_reminders(now)
             for doc in due:
                 try:
                     user = bot.get_user(int(doc["user_id"])) or await bot.fetch_user(int(doc["user_id"]))
@@ -3054,7 +3052,7 @@ async def reminders_loop():
                     await user.send(embed=embed)
                 except discord.HTTPException as e:
                     log_json("error", "remindme_dm_failed", user_id=doc["user_id"], error=str(e))
-                reminders_col.update_one({"_id": doc["_id"]}, {"$set": {"sent": True}})
+                mark_reminder_sent(doc["_id"])
         except Exception as e:
             log_json("error", "remindme_loop_error", error=str(e))
         await asyncio.sleep(30)
@@ -3104,7 +3102,7 @@ async def quarantine_review_loop():
     while not bot.is_closed():
         try:
             now = datetime.datetime.now(datetime.timezone.utc)
-            pending = list(quarantine_col.find({"reviewed": False, "reminded": False}))
+            pending = get_pending_quarantine_reviews()
             for doc in pending:
                 guild = bot.get_guild(int(doc["guild_id"]))
                 if not guild:
@@ -3123,7 +3121,7 @@ async def quarantine_review_loop():
                         await channel.send(f"⏳ Reminder: <@{doc['user_id']}> is still waiting for quarantine review (joined {hold_minutes}+ min ago).")
                     except discord.HTTPException as e:
                         log_json("error", "quarantine_reminder_failed", error=str(e))
-                quarantine_col.update_one({"_id": doc["_id"]}, {"$set": {"reminded": True}})
+                mark_quarantine_reminded(doc["_id"])
         except Exception as e:
             log_json("error", "quarantine_review_loop_error", error=str(e))
         await asyncio.sleep(300)
@@ -3169,14 +3167,10 @@ async def remindme(interaction: discord.Interaction, duration: str, text: str):
         await interaction.response.send_message("❌ Invalid duration. Use something like `10m`, `2h`, `1d`, `1w`.", ephemeral=True)
         return
     due_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=seconds)
-    reminders_col.insert_one({
-        "user_id": str(interaction.user.id),
-        "guild_id": str(interaction.guild_id) if interaction.guild_id else None,
-        "text": text,
-        "due_at": due_at,
-        "sent": False,
-        "created_at": datetime.datetime.now(datetime.timezone.utc),
-    })
+    create_reminder(
+        interaction.user.id, interaction.guild_id, text, due_at,
+        datetime.datetime.now(datetime.timezone.utc),
+    )
     await interaction.response.send_message(f"⏰ Got it — I'll DM you in **{duration}**: \"{text}\"", ephemeral=True)
 
 
@@ -4624,14 +4618,10 @@ async def on_member_join(member):
                     await member.add_roles(role, reason="Quarantine: new account held for review")
                 except discord.HTTPException as e:
                     log_json("error", "quarantine_role_add_failed", user_id=member.id, guild_id=member.guild.id, error=str(e))
-                quarantine_col.insert_one({
-                    "guild_id": str(member.guild.id),
-                    "user_id": str(member.id),
-                    "account_age_days": account_age_days,
-                    "joined_at": datetime.datetime.now(datetime.timezone.utc),
-                    "reviewed": False,
-                    "reminded": False,
-                })
+                create_quarantine_entry(
+                    member.guild.id, member.id, account_age_days,
+                    datetime.datetime.now(datetime.timezone.utc),
+                )
                 review_embed = discord.Embed(
                     title="🔎 New Account Held for Review",
                     description=f"**{member}** (<@{member.id}>) joined with an account only **{account_age_days} day(s)** old.",

@@ -516,3 +516,43 @@ def test_notes_store_lifecycle(mongo_db):
     assert notes[0]["text"] == "Staff-only note"
     assert notes[0]["moderator_id"] == "7"
     assert notes_store.get_member_notes(2, 42) == []
+
+
+# ------------------------------------------------ scheduled task and quarantine stores
+
+def test_scheduled_announcement_store_lifecycle(mongo_db):
+    from stores import scheduled_tasks_store
+
+    now = datetime.datetime(2026, 11, 27, 12, 0)
+    due_id = scheduled_tasks_store.create_announcement(1, 10, "Hello", now, 7).inserted_id
+    scheduled_tasks_store.create_announcement(1, 10, "Later", now + datetime.timedelta(hours=1), 7)
+    due = scheduled_tasks_store.get_due_announcements(now)
+    assert len(due) == 1
+    assert due[0]["_id"] == due_id
+    scheduled_tasks_store.mark_announcement_sent(due_id)
+    assert scheduled_tasks_store.get_due_announcements(now) == []
+
+
+def test_reminder_store_lifecycle_and_global_user_reminder(mongo_db):
+    from stores import scheduled_tasks_store
+
+    now = datetime.datetime(2026, 11, 27, 12, 0)
+    reminder_id = scheduled_tasks_store.create_reminder(42, None, "Check this", now, now).inserted_id
+    assert scheduled_tasks_store.get_due_reminders(now)[0]["_id"] == reminder_id
+    reminder = mongo_db["reminders"].find_one({"_id": reminder_id})
+    assert reminder["guild_id"] is None
+    assert reminder["user_id"] == "42"
+    scheduled_tasks_store.mark_reminder_sent(reminder_id)
+    assert scheduled_tasks_store.get_due_reminders(now) == []
+
+
+def test_quarantine_store_lifecycle_and_reminder_flag(mongo_db):
+    from stores import quarantine_store
+
+    joined_at = datetime.datetime(2026, 11, 27, 12, 0)
+    entry_id = quarantine_store.create_quarantine_entry(1, 42, 2, joined_at).inserted_id
+    pending = quarantine_store.get_pending_quarantine_reviews()
+    assert len(pending) == 1
+    assert pending[0]["user_id"] == "42"
+    quarantine_store.mark_quarantine_reminded(entry_id)
+    assert quarantine_store.get_pending_quarantine_reviews() == []
