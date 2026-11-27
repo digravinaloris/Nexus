@@ -33,5 +33,5 @@ def is_valid_oauth_code(code):
     return (
         isinstance(code, str)
         and len(code) <= 2048
-        and re.search(r"[\\x00-\\x20\\x7f]", code) is None
+        and re.search(r"[\x00-\x20\x7f]", code) is None
     )
