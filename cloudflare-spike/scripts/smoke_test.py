@@ -164,6 +164,19 @@ def main():
         f"Workers Fetch public status snapshot failed: {fetch_public}",
     )
 
+    status, fetch_owner = call("/__spike/fetch-client/is_guild_owner", "POST", {})
+    require(
+        status == 200 and fetch_owner.get("result") is True,
+        f"Signed guild-owner authorization check failed: {fetch_owner}",
+    )
+    status, fetch_non_owner = call(
+        "/__spike/fetch-client/is_guild_owner_denied", "POST", {}
+    )
+    require(
+        status == 200 and fetch_non_owner.get("result") is False,
+        f"Signed guild-owner authorization accepted a non-owner: {fetch_non_owner}",
+    )
+
     status, fetch_response_validation = call(
         "/__spike/fetch-client-response-validation", "POST", {}
     )
