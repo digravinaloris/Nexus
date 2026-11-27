@@ -492,7 +492,7 @@ def test_dashboard_guild_guard_allows_present_guild_through_bot_service(env, mon
 
 
 
-def test_callback_uses_app_injected_discord_http_client(env):
+def test_callback_uses_app_injected_discord_http_client(env, monkeypatch):
     class Response:
         def __init__(self, status_code, payload):
             self.status_code = status_code
@@ -514,7 +514,7 @@ def test_callback_uses_app_injected_discord_http_client(env):
             return Response(200, {"id": "123456789012345678", "username": "worker-user"})
 
     client = InjectedHttpClient()
-    env.nexus.api.config["DISCORD_HTTP_CLIENT"] = client
+    monkeypatch.setitem(env.nexus.api.config, "DISCORD_HTTP_CLIENT", client)
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "injected-state"
         sess["oauth_code_verifier"] = "A" * 43
