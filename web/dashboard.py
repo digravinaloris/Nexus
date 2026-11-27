@@ -10,7 +10,6 @@ import datetime
 from functools import wraps
 import secrets
 import time
-from urllib.parse import urlparse
 
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
@@ -21,7 +20,7 @@ from calendar_utils import parse_event_datetime, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from utils import normalize_banned_word, normalize_domain, parse_lines_list
-from dashboard_utils import read_bounded_form_numbers, validate_channel_selection, validate_role_selection
+from dashboard_utils import read_bounded_form_numbers, validate_channel_selection, validate_role_selection, is_safe_relative_redirect
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
 from web.bot_service import get_bot_service
 from web.routing import Routes
@@ -37,10 +36,7 @@ def _safe_next_url(default):
     Refusés : URL absolues, `//hote` (protocole relatif), antislash, caractères de contrôle
     (les navigateurs ignorent tab/retour ligne : `/\t/hote` redevient `//hote`)."""
     target = request.args.get("next") or ""
-    parsed = urlparse(target)
-    if (target.startswith("/") and not target.startswith("//") and "\\" not in target
-            and not any(ord(c) < 32 or ord(c) == 127 for c in target)
-            and not parsed.scheme and not parsed.netloc):
+    if is_safe_relative_redirect(target):
         return target
     return default
 
