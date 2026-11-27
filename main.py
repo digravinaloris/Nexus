@@ -37,11 +37,14 @@ from stores.sanctions_store import (
     get_locked_channels, get_next_case_id, log_sanction, get_case,
     create_sanction_appeal, get_ban_appeal, get_ban_appeal_by_case,
     get_sanction_stats, get_sanction_history, save_tempban, remove_tempban, get_active_tempbans,
+    get_warnlist, update_case_reason, add_case_followup_note, delete_user_moderation_data,
+    list_guild_sanctions, list_sanctions_since,
 )
 from stores.sticky_store import set_sticky_message, remove_sticky_message, get_sticky_message, mark_sticky_message_posted
 from stores.reaction_roles_store import save_reaction_role, get_reaction_role, delete_reaction_roles
 from stores.server_backup_store import get_server_backup, list_server_backups
 from stores.guild_cleanup_store import cleanup_guild_data
+from stores.notes_store import add_member_note, get_member_notes
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
@@ -1021,8 +1024,7 @@ async def groupnickname(interaction: discord.Interaction, role: discord.Role, pr
 async def warnlist(interaction: discord.Interaction):
     if not await check_access(interaction, "warnlist", "manage_messages"): return
     await interaction.response.defer()
-    docs = warns_col.find({"guild_id": str(interaction.guild_id), "count": {"$gt": 0}})
-    warned = list(docs)
+    warned = list(get_warnlist(interaction.guild_id))
     if not warned:
         embed = discord.Embed(description="✅ No members have warnings.", color=0x00cc00)
         await interaction.followup.send(embed=embed)
@@ -1131,15 +1133,9 @@ async def case_edit(interaction: discord.Interaction, case_id: int, reason: str)
         await interaction.response.send_message(f"❌ No case **#{case_id}** found on this server.", ephemeral=True)
         return
     old_reason = case["reason"]
-    sanctions_col.update_one(
-        {"guild_id": str(interaction.guild_id), "case_id": case_id},
-        {"$set": {
-            "reason": reason,
-            "edited": True,
-            "edited_by": str(interaction.user.id),
-            "edited_by_name": str(interaction.user),
-            "edited_at": datetime.datetime.now(datetime.timezone.utc),
-        }},
+    update_case_reason(
+        interaction.guild_id, case_id, reason, interaction.user.id,
+        str(interaction.user), datetime.datetime.now(datetime.timezone.utc),
     )
     record_audit(
         interaction.guild_id, interaction.user.id, str(interaction.user),
@@ -1156,13 +1152,9 @@ async def case_note(interaction: discord.Interaction, case_id: int, text: str):
     if not case:
         await interaction.response.send_message(f"❌ No case **#{case_id}** found on this server.", ephemeral=True)
         return
-    sanctions_col.update_one(
-        {"guild_id": str(interaction.guild_id), "case_id": case_id},
-        {"$push": {"followup_notes": {
-            "author_name": str(interaction.user),
-            "text": text,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc),
-        }}},
+    add_case_followup_note(
+        interaction.guild_id, case_id, str(interaction.user), text,
+        datetime.datetime.now(datetime.timezone.utc),
     )
     record_audit(interaction.guild_id, interaction.user.id, str(interaction.user), f"Added a note to case #{case_id}", text)
     await interaction.response.send_message(f"📝 Note added to case **#{case_id}**.", ephemeral=True)
@@ -1175,13 +1167,7 @@ bot.tree.add_command(case_group)
 @app_commands.describe(member="The member to note", text="The note content")
 async def note(interaction: discord.Interaction, member: discord.Member, text: str):
     if not await check_access(interaction, "note", "manage_messages"): return
-    notes_col.insert_one({
-        "guild_id": str(interaction.guild_id),
-        "user_id": str(member.id),
-        "text": text,
-        "moderator_id": str(interaction.user.id),
-        "timestamp": datetime.datetime.utcnow(),
-    })
+    add_member_note(interaction.guild_id, member.id, text, interaction.user.id, datetime.datetime.utcnow())
     log_sanction(interaction.guild_id, member.id, "note", text, interaction.user.id)
     embed = discord.Embed(description=f"📝 Note added for **{member}**.", color=0x3399ff)
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1191,7 +1177,7 @@ async def note(interaction: discord.Interaction, member: discord.Member, text: s
 @app_commands.describe(member="The member whose notes to view")
 async def notes(interaction: discord.Interaction, member: discord.Member):
     if not await check_access(interaction, "notes", "manage_messages"): return
-    docs = list(notes_col.find({"guild_id": str(interaction.guild_id), "user_id": str(member.id)}).sort("timestamp", -1).limit(15))
+    docs = get_member_notes(interaction.guild_id, member.id)
     if not docs:
         embed = discord.Embed(description=f"✅ No notes for **{member}**.", color=0x00cc00)
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1249,9 +1235,7 @@ async def softban(interaction: discord.Interaction, member: discord.Member, reas
 @has_admin()
 async def purgeuser(interaction: discord.Interaction, user_id: str):
     guild_id = str(interaction.guild_id)
-    warns_col.delete_many({"guild_id": guild_id, "user_id": user_id})
-    sanctions_col.delete_many({"guild_id": guild_id, "user_id": user_id})
-    notes_col.delete_many({"guild_id": guild_id, "user_id": user_id})
+    delete_user_moderation_data(guild_id, user_id)
     embed = discord.Embed(
         description=f"🗑️ All stored data (warnings, sanctions, notes) for user ID `{user_id}` has been erased for this server.",
         color=0x00cc00,
@@ -2787,7 +2771,7 @@ export_group = app_commands.Group(name="export", description="Export server data
 @has_admin()
 async def export_sanctions(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    records = list(sanctions_col.find({"guild_id": str(interaction.guild_id)}).sort("timestamp", -1))
+    records = list_guild_sanctions(interaction.guild_id)
     if not records:
         await interaction.followup.send("No sanctions to export.", ephemeral=True)
         return
@@ -2933,10 +2917,7 @@ async def member_count_loop():
 
 async def generate_weekly_digest(guild):
     week_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
-    sanctions_this_week = list(sanctions_col.find({
-        "guild_id": str(guild.id),
-        "timestamp": {"$gte": week_ago},
-    }))
+    sanctions_this_week = list_sanctions_since(guild.id, week_ago)
     counts = {}
     for s in sanctions_this_week:
         counts[s["type"]] = counts.get(s["type"], 0) + 1

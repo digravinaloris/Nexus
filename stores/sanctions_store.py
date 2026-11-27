@@ -254,3 +254,46 @@ def remove_tempban(guild_id, user_id):
 def get_active_tempbans():
     return list(col.sanctions.find({"type": "tempban_active"}))
 
+def update_case_reason(guild_id, case_id, reason, editor_id, editor_name, edited_at):
+    return col.sanctions.update_one(
+        {"guild_id": str(guild_id), "case_id": case_id},
+        {"$set": {
+            "reason": reason,
+            "edited": True,
+            "edited_by": str(editor_id),
+            "edited_by_name": editor_name,
+            "edited_at": edited_at,
+        }},
+    )
+
+
+def add_case_followup_note(guild_id, case_id, author_name, text, timestamp):
+    return col.sanctions.update_one(
+        {"guild_id": str(guild_id), "case_id": case_id},
+        {"$push": {"followup_notes": {
+            "author_name": author_name,
+            "text": text,
+            "timestamp": timestamp,
+        }}},
+    )
+
+
+def delete_user_moderation_data(guild_id, user_id):
+    query = {"guild_id": str(guild_id), "user_id": str(user_id)}
+    col.warns.delete_many(query)
+    col.sanctions.delete_many(query)
+    col.notes.delete_many(query)
+
+
+def list_guild_sanctions(guild_id):
+    return list(
+        col.sanctions.find({"guild_id": str(guild_id)}).sort("timestamp", -1)
+    )
+
+
+def list_sanctions_since(guild_id, since):
+    return list(col.sanctions.find({
+        "guild_id": str(guild_id),
+        "timestamp": {"$gte": since},
+    }))
+
