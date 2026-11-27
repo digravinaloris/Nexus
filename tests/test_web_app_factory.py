@@ -323,3 +323,14 @@ def test_factory_requires_explicit_secret_when_runtime_environment_is_empty(monk
 
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         _create_app({}, environ={})
+
+
+
+def test_factory_injects_totp_secret_from_runtime_environment(monkeypatch):
+    monkeypatch.setenv("TOTP_SECRET", "process-totp-secret")
+
+    app = _create_app(_config(), environ={"TOTP_SECRET": "injected-totp-secret"})
+    isolated_app = _create_app(_config(), environ={})
+
+    assert app.config["TOTP_SECRET"] == "injected-totp-secret"
+    assert isolated_app.config["TOTP_SECRET"] == ""

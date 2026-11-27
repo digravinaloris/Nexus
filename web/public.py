@@ -8,7 +8,7 @@ import datetime
 import os
 import time
 
-from flask import jsonify, render_template, request, send_from_directory
+from flask import current_app, jsonify, render_template, request, send_from_directory
 import pyotp
 
 import utils
@@ -78,7 +78,7 @@ def killswitch_submit(token):
         return render_template("killswitch_invalid.html"), 410
 
     code = request.form.get("code", "").strip()
-    totp_secret = os.getenv("TOTP_SECRET")
+    totp_secret = current_app.config.get("TOTP_SECRET")
     valid = bool(totp_secret) and bool(code) and pyotp.TOTP(totp_secret).verify(code, valid_window=1)
 
     if not valid:
