@@ -20,7 +20,7 @@ from calendar_utils import parse_event_datetime, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from utils import normalize_banned_word, normalize_domain, parse_lines_list
-from dashboard_utils import (
+from web.dashboard_utils import (
     read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
     is_safe_relative_redirect, build_feature_toggle_updates,
     build_settings_update_plan, get_template_role_names,
