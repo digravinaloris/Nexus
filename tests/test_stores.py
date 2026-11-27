@@ -459,3 +459,20 @@ def test_server_backup_store_lifecycle_and_retention(mongo_db):
     assert server_backup_store.get_server_backup(1, str(ids[-1]))["_id"] == ids[-1]
     assert server_backup_store.get_server_backup(2, str(ids[-1])) is None
     assert server_backup_store.get_server_backup(1, "not-an-object-id") is None
+
+
+# ------------------------------------------------ guild cleanup persistence
+
+def test_guild_cleanup_store_is_scoped_to_one_guild(mongo_db):
+    from stores.guild_cleanup_store import cleanup_guild_data
+
+    collection_names = ("config", "warns", "locked_channels", "sanctions", "reaction_roles", "notes")
+    for name in collection_names:
+        mongo_db[name].insert_one({"guild_id": "1", "sentinel": "remove"})
+        mongo_db[name].insert_one({"guild_id": "2", "sentinel": "keep"})
+
+    cleanup_guild_data(1)
+
+    for name in collection_names:
+        assert mongo_db[name].count_documents({"guild_id": "1"}) == 0
+        assert mongo_db[name].count_documents({"guild_id": "2"}) == 1
