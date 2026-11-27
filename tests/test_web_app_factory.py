@@ -151,6 +151,7 @@ blocked = {
     "main",
     "discord",
     "pymongo",
+    "requests",
     "bson",
     "core",
     "bridge",
