@@ -226,3 +226,31 @@ def submit_ban_appeal(token, appeal_text, submitted_at=None):
         }},
     )
     return result.modified_count == 1
+
+def get_sanction_history(guild_id, user_id, limit=15):
+    return list(
+        col.sanctions.find({"guild_id": str(guild_id), "user_id": str(user_id)})
+        .sort("timestamp", -1)
+        .limit(limit)
+    )
+
+
+def save_tempban(guild_id, user_id, unban_at):
+    col.sanctions.update_one(
+        {"guild_id": str(guild_id), "user_id": str(user_id), "type": "tempban_active"},
+        {"$set": {"unban_at": unban_at}},
+        upsert=True,
+    )
+
+
+def remove_tempban(guild_id, user_id):
+    col.sanctions.delete_one({
+        "guild_id": str(guild_id),
+        "user_id": str(user_id),
+        "type": "tempban_active",
+    })
+
+
+def get_active_tempbans():
+    return list(col.sanctions.find({"type": "tempban_active"}))
+
