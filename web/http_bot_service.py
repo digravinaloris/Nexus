@@ -89,13 +89,15 @@ class SignedHttpBotService(BotService):
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
+        if not isinstance(args, (list, tuple)):
+            raise ValueError("Invalid internal BotService arguments")
         expected_counts = allowed_argument_counts[method]
         valid_count = (
             len(args) in expected_counts
             if isinstance(expected_counts, tuple)
             else len(args) == expected_counts
         )
-        if not isinstance(args, (list, tuple)) or not valid_count:
+        if not valid_count:
             raise ValueError("Invalid internal BotService arguments")
         if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
