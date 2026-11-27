@@ -13,7 +13,7 @@ import secrets
 import time
 from urllib.parse import urlencode
 
-from flask import jsonify, redirect, request, session, url_for
+from flask import current_app, jsonify, redirect, request, session, url_for
 import requests
 
 from web.oauth_utils import OAUTH_STATE_MAX_AGE, create_code_challenge, is_fresh_state_timestamp, is_valid_code_verifier, is_valid_oauth_code
@@ -23,9 +23,18 @@ from web.routing import Routes
 routes = Routes()
 
 
-DASH_CLIENT_ID = os.environ["DISCORD_CLIENT_ID"]
-DASH_CLIENT_SECRET = os.environ["DISCORD_CLIENT_SECRET"]
-DASH_REDIRECT_URI = os.environ["DISCORD_REDIRECT_URI"]
+DASH_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
+DASH_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
+DASH_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "")
+
+
+def _oauth_config():
+    """Resolve OAuth settings from the current app, with import-time compatibility fallbacks."""
+    return (
+        current_app.config.get("DISCORD_CLIENT_ID", DASH_CLIENT_ID),
+        current_app.config.get("DISCORD_CLIENT_SECRET", DASH_CLIENT_SECRET),
+        current_app.config.get("DISCORD_REDIRECT_URI", DASH_REDIRECT_URI),
+    )
 DISCORD_API_BASE = "https://discord.com/api"
 ADMINISTRATOR_PERM = 0x8
 GUILD_ID_RE = re.compile(r"^\d{17,20}$")  # valide un vrai snowflake Discord
@@ -127,6 +136,9 @@ def dash_guild_admin_required(f):
 
 @routes.route("/login")
 def dash_login():
+    client_id, _client_secret, redirect_uri = _oauth_config()
+    if not client_id or not redirect_uri:
+        return jsonify({"error": "Discord OAuth is not configured"}), 503
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
     code_challenge = create_code_challenge(code_verifier)
@@ -134,8 +146,8 @@ def dash_login():
     session["oauth_state_created_at"] = time.time()
     session["oauth_code_verifier"] = code_verifier
     params = {
-        "client_id": DASH_CLIENT_ID,
-        "redirect_uri": DASH_REDIRECT_URI,
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": "identify guilds",
         "state": state,
@@ -183,6 +195,11 @@ def dash_callback():
     if not is_valid_oauth_code(code):
         return jsonify({"error": "Invalid code"}), 400
 
+    client_id, client_secret, redirect_uri = _oauth_config()
+    if not all((client_id, client_secret, redirect_uri)):
+        session.clear()
+        return jsonify({"error": "Discord OAuth is not configured"}), 503
+
     # Consume the one-time state and discard any pre-authentication session data.
     # A fresh session is created only after Discord has authenticated the user.
     session.clear()
@@ -191,11 +208,11 @@ def dash_callback():
         token_r = requests.post(
             f"{DISCORD_API_BASE}/oauth2/token",
             data={
-                "client_id": DASH_CLIENT_ID,
-                "client_secret": DASH_CLIENT_SECRET,
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": DASH_REDIRECT_URI,
+                "redirect_uri": redirect_uri,
                 "code_verifier": code_verifier,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},

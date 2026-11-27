@@ -1,0 +1,86 @@
+"""Flask application construction, independent from the Discord bot lifecycle."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Mapping, Optional
+
+from flask import Flask, request
+
+from i18n import current_lang, current_theme, t
+from web import auth as web_auth
+from web import dashboard as web_dashboard
+from web import github_webhook
+from web import public as web_public
+from web import verify as web_verify
+from web.csrf import register_csrf
+from web.rest_api import bp as rest_api_bp
+
+
+def create_web_app(
+    *,
+    config: Optional[Mapping[str, object]] = None,
+    template_folder: Optional[str] = None,
+) -> Flask:
+    """Build the existing Nexus web surface without importing or starting main.py.
+
+    Bot-dependent work remains behind the BotService boundary and is performed
+    only when a request actually needs it.
+    """
+    root_dir = Path(__file__).resolve().parent.parent
+    app = Flask(
+        "",
+        template_folder=template_folder or str(root_dir / "templates"),
+    )
+    app.config.update(
+        SECRET_KEY=os.environ.get("FLASK_SECRET_KEY"),
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        DISCORD_CLIENT_ID=os.environ.get("DISCORD_CLIENT_ID", ""),
+        DISCORD_CLIENT_SECRET=os.environ.get("DISCORD_CLIENT_SECRET", ""),
+        DISCORD_REDIRECT_URI=os.environ.get("DISCORD_REDIRECT_URI", ""),
+        API_KEY=os.environ.get("API_KEY"),
+    )
+    if config:
+        app.config.update(config)
+    if not app.config.get("SECRET_KEY"):
+        raise RuntimeError("A Flask SECRET_KEY must be configured before creating the web app")
+
+    app.register_blueprint(rest_api_bp)
+    web_auth.routes.register(app)
+    web_public.routes.register(app)
+    web_dashboard.routes.register(app)
+    web_verify.routes.register(app)
+    github_webhook.routes.register(app)
+    register_csrf(app)
+
+    @app.after_request
+    def add_security_headers(response):
+        """Apply baseline browser security headers to every web response."""
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=()",
+        )
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "base-uri 'self'; object-src 'none'; frame-ancestors 'none'",
+        )
+        if (
+            request.path in {"/login", "/callback", "/logout"}
+            or request.path == "/dashboard"
+            or request.path.startswith("/dashboard/")
+        ):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+    app.jinja_env.globals["t"] = t
+    app.jinja_env.globals["lang"] = current_lang
+    app.jinja_env.globals["theme"] = current_theme
+    return app
