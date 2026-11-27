@@ -16,7 +16,7 @@ import calendar_store
 from services.template_ops import _apply_template_base_config
 from template_store import get_template_by_code, list_public_templates
 from stores.killswitch_store import get_killswitch_token, increment_killswitch_attempts, mark_killswitch_token_used
-from verification import get_valid_challenge, mark_used, record_failed_attempt
+from security.verification import get_valid_challenge, mark_used, record_failed_attempt
 from config_store import add_command_role, get_config, get_global_lock, remove_command_role, set_global_lock, update_config, update_config_fields
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
 from audit import get_audit_log, record_audit
@@ -612,7 +612,7 @@ class InProcessBotService(BotService):
         guild = bot.get_guild(int(guild_id))
         if guild is None:
             return False, "Guild not found"
-        from verification import grant_verified
+        from security.verification import grant_verified
         return run_coroutine(grant_verified(guild, user_id))
 
     def api_log_dashboard_action(self, guild_id: str, actor_name: str, action: str, details: str = ""):

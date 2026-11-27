@@ -17,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:  # `pytest tests/` (comme la CI) n'ajoute pas la racine du repo
     sys.path.insert(0, ROOT)
 
-import verification  # noqa: E402
+import security.verification as verification  # noqa: E402
 
 SITE = "1x00000000000000000000AA"
 SECRET = "1x0000000000000000000000000000000AA"
