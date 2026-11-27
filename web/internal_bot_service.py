@@ -76,9 +76,9 @@ def create_internal_bot_service_blueprint(
 ) -> Blueprint:
     """Create the opt-in v1 dispatch endpoint.
 
-    Only the read-only health_snapshot method is exposed initially. Mutating
-    operations must be added explicitly with their own DTO and authorization
-    rules; arbitrary method names are never dispatched.
+    Only explicit read-only snapshot methods are exposed. Mutating operations
+    must be added explicitly with their own DTO and authorization rules;
+    arbitrary method names are never dispatched.
     """
     blueprint = Blueprint("nexus_internal_bot_service", __name__)
 
@@ -114,10 +114,17 @@ def create_internal_bot_service_blueprint(
         if (
             not isinstance(payload, dict)
             or set(payload) != {"method", "args", "kwargs"}
-            or payload.get("method") != "health_snapshot"
             or payload.get("args") != []
             or payload.get("kwargs") != {}
         ):
+            return jsonify({"error": "unsupported internal operation"}), 403
+
+        operations = {
+            "health_snapshot": getattr(service, "health_snapshot", None),
+            "public_status_snapshot": getattr(service, "public_status_snapshot", None),
+        }
+        operation = operations.get(payload.get("method"))
+        if not callable(operation):
             return jsonify({"error": "unsupported internal operation"}), 403
 
         try:
@@ -133,7 +140,7 @@ def create_internal_bot_service_blueprint(
             return jsonify({"error": "request already used"}), 409
 
         try:
-            result = service.health_snapshot()
+            result = operation()
             return jsonify({"ok": True, "result": result})
         except Exception:
             return jsonify({"error": "internal service unavailable"}), 503
