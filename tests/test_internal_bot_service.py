@@ -73,8 +73,18 @@ class FakeBotService:
     def api_guild_list_snapshot(self, guild_id=None):
         self.calls.append(("api_guild_list_snapshot", guild_id))
         if guild_id:
-            return [{"id": guild_id, "name": "Test Server"}]
-        return [{"id": "123", "name": "Test Server"}]
+            return [{
+                "id": guild_id,
+                "name": "Test Server",
+                "member_count": 42,
+                "icon_url": None,
+            }]
+        return [{
+            "id": "123",
+            "name": "Test Server",
+            "member_count": 42,
+            "icon_url": None,
+        }]
 
     def api_guild_id_candidates(self):
         self.calls.append("api_guild_id_candidates")
@@ -381,7 +391,15 @@ def test_signed_dispatch_returns_optional_api_snapshots():
     guilds_body = _request_body({"method": "api_guild_list_snapshot", "args": ["123"], "kwargs": {}})
     guilds = client.post(PATH, data=guilds_body, headers=_signed_headers(guilds_body, nonce="g" * 24))
     assert guilds.status_code == 200
-    assert guilds.get_json() == {"ok": True, "result": [{"id": "123", "name": "Test Server"}]}
+    assert guilds.get_json() == {
+        "ok": True,
+        "result": [{
+            "id": "123",
+            "name": "Test Server",
+            "member_count": 42,
+            "icon_url": None,
+        }],
+    }
 
 
 def test_signed_dispatch_fails_closed_on_malformed_read_operation_results():
