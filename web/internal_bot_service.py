@@ -235,15 +235,39 @@ def create_internal_bot_service_blueprint(
                 return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "api_health_snapshot" and not isinstance(result, dict):
                 return jsonify({"error": "internal service unavailable"}), 503
-            if method_name == "api_guild_list_snapshot" and (
-                result is not None
-                and (
+            if method_name == "api_guild_list_snapshot" and result is not None:
+                if (
                     not isinstance(result, list)
                     or len(result) > 500
-                    or not all(isinstance(value, dict) for value in result)
+                    or not all(
+                        isinstance(guild, dict)
+                        and set(guild) == {"id", "name", "member_count", "icon_url"}
+                        and valid_guild_id(guild["id"])
+                        and isinstance(guild["name"], str)
+                        and 1 <= len(guild["name"]) <= 100
+                        and (
+                            guild["member_count"] is None
+                            or (type(guild["member_count"]) is int and guild["member_count"] >= 0)
+                        )
+                        and (
+                            guild["icon_url"] is None
+                            or (
+                                isinstance(guild["icon_url"], str)
+                                and len(guild["icon_url"]) <= 2048
+                                and guild["icon_url"].startswith("https://cdn.discordapp.com/icons/")
+                            )
+                        )
+                        for guild in result
+                    )
+                ):
+                    return jsonify({"error": "internal service unavailable"}), 503
+                serialized_size = len(
+                    json.dumps(
+                        result, separators=(",", ":"), ensure_ascii=True
+                    ).encode("utf-8")
                 )
-            ):
-                return jsonify({"error": "internal service unavailable"}), 503
+                if serialized_size > 60 * 1024:
+                    return jsonify({"error": "internal service unavailable"}), 503
             if method_name in {"api_text_channels_snapshot", "api_roles_snapshot"} and (
                 result is not None
                 and (

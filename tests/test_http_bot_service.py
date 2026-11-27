@@ -415,3 +415,68 @@ def test_faq_and_member_snapshots_reject_invalid_guild_ids(method, guild_id):
     with pytest.raises(ValueError, match="guild ID"):
         getattr(_client(session), method)(guild_id)
     assert session.calls == []
+
+
+
+def test_remote_guild_list_snapshot_supports_global_and_guild_scoped_requests():
+    result_value = [{
+        "id": "123456789012345678",
+        "name": "Nexus Community",
+        "member_count": 42,
+        "icon_url": "https://cdn.discordapp.com/icons/123456789012345678/hash.png",
+    }]
+    for guild_id, args in [(None, []), ("123456789012345678", ["123456789012345678"])]:
+        session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result_value}))
+        assert _client(session).api_guild_list_snapshot(guild_id) == result_value
+        body = session.calls[0][1]["data"]
+        assert json.loads(body) == {
+            "method": "api_guild_list_snapshot",
+            "args": args,
+            "kwargs": {},
+        }
+        verify_internal_request(
+            keyring={"current": SECRET},
+            method="POST",
+            path="/internal/v1/dispatch",
+            body=body,
+            headers=session.calls[0][1]["headers"],
+        )
+
+
+def test_remote_guild_list_snapshot_allows_offline_none():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": None}))
+    assert _client(session).api_guild_list_snapshot() is None
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {},
+        [{"id": "abc", "name": "Nexus", "member_count": 1, "icon_url": None}],
+        [{"id": "123", "name": "", "member_count": 1, "icon_url": None}],
+        [{"id": "123", "name": "Nexus", "member_count": True, "icon_url": None}],
+        [{"id": "123", "name": "Nexus", "member_count": -1, "icon_url": None}],
+        [{"id": "123", "name": "Nexus", "member_count": 1, "icon_url": "https://evil.example/icon.png"}],
+        [{"id": "123", "name": "Nexus", "member_count": 1, "icon_url": "http://cdn.discordapp.com/icons/123/a.png"}],
+        [{"id": "123", "name": "Nexus", "member_count": 1, "icon_url": None, "extra": True}],
+        [{"id": "123456789012345678", "name": "Nexus", "member_count": 1, "icon_url": None}] * 501,
+    ],
+)
+def test_remote_guild_list_snapshot_rejects_malformed_dtos(result):
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(session).api_guild_list_snapshot()
+
+
+@pytest.mark.parametrize("guild_id", ["", "0", "-1", "abc", "1" * 21, 123])
+def test_remote_guild_list_snapshot_rejects_invalid_optional_guild_id(guild_id):
+    session = FakeSession()
+    with pytest.raises(ValueError, match="guild ID"):
+        _client(session).api_guild_list_snapshot(guild_id)
+    assert session.calls == []
+
+
+
+def test_remote_guild_list_snapshot_rejects_non_sequence_internal_args():
+    with pytest.raises(ValueError, match="internal BotService arguments"):
+        _client()._dispatch_snapshot("api_guild_list_snapshot", None)
