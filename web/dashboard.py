@@ -18,7 +18,7 @@ from audit_helpers.export_utils import _build_audit_csv_bytes, _build_audit_pdf_
 from catalogs.commands import COMMAND_TEMPLATES, MODERATION_COMMANDS
 from calendar_helpers.utils import parse_event_datetime, local_when, validate_timezone
 from catalogs.features import FEATURE_TOGGLES
-from i18n import TRANSLATIONS, current_lang, t
+from localization.i18n import TRANSLATIONS, current_lang, t
 from utils import normalize_banned_word, normalize_domain, parse_lines_list
 from web.dashboard_utils import (
     read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
