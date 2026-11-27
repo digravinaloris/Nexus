@@ -18,6 +18,7 @@ from features import FEATURE_TOGGLES
 bp = Blueprint("rest_api", __name__)
 
 API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à définir sur Render
+MAX_API_KEY_LENGTH = 512
 
 
 def _is_valid_snowflake(value):
@@ -48,7 +49,13 @@ def _validated_reason(data, default):
 
 def _api_key_matches(provided, expected):
     """Compare API keys in constant time, ignoring malformed stored values."""
-    return isinstance(expected, str) and secrets.compare_digest(provided, expected)
+    return (
+        isinstance(provided, str)
+        and isinstance(expected, str)
+        and 0 < len(provided) <= MAX_API_KEY_LENGTH
+        and 0 < len(expected) <= MAX_API_KEY_LENGTH
+        and secrets.compare_digest(provided, expected)
+    )
 
 
 def require_api_key(f):
@@ -66,6 +73,8 @@ def require_api_key(f):
         key = request.headers.get("X-API-Key")
         if not key:
             return jsonify({"error": "Missing X-API-Key header"}), 401
+        if len(key) > MAX_API_KEY_LENGTH:
+            return jsonify({"error": "Unauthorized"}), 401
         for parameter in ("guild_id", "user_id"):
             value = kwargs.get(parameter)
             if value is not None and not _is_valid_snowflake(value):
