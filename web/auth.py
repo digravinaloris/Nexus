@@ -31,9 +31,9 @@ DASH_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "")
 def _oauth_config():
     """Resolve OAuth settings from the current app, with import-time compatibility fallbacks."""
     return (
-        current_app.config.get("DISCORD_CLIENT_ID") or DASH_CLIENT_ID,
-        current_app.config.get("DISCORD_CLIENT_SECRET") or DASH_CLIENT_SECRET,
-        current_app.config.get("DISCORD_REDIRECT_URI") or DASH_REDIRECT_URI,
+        current_app.config.get("DISCORD_CLIENT_ID", DASH_CLIENT_ID),
+        current_app.config.get("DISCORD_CLIENT_SECRET", DASH_CLIENT_SECRET),
+        current_app.config.get("DISCORD_REDIRECT_URI", DASH_REDIRECT_URI),
     )
 DISCORD_API_BASE = "https://discord.com/api"
 ADMINISTRATOR_PERM = 0x8
