@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nexus — community management, simplified</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0d12;--surface:#141720;--surface2:#1a1e29;--line:#2a2e3b;--fg:#edf0f7;--muted:#9ba3b8;--accent:#fa638e;--accent2:#c5f25a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,-apple-system,Segoe UI,sans-serif}a{color:inherit;text-decoration:none}.wrap{max-width:1080px;margin:auto;padding:0 24px}.nav{height:72px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}.logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:800}.mark{width:28px;height:28px;border-radius:8px;background:var(--accent);color:#17131a;display:grid;place-items:center;font-weight:900}.links{display:flex;align-items:center;gap:24px;color:var(--muted);font-size:13px}.links a:hover{color:var(--fg)}.cta{padding:9px 14px;border:1px solid var(--line);border-radius:8px;color:var(--fg);background:var(--surface)}.hero{padding:90px 0 74px;display:grid;grid-template-columns:1.15fr .85fr;gap:42px;align-items:center}.kicker{color:var(--accent);font-size:12px;letter-spacing:.13em;text-transform:uppercase;font-weight:700}.h1{font-size:clamp(38px,5.3vw,62px);letter-spacing:-.055em;line-height:1.05;font-weight:800;margin:18px 0}.desc{color:var(--muted);max-width:550px;font-size:17px}.buttons{display:flex;gap:10px;margin-top:27px;flex-wrap:wrap}.primary{background:var(--accent);color:#17131a;border-color:var(--accent);font-weight:750}.hero-panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px}.minihead{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line);padding-bottom:12px}.online{color:var(--accent2)}.mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.mini-card{border:1px solid var(--line);border-radius:9px;padding:13px}.mini-label{font-size:11px;color:var(--muted)}.mini-num{font-size:23px;font-weight:750;margin-top:5px}.mini-bars{height:84px;display:flex;align-items:end;gap:8px;padding:8px 0}.mini-bars span{display:block;flex:1;background:#34303c;border:1px solid #49404d;border-radius:4px 4px 0 0}.mini-bars span:nth-child(odd){background:#3e2935;border-color:#5a3548}.preview-note{font-size:11px;color:var(--muted);margin-top:4px}.section{padding:24px 0 72px}.sectionhead{font-size:28px;letter-spacing:-.035em;margin:0 0 8px}.sectiondesc{color:var(--muted);max-width:600px;margin:0 0 26px}.features{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.feature{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px}.feature-icon{width:34px;height:34px;border-radius:9px;background:var(--surface2);border:1px solid var(--line);display:grid;place-items:center;margin-bottom:15px;color:var(--accent)}.feature h3{margin:0 0 6px;font-size:15px}.feature p{margin:0;color:var(--muted);font-size:13px}.callout{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:26px;display:flex;align-items:center;justify-content:space-between;gap:22px}.callout p{color:var(--muted);margin:5px 0 0;font-size:13px}.footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}.footerlinks{display:flex;gap:18px}
+@media(max-width:800px){.hero{grid-template-columns:1fr;padding:60px 0}.features{grid-template-columns:1fr 1fr}.links{gap:12px}}
+@media(max-width:540px){.wrap{padding:0 17px}.nav{height:62px}.links a:not(.cta){display:none}.hero{padding:48px 0 46px;gap:26px}.h1{font-size:42px}.desc{font-size:15px}.features{grid-template-columns:1fr}.sectionhead{font-size:24px}.callout{align-items:flex-start;flex-direction:column}.footer{flex-direction:column}}
+</style>
+</head>
+<body>
+<header class="wrap nav">
+<a class="logo" href="#"><span class="mark">N</span>Nexus</a>
+<nav class="links" aria-label="Primary">
+<a href="#features">Features</a><a href="#about">About</a><a class="cta" href="/dashboard">Open dashboard</a>
+</nav>
+</header>
+<main class="wrap">
+<section class="hero">
+<div>
+<div class="kicker">Discord, made easier</div>
+<h1>Keep your community<br>running smoothly.</h1>
+<p class="desc">Moderation, verification, tickets and server tools in one place. Spend less time managing the busywork and more time building your community.</p>
+<div class="buttons"><a class="cta primary" href="/dashboard">Manage your server →</a><a class="cta" href="#features">Explore features</a></div>
+</div>
+<div class="hero-panel" aria-label="Dashboard preview">
+<div class="minihead"><span>Server overview</span><span class="online">● Online</span></div>
+<div class="mini-grid">
+<div class="mini-card"><div class="mini-label">Members</div><div class="mini-num">2,481</div></div>
+<div class="mini-card"><div class="mini-label">Tickets open</div><div class="mini-num">04</div></div>
+</div>
+<div class="mini-label">Activity · Last 7 days</div>
+<div class="mini-bars" aria-hidden="true"><span style="height:34%"></span><span style="height:58%"></span><span style="height:48%"></span><span style="height:75%"></span><span style="height:63%"></span><span style="height:92%"></span><span style="height:68%"></span></div>
+<div class="preview-note">Illustrative interface · sample data</div>
+</div>
+</section>
+<section class="section" id="features">
+<div class="kicker">Tools that work together</div>
+<h2 class="sectionhead">The essentials, without the clutter.</h2>
+<p class="sectiondesc">Keep everyday server management simple with clear controls and focused tools.</p>
+<div class="features">
+<article class="feature"><div class="feature-icon">⌁</div><h3>Moderation</h3><p>Keep actions, logs and safety tools accessible, with a clear audit trail.</p></article>
+<article class="feature"><div class="feature-icon">✓</div><h3>Verification</h3><p>Protect your server with CAPTCHA checks and configurable onboarding.</p></article>
+<article class="feature"><div class="feature-icon">▤</div><h3>Tickets</h3><p>Organize member requests and support conversations in one queue.</p></article>
+<article class="feature"><div class="feature-icon">◉</div><h3>Roles & automation</h3><p>Automate routine server tasks and keep role management consistent.</p></article>
+<article class="feature"><div class="feature-icon">⌗</div><h3>Activity overview</h3><p>See important server events and useful community activity at a glance.</p></article>
+<article class="feature"><div class="feature-icon">⚙</div><h3>Server settings</h3><p>Configure tools from a dashboard designed to stay out of your way.</p></article>
+</div>
+</section>
+<section class="section" id="about">
+<div class="callout"><div><h2 class="sectionhead">Ready to manage your server?</h2><p>Open the dashboard and pick up where you left off.</p></div><a class="cta primary" href="/dashboard">Go to Nexus →</a></div>
+</section>
+</main>
+<footer class="wrap footer"><span>© Nexus · Community tools</span><nav class="footerlinks"><a href="/status">Status</a><a href="/dashboard">Dashboard</a></nav></footer>
+</body>
+</html>
