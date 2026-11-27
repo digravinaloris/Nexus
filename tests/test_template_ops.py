@@ -39,6 +39,8 @@ def test_template_apply_ignores_malformed_sections_and_values(monkeypatch):
         "automod": "not-a-mapping",
         "warn_escalation_enabled": "true",
     })
+    assert ("warn_escalation_enabled", "true") not in updates
+    updates.clear()
     template_ops._apply_template_base_config("123", {
         "automod": {
             "banned_domains": "example.com",
