@@ -18,7 +18,7 @@ import discord
 from PIL import Image, ImageDraw
 import requests
 
-from jsonlog import log_json
+from nexus_logging.jsonlog import log_json
 
 BANNER_BG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "welcome_banner_bg.jpg")
 BANNER_SIZE = (900, 300)
