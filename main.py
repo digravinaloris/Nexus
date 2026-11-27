@@ -48,9 +48,7 @@ from bridge import run_coroutine
 from discord_logging import get_or_create_log_webhook, _send_log_embed, log_dashboard_action
 from moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTION_ICONS, post_appeal_for_review
 from owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
-from web.rest_api import bp as rest_api_bp
-from web import auth as web_auth, public as web_public, dashboard as web_dashboard, verify as web_verify, github_webhook
-from web.csrf import register_csrf
+from web.app_factory import create_web_app
 from verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
                           account_days_left, kick_pass, SETTINGS_LIMITS)
 from command_catalog import MODERATION_COMMANDS, COMMAND_TEMPLATES
@@ -5222,63 +5220,10 @@ if _SENTRY_DSN:
 # template_folder explicite : avec Flask('') (nom vide), Flask retombe sur le
 # dossier courant (cwd) pour chercher templates/ -- ça marchait sur Render (lancé
 # depuis la racine du repo) mais cassait dès qu'on lance main.py depuis ailleurs.
-api = Flask('', template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"))
-api.register_blueprint(rest_api_bp)  # REST API /api/* (voir web/rest_api.py)
-web_auth.routes.register(api)    # login / callback / logout (voir web/auth.py)
-web_public.routes.register(api)  # /, /status, kill-switch, appels publics (voir web/public.py)
-web_dashboard.routes.register(api)  # pages /dashboard/* (voir web/dashboard.py)
-web_verify.routes.register(api)     # /verify/<jeton> : vérification Turnstile (voir web/verify.py)
-github_webhook.routes.register(api)  # webhook GitHub release signé
-
-
-# ============================================================
-# ============ DASHBOARD WEB (OAuth2 Discord) ================
-# ============================================================
-# Dashboard admin-only : login via Discord, accès limité aux serveurs
-# ou l'utilisateur a la permission Administrator ET ou le bot est présent.
-
-api.secret_key = os.environ["FLASK_SECRET_KEY"]
-api.config.update(
-    SESSION_COOKIE_SECURE=True,     # cookie envoyé que en HTTPS
-    SESSION_COOKIE_HTTPONLY=True,   # inaccessible en JS (anti XSS)
-    SESSION_COOKIE_SAMESITE="Lax",  # défense supplémentaire contre CSRF
+api = create_web_app(
+    config={"SECRET_KEY": os.environ["FLASK_SECRET_KEY"]},
+    template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"),
 )
-register_csrf(api)
-
-@api.after_request
-def add_security_headers(response):
-    """Apply baseline browser security headers to every web response."""
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
-    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault(
-        "Permissions-Policy",
-        "camera=(), microphone=(), geolocation=()",
-    )
-    response.headers.setdefault(
-        "Content-Security-Policy",
-        "base-uri 'self'; object-src 'none'; frame-ancestors 'none'",
-    )
-    # OAuth callbacks can contain one-time authorization codes, and dashboard
-    # pages expose private server data. Never let browsers or shared proxies cache them.
-    if (
-        request.path in {"/login", "/callback", "/logout"}
-        or request.path == "/dashboard"
-        or request.path.startswith("/dashboard/")
-    ):
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-    return response
-
-# ---------- Templates HTML ----------
-
-# ---------- i18n ----------
-
-
-api.jinja_env.globals["t"] = t
-api.jinja_env.globals["lang"] = current_lang
-api.jinja_env.globals["theme"] = current_theme
 
 
 # ---------- Templates HTML ----------
