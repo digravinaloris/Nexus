@@ -23,6 +23,18 @@ from bot_service_client import (
 
 
 app = Flask(__name__)
+
+
+def _db():
+    """Return the D1 binding supplied to this Worker request."""
+    return request.environ["workers.env"].DB
+
+
+def _await(promise):
+    """Bridge a Workers async binding call into a synchronous Flask view."""
+    return run_sync(promise)
+
+
 app.config.update(SESSION_COOKIE_NAME="nexus_spike_session", SESSION_COOKIE_SECURE=False)
 app.session_interface = D1SessionInterface(
     db_getter=_db,
@@ -35,16 +47,6 @@ app.session_interface = D1SessionInterface(
 def reject_unavailable_session_storage():
     if getattr(session, "unavailable", False):
         return jsonify({"error": "session storage unavailable"}), 503
-
-
-def _db():
-    """Return the D1 binding supplied to this Worker request."""
-    return request.environ["workers.env"].DB
-
-
-def _await(promise):
-    """Bridge a Workers async binding call into a synchronous Flask view."""
-    return run_sync(promise)
 
 
 def _digest(value: str) -> str:
@@ -351,7 +353,6 @@ def inspect_flask_session():
 
 @app.post("/__spike/flask-session/rotate")
 def rotate_flask_session():
-    old_sid = session.sid
     app.session_interface.rotate_session(session)
     session["access_token"] = "spike-rotated-discord-access-token"
     return jsonify({"rotated": True})
