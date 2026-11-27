@@ -13,7 +13,7 @@ import time
 import core
 import discord
 import calendar_store
-from template_ops import _apply_template_base_config
+from services.template_ops import _apply_template_base_config
 from template_store import get_template_by_code, list_public_templates
 from stores.killswitch_store import get_killswitch_token, increment_killswitch_attempts, mark_killswitch_token_used
 from verification import get_valid_challenge, mark_used, record_failed_attempt
