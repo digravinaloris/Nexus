@@ -85,6 +85,18 @@ def test_update_config_upserts(mongo_db):
     assert doc["autorole"] == "999"
 
 
+def test_update_config_fields_updates_multiple_fields(mongo_db):
+    config_store.update_config_fields(6, {"language": "fr", "autorole": "123"})
+    cfg = config_store.get_config(6)
+    assert cfg["language"] == "fr"
+    assert cfg["autorole"] == "123"
+
+
+def test_update_config_fields_rejects_empty_updates():
+    with pytest.raises(ValueError):
+        config_store.update_config_fields(6, {})
+
+
 def test_command_roles_add_remove(mongo_db):
     config_store.get_config(7)
     config_store.add_command_role(7, "ban", "10")

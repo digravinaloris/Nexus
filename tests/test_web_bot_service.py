@@ -455,14 +455,15 @@ def test_api_config_snapshot_and_updates_use_config_store(monkeypatch):
     calls = []
     monkeypatch.setattr(service_module, "get_config", lambda guild_id: {"guild_id": guild_id, "api_key": "secret"})
 
-    def fake_update(guild_id, key, value):
-        calls.append((guild_id, key, value))
+    def fake_update_fields(guild_id, updates):
+        calls.append((guild_id, updates))
 
-    monkeypatch.setattr(service_module, "update_config", fake_update)
+    monkeypatch.setattr(service_module, "update_config_fields", fake_update_fields)
     service = InProcessBotService()
     assert service.api_config_snapshot("123") == {"guild_id": "123", "api_key": "secret"}
-    service.api_update_config("123", {"language": "fr", "autorole": 9})
-    assert calls == [("123", "language", "fr"), ("123", "autorole", 9)]
+    updates = {"language": "fr", "autorole": 9}
+    service.api_update_config("123", updates)
+    assert calls == [("123", updates)]
 
 
 def test_api_guild_stats_snapshot_serializes_guild_metrics(monkeypatch):
