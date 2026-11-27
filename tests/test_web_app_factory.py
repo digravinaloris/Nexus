@@ -50,6 +50,16 @@ def test_factory_registers_existing_routes_and_security_hooks():
     assert response.headers["Cache-Control"] == "no-store"
 
 
+
+def test_factory_injects_flask_session_interface():
+    class FakeSessionInterface:
+        pass
+
+    session_interface = FakeSessionInterface()
+    app = _create_app(_config(), session_interface=session_interface)
+
+    assert app.session_interface is session_interface
+
 def test_factory_installs_csrf_protection():
     app = _create_app(_config())
     response = app.test_client().post("/dashboard/lang/fr", data={"next": "/dashboard"})

@@ -26,6 +26,7 @@ def create_web_app(
     internal_bot_service=None,
     internal_bot_service_keyring=None,
     internal_nonce_store=None,
+    session_interface=None,
 ) -> Flask:
     """Build the existing Nexus web surface without importing or starting main.py.
 
@@ -49,6 +50,8 @@ def create_web_app(
     )
     if config:
         app.config.update(config)
+    if session_interface is not None:
+        app.session_interface = session_interface
     if not app.config.get("SECRET_KEY"):
         raise RuntimeError("A Flask SECRET_KEY must be configured before creating the web app")
     if bot_service is not None:
