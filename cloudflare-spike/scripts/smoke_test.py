@@ -74,6 +74,27 @@ def main():
     status, rollback = call("/__spike/batch-rollback", "POST", {})
     require(status == 200 and rollback.get("rolled_back") is True, "D1 batch rollback failed")
 
+    status, encrypted = call("/__spike/encrypted-session", "POST", {})
+    require(
+        status == 200 and isinstance(encrypted.get("session_id"), str),
+        f"Encrypted D1 session creation failed: {encrypted}",
+    )
+    encrypted_id = encrypted["session_id"]
+    status, encrypted_state = call(f"/__spike/encrypted-session/{encrypted_id}")
+    require(
+        status == 200 and encrypted_state.get("active") is True,
+        "Persisted AES-GCM record could not be decrypted on a later request",
+    )
+    status, tampered = call(
+        f"/__spike/encrypted-session/{encrypted_id}/tamper", "POST", {}
+    )
+    require(status == 200 and tampered.get("updated") is True, "Ciphertext tamper setup failed")
+    status, rejected = call(f"/__spike/encrypted-session/{encrypted_id}")
+    require(
+        status == 200 and rejected.get("active") is False,
+        "D1 session store accepted tampered ciphertext",
+    )
+
     status, crypto = call("/__spike/crypto", "POST", {})
     require(status == 200, f"Web Crypto request failed: {crypto}")
     require(crypto.get("sha256_matches") is True, "Web Crypto SHA-256 mismatch")
