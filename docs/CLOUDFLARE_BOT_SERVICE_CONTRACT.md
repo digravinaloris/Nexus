@@ -50,6 +50,44 @@ The Worker must not import `discord.py`, `main`, `core`, `bridge`, or any module
 
 The examples are conceptual. Final operation names and payloads must be derived from current handler behavior and existing tests before implementation.
 
+## Server-side OAuth session contract
+
+OAuth session storage is a Worker/web-runtime responsibility; it must not be hidden inside the Discord bot service. The bot service must never receive or persist browser session IDs, Discord OAuth access tokens, refresh tokens, or CSRF tokens as a shortcut for web session management.
+
+### Browser cookie and record shape
+
+- The browser receives only a cryptographically random opaque session ID (at least 256 bits of entropy). Store a SHA-256 digest of that ID as the session record key; never store the raw cookie value.
+- The cookie is host-only, Secure, HttpOnly, SameSite=Lax, and Path=/. Do not set a broad parent-domain cookie unless a tested cross-subdomain requirement exists.
+- The durable record contains the minimum server-side session state: encrypted Discord access token, token expiry, validated Discord user identity, CSRF secret, creation/last-seen timestamps, and absolute/idle expiry.
+- Encrypt bearer credentials at the application layer with authenticated encryption (for example AES-GCM) using a dedicated secret unavailable to browsers and separate from Flask's signing key. Bind the session ID and record version as authenticated associated data. Never log plaintext tokens or ciphertext payloads.
+- OAuth state and PKCE verifier must also be server-side, single-use, short-lived, and bound to the pre-authentication session. Consume them atomically before accepting the callback.
+- On successful OAuth callback, issue a new opaque session ID and atomically invalidate the pre-authentication ID. This is the session-rotation boundary; merely calling session.clear() on a client-side cookie is not server-side revocation.
+- Logout, Discord 401 responses, account/session invalidation, and expiry must revoke/delete the server-side record. Cookie deletion alone is not sufficient.
+- Apply both an idle timeout and an absolute lifetime; enforce expiry on every read, not only through background cleanup. Use no-store cache headers for authenticated pages and session responses.
+
+### Storage decision gates
+
+Do not use process memory or Cloudflare Workers KV as the authoritative session store: session revocation and one-time OAuth state consumption need immediate, well-defined consistency.
+
+| Candidate | Strength | Risk / validation required |
+|---|---|---|
+| Cloudflare D1 | Durable SQL records, indexed lookup, transactional updates for state consumption and rotation | Prove D1 binding access from the selected Python Worker/Flask adapter; define migrations, transaction behavior, backup/restore and cleanup. |
+| Durable Objects | Per-session strongly coordinated state and transactional storage | Validate Python Worker integration, object lifecycle, per-session routing, cost and operational complexity. |
+| Existing MongoDB through bot service | Reuses the current durable database | Couples web login availability to the bot-service network/API and expands the bot service's trust boundary; not the default choice. |
+| Workers KV | Simple global key/value API | Eventual consistency makes it unsuitable as the authority for immediate logout/revocation and atomic one-time state consumption. |
+
+D1 is the first candidate to validate, not an approved implementation choice. Select a backend only after a minimal compatibility spike demonstrates atomic create/consume/rotate/revoke behavior from the actual Worker runtime. If D1 cannot meet that contract, evaluate Durable Objects before considering bot-service-backed storage.
+
+### Required session tests
+
+- Serialized browser cookies contain no Discord access token, refresh token, OAuth state, PKCE verifier, or CSRF secret.
+- Login rotates the session ID; the old ID cannot read or mutate the new session.
+- OAuth state and PKCE verifier are one-time and cannot be replayed concurrently.
+- Logout and Discord 401 immediately invalidate the server-side record.
+- Idle and absolute expiry are enforced on every request.
+- Session ID guessing, malformed IDs, unknown IDs, tampered ciphertext, and wrong encryption-key versions fail closed.
+- Storage outage returns a controlled 503 and never falls back to an unsigned/client-side session.
+- Concurrent callback, logout, and refresh/revocation operations have deterministic outcomes.
 ## Authentication and authorization flow
 
 1. Browser authenticates with Discord OAuth through the Worker. OAuth state is random, single-use, short-lived and bound to the browser session.
