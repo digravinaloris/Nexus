@@ -40,3 +40,28 @@ This is a research-only decision note. **No accounts, services, DNS, secrets, or
 - Google Cloud Run pricing: https://cloud.google.com/run/pricing
 - Oracle Cloud Always Free resources: https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
 - Oracle Cloud Free Tier account requirements: https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm
+
+## Additional no-card, always-on bot candidates (research only)
+
+The following two services currently advertise free always-on Discord bot hosting. They are **unverified by Nexus**; treat the listings as claims, not a reliability guarantee. Before using either, review current terms, outbound networking, privacy/security, support and uptime history, and test with a disposable bot.
+
+| Candidate | Advertised free resources | Notable restrictions / risk |
+|---|---|---|
+| FadeHost | 256 MB RAM, 0.25 vCPU, 3 GB disk, 24/7, GitHub deploy, no card or renewals | Free app outbound access is restricted to a fixed allowlist; only 1 free app/account; 1 GB/day traffic; no backups included. Verify Discord Gateway + every Nexus API/database endpoint is reachable. |
+| Silly Development | 256 MB RAM, 25% CPU, 512 MB disk, 24/7, no card/renewals, Python support | Single operator; modest resource allocation; policy fair-use limits; idle-new-server removal if never used during first 7 days. Consider operational continuity risk. |
+
+### Recommended evaluation order
+
+1. **FadeHost: networking compatibility first.** Its official free-tier documentation says outbound connections are allowlisted. That could be a blocker for Discord Gateway, database access, or any external APIs Nexus needs; confirm each endpoint before considering migration.
+2. **Silly Development: resource and continuity check.** Its advertised resources are small and its About page identifies a sole operator. Do not treat 24/7 marketing as a production SLA.
+3. **Never transfer production secrets during evaluation.** Use a disposable Discord bot token, no real guild permissions, and a minimal test repo. If the host's network, security, logs, retention, or account deletion controls cannot be validated, reject it.
+4. **No migration decision yet.** Keep Render as-is if/when its quota allows, and continue the Cloudflare website migration separately.
+
+### Candidate sources (checked November 27, 2026)
+
+- FadeHost free-plan documentation: https://www.fadehost.com/docs/app-free-plan/
+- FadeHost Discord bot hosting documentation: https://www.fadehost.com/docs/discord-bot-hosting/
+- Silly Development free-tier page: https://sillydev.co.uk/
+- Silly Development Terms: https://sillydev.co.uk/terms
+- Silly Development Acceptable Use Policy: https://sillydev.co.uk/acceptable-use
+- Silly Development About/operator disclosure: https://sillydev.co.uk/about/
