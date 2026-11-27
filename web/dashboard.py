@@ -17,7 +17,7 @@ from flask import flash, jsonify, redirect, render_template, request, session, u
 from audit import build_sparkline_svg
 from audit_export import _build_audit_csv_bytes, _build_audit_pdf_bytes
 from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
-from cogs.calendar import parse_event_datetime, make_embed, local_when, validate_timezone
+from calendar_utils import parse_event_datetime, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from utils import normalize_banned_word, normalize_domain, parse_bounded_number, parse_lines_list
