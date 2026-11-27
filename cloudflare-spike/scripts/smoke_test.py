@@ -142,6 +142,28 @@ def main():
         "Idle-expired session remained active",
     )
 
+    status, fetch_health = call("/__spike/fetch-client/health_snapshot", "POST", {})
+    require(
+        status == 200
+        and fetch_health.get("result")
+        == {"status": "alive", "guild_count": 12},
+        f"Workers Fetch health snapshot failed: {fetch_health}",
+    )
+    status, fetch_public = call(
+        "/__spike/fetch-client/public_status_snapshot", "POST", {}
+    )
+    require(
+        status == 200
+        and fetch_public.get("result")
+        == {
+            "online": True,
+            "guild_count": 12,
+            "latency_ms": 31,
+            "uptime": "3h 12m",
+        },
+        f"Workers Fetch public status snapshot failed: {fetch_public}",
+    )
+
     status, crypto = call("/__spike/crypto", "POST", {})
     require(status == 200, f"Web Crypto request failed: {crypto}")
     require(crypto.get("sha256_matches") is True, "Web Crypto SHA-256 mismatch")
