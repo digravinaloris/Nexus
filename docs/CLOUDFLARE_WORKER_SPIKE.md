@@ -68,3 +68,11 @@ If CI cannot execute the actual Python Worker runtime, mark the runtime proof as
 - No Discord OAuth calls, real tokens, secrets, or credentials.
 - No Cloudflare login, remote D1 binding, resource creation, deployment, DNS change, or production cutover.
 - No change to the existing Flask/Waitress/Render startup path.
+
+## Validation status
+
+- PR #196 validates the isolated Flask WSGI entry point, local D1 prepared statements, conditional one-time state consumption under concurrency, session rotation, and transactional batch rollback in the actual Python Workers runtime.
+- PR #197 validates Workers Web Crypto through Python FFI: SHA-256 parity, AES-256-GCM round-trip, and rejection of tampered ciphertext, an incorrect key, and incorrect authenticated additional data.
+- Both proofs run in the dedicated local Wrangler GitHub Actions workflow without Cloudflare credentials or remote resources.
+
+These results validate the runtime primitives only. They do not constitute a production session store: key provisioning and rotation, persistent ciphertext records, cookie integration, operational recovery, and full OAuth lifecycle tests remain separate requirements. No production routes or real Discord tokens have been migrated.
