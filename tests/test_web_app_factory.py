@@ -315,3 +315,11 @@ def test_factory_uses_process_environment_when_mapping_is_not_injected(monkeypat
     assert app.config["DISCORD_CLIENT_SECRET"] == "default-process-oauth-secret"
     assert app.config["DISCORD_REDIRECT_URI"] == "https://default.example/callback"
     assert app.config["API_KEY"] == "default-process-api-key"
+
+
+
+def test_factory_requires_explicit_secret_when_runtime_environment_is_empty(monkeypatch):
+    monkeypatch.setenv("FLASK_SECRET_KEY", "process-secret-must-not-fallback")
+
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        _create_app({}, environ={})
