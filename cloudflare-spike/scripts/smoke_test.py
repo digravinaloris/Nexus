@@ -177,6 +177,11 @@ def main():
         f"Signed guild-owner authorization accepted a non-owner: {fetch_non_owner}",
     )
 
+    status, fetch_admin = call("/__spike/fetch-client/is_guild_admin", "POST", {})
+    require(status == 200 and fetch_admin.get("result") is True, f"Signed guild Administrator authorization check failed: {fetch_admin}")
+    status, fetch_non_admin = call("/__spike/fetch-client/is_guild_admin_denied", "POST", {})
+    require(status == 200 and fetch_non_admin.get("result") is False, f"Signed guild Administrator authorization accepted a non-admin: {fetch_non_admin}")
+
     status, fetch_response_validation = call(
         "/__spike/fetch-client-response-validation", "POST", {}
     )
