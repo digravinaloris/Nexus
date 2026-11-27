@@ -188,6 +188,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     from services import automod_checks
     from services import role_menus
     from services import setup_wizard
+    from services import pagination
     from services import server_backups
 
     for mod, names in {
@@ -227,6 +228,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     assert nexus.RoleMenuSelect is role_menus.RoleMenuSelect
     assert nexus.RoleMenuView is role_menus.RoleMenuView
     assert nexus.SetupWizardView is setup_wizard.SetupWizardView
+    assert nexus.PaginatedEmbedView is pagination.PaginatedEmbedView
     assert nexus.is_automod_exempt is automod_checks.is_automod_exempt
     assert nexus.check_spam is automod_checks.check_spam
     assert nexus.check_raid is automod_checks.check_raid
