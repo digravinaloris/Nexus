@@ -7,8 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from web.app_factory import create_web_app
 
+
+
+def _create_app(config):
+    # Import after test modules have populated their OAuth environment defaults.
+    from web.app_factory import create_web_app
+
+    return create_web_app(config=config)
 
 def _config(**overrides):
     values = {
@@ -22,7 +28,7 @@ def _config(**overrides):
 
 
 def test_factory_registers_existing_routes_and_security_hooks():
-    app = create_web_app(config=_config())
+    app = _create_app(_config())
     rules = {rule.rule for rule in app.url_map.iter_rules()}
 
     assert "/" in rules
@@ -53,7 +59,7 @@ def test_factory_installs_csrf_protection():
 
 def test_factory_requires_a_secret_key():
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
-        create_web_app(config=_config(SECRET_KEY=None))
+        _create_app(_config(SECRET_KEY=None))
 
 
 def test_factory_imports_without_discord_bot_or_mongodb_runtime():
