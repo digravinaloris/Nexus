@@ -52,4 +52,7 @@ jobs:
             exit 1
           fi
 
-          uv run python scripts/smoke_test.py
+          if ! uv run python scripts/smoke_test.py; then
+            cat /tmp/nexus-worker-spike.log
+            exit 1
+          fi
