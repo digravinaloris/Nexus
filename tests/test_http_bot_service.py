@@ -474,3 +474,9 @@ def test_remote_guild_list_snapshot_rejects_invalid_optional_guild_id(guild_id):
     with pytest.raises(ValueError, match="guild ID"):
         _client(session).api_guild_list_snapshot(guild_id)
     assert session.calls == []
+
+
+
+def test_remote_guild_list_snapshot_rejects_non_sequence_internal_args():
+    with pytest.raises(ValueError, match="internal BotService arguments"):
+        _client()._dispatch_snapshot("api_guild_list_snapshot", None)
