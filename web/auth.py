@@ -215,14 +215,7 @@ def dash_callback():
         ):
             return jsonify({"error": "Invalid token response"}), 502
 
-        refresh_token = token_data.get("refresh_token")
-        if refresh_token is not None and (
-            not isinstance(refresh_token, str)
-            or not refresh_token
-            or len(refresh_token) > 4096
-            or re.fullmatch(r"[A-Za-z0-9._~+/=-]+", refresh_token) is None
-        ):
-            return jsonify({"error": "Invalid token response"}), 502
+        # Refresh tokens are not used by the dashboard; never persist them in the browser session.
 
         expires_in = token_data.get("expires_in")
         if (
@@ -250,9 +243,6 @@ def dash_callback():
 
     # Store credentials only after both OAuth exchange and identity lookup succeed.
     session["access_token"] = access_token
-    refresh_token = token_data.get("refresh_token")
-    if isinstance(refresh_token, str) and refresh_token:
-        session["refresh_token"] = refresh_token
     session["token_expires_at"] = time.time() + min(expires_in, 60 * 60 * 24)
     session["dash_user"] = user_data
     session["csrf_token"] = secrets.token_urlsafe(32)

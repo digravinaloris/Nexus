@@ -181,7 +181,8 @@ def test_callback_success_stores_session_and_redirects(env, monkeypatch):
     resp = env.client.get("/callback?state=s&code=c")
     assert resp.status_code == 302 and resp.headers["Location"].endswith("/dashboard")
     with env.client.session_transaction() as sess:
-        assert sess["access_token"] == "AT" and sess["refresh_token"] == "RT"
+        assert sess["access_token"] == "AT"
+        assert "refresh_token" not in sess
         assert sess["dash_user"] == {"id": "12345678901234567", "username": "bob"}
         assert "oauth_state" not in sess  # état consommé (usage unique)
     assert [c[0] for c in calls] == ["POST", "GET"]
