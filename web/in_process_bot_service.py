@@ -23,7 +23,7 @@ from audit import get_audit_log, record_audit
 from audit_export import _get_audit_records
 from bridge import run_coroutine
 from discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
-from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns, submit_ban_appeal
+from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_dashboard_warning_counts, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns, submit_ban_appeal
 import utils
 from moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
 from owner_notify import notify_owner_bruteforce, notify_owner_killswitch
@@ -372,15 +372,12 @@ class InProcessBotService(BotService):
             category = guild.get_channel(int(ticket_category_id))
             if isinstance(category, discord.CategoryChannel):
                 open_tickets_count = len(category.text_channels)
-        warned_count = core.col.warns.count_documents({
-            "guild_id": str(guild_id), "count": {"$gt": 0}
-        })
         today_start = datetime.datetime.now(datetime.timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        warns_today = core.col.sanctions.count_documents({
-            "guild_id": str(guild_id), "type": "warn", "timestamp": {"$gte": today_start},
-        })
+        warning_counts = get_dashboard_warning_counts(guild_id, today_start)
+        warned_count = warning_counts["warned_count"]
+        warns_today = warning_counts["warns_today"]
         activity_7d = [count for _, count in get_sanction_stats(guild_id, days=7)]
         return {
             "guild_id": str(guild.id),
