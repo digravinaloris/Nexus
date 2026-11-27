@@ -99,3 +99,33 @@ def build_feature_toggle_updates(feature_toggles, config, submitted_keys, defaul
             (enabled_now if new_value else disabled_now).append(key)
 
     return updates, enabled_now, disabled_now
+
+
+def describe_setting_change(key, old, new):
+    """Format a setting change for the dashboard audit log."""
+    if isinstance(new, list):
+        return f"{key}: {len(old or [])} -> {len(new)} entries"
+    return f"{key}: {old} -> {new}"
+
+
+def build_settings_update_plan(updates, config, defaults=None):
+    """Return config writes and audit descriptions for a settings submission.
+
+    Missing stored values use effective defaults for audit comparison, while
+    explicit None values remain distinct and missing None values are not written.
+    """
+    defaults = defaults or {}
+    writes = []
+    changes = []
+    unset = object()
+
+    for key, value in updates.items():
+        stored = config.get(key, unset)
+        if stored == value or (stored is unset and value is None):
+            continue
+        effective_old = defaults.get(key) if stored is unset else stored
+        writes.append((key, value))
+        if effective_old != value:
+            changes.append(describe_setting_change(key, effective_old, value))
+
+    return writes, changes
