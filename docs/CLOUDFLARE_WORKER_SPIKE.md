@@ -74,6 +74,7 @@ If CI cannot execute the actual Python Worker runtime, mark the runtime proof as
 - PR #196 validates the isolated Flask WSGI entry point, local D1 prepared statements, conditional one-time state consumption under concurrency, session rotation, and transactional batch rollback in the actual Python Workers runtime.
 - PR #197 validates Workers Web Crypto through Python FFI: SHA-256 parity, AES-256-GCM round-trip, and rejection of tampered ciphertext, an incorrect key, and incorrect authenticated additional data.
 - PR #198 validates encrypted D1 record persistence across separate requests using only a local non-secret test key; the stored lookup key is a SHA-256 digest, ciphertext is AES-GCM protected with session/version-bound AAD, and tampering fails closed.
+- PR #199 validates version-1 to version-2 key rotation, key-version-bound AAD, sliding idle expiry plus absolute expiry, and immediate revocation in the local Worker/D1 runtime.
 - Both proofs run in the dedicated local Wrangler GitHub Actions workflow without Cloudflare credentials or remote resources.
 
 These results validate the runtime primitives only. They do not constitute a production session store: key provisioning and rotation, persistent ciphertext records, cookie integration, operational recovery, and full OAuth lifecycle tests remain separate requirements. No production routes or real Discord tokens have been migrated.

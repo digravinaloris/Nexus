@@ -95,6 +95,53 @@ def main():
         "D1 session store accepted tampered ciphertext",
     )
 
+    status, legacy = call("/__spike/encrypted-session/legacy", "POST", {})
+    require(
+        status == 200 and legacy.get("key_version") == 1,
+        f"Legacy encrypted session creation failed: {legacy}",
+    )
+    legacy_id = legacy["session_id"]
+    status, legacy_state = call(f"/__spike/encrypted-session/{legacy_id}")
+    require(status == 200 and legacy_state.get("active") is True, "Version-1 session unreadable")
+    status, rotated = call(
+        f"/__spike/encrypted-session/{legacy_id}/rotate-key", "POST", {}
+    )
+    require(
+        status == 200 and rotated.get("rotated") is True and rotated.get("key_version") == 2,
+        f"Session key rotation failed: {rotated}",
+    )
+    status, rotated_state = call(f"/__spike/encrypted-session/{legacy_id}")
+    require(
+        status == 200 and rotated_state.get("active") is True,
+        "Session became unreadable after key rotation",
+    )
+
+    status, revocable = call("/__spike/encrypted-session", "POST", {})
+    require(status == 200, "Revocation fixture creation failed")
+    revoke_id = revocable["session_id"]
+    status, revoked = call(
+        f"/__spike/encrypted-session/{revoke_id}/revoke", "POST", {}
+    )
+    require(status == 200 and revoked.get("revoked") is True, "Session revocation failed")
+    status, revoked_state = call(f"/__spike/encrypted-session/{revoke_id}")
+    require(
+        status == 200 and revoked_state.get("active") is False,
+        "Revoked session remained active",
+    )
+
+    status, idle = call("/__spike/encrypted-session", "POST", {})
+    require(status == 200, "Idle-expiry fixture creation failed")
+    idle_id = idle["session_id"]
+    status, expired = call(
+        f"/__spike/encrypted-session/{idle_id}/expire-idle", "POST", {}
+    )
+    require(status == 200 and expired.get("expired") is True, "Idle-expiry setup failed")
+    status, idle_state = call(f"/__spike/encrypted-session/{idle_id}")
+    require(
+        status == 200 and idle_state.get("active") is False,
+        "Idle-expired session remained active",
+    )
+
     status, crypto = call("/__spike/crypto", "POST", {})
     require(status == 200, f"Web Crypto request failed: {crypto}")
     require(crypto.get("sha256_matches") is True, "Web Crypto SHA-256 mismatch")
