@@ -6,7 +6,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dashboard_utils import (
-    read_bounded_form_numbers, validate_channel_selection, validate_role_selection, is_safe_relative_redirect,
+    read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
+    is_safe_relative_redirect, build_feature_toggle_updates,
 )
 
 FIELDS = [
@@ -116,3 +117,53 @@ def test_safe_relative_redirect_rejects_external_and_ambiguous_targets():
 def test_safe_relative_redirect_rejects_non_string_values():
     assert not is_safe_relative_redirect(None)
     assert not is_safe_relative_redirect(123)
+
+
+
+def test_feature_toggle_updates_write_missing_values_using_effective_defaults():
+    toggles = {
+        "remindme": {"config_key": "remindme_enabled"},
+        "tickets": {"config_key": "tickets_enabled"},
+    }
+    updates, enabled, disabled = build_feature_toggle_updates(
+        toggles, {}, {"tickets"}, {"remindme_enabled": True}
+    )
+    assert updates == [("remindme_enabled", False), ("tickets_enabled", True)]
+    assert enabled == ["tickets"]
+    assert disabled == ["remindme"]
+
+
+def test_feature_toggle_updates_skip_values_already_stored():
+    toggles = {"tickets": {"config_key": "tickets_enabled"}}
+    updates, enabled, disabled = build_feature_toggle_updates(
+        toggles, {"tickets_enabled": True}, {"tickets"}
+    )
+    assert updates == []
+    assert enabled == []
+    assert disabled == []
+
+
+def test_feature_toggle_updates_audit_only_effective_changes():
+    toggles = {
+        "remindme": {"config_key": "remindme_enabled"},
+        "tickets": {"config_key": "tickets_enabled"},
+    }
+    updates, enabled, disabled = build_feature_toggle_updates(
+        toggles,
+        {"remindme_enabled": True, "tickets_enabled": False},
+        {"tickets"},
+        {"remindme_enabled": True},
+    )
+    assert updates == [("tickets_enabled", True)]
+    assert enabled == ["tickets"]
+    assert disabled == []
+
+
+def test_feature_toggle_updates_preserve_explicit_stored_values_over_defaults():
+    toggles = {"remindme": {"config_key": "remindme_enabled"}}
+    updates, enabled, disabled = build_feature_toggle_updates(
+        toggles, {"remindme_enabled": False}, set(), {"remindme_enabled": True}
+    )
+    assert updates == []
+    assert enabled == []
+    assert disabled == []
