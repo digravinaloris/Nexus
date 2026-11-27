@@ -33,6 +33,19 @@ from web.bot_service import BotService
 class InProcessBotService(BotService):
     """Compatibility adapter for the current single-process bot + web runtime."""
 
+    PRESENCE_TTL_SECONDS = 25
+
+    def __init__(self):
+        self._dashboard_presence = {}
+
+    def dashboard_presence_ping(self, guild_id: str, user_id: str, name: str) -> None:
+        self._dashboard_presence.setdefault(str(guild_id), {})[str(user_id)] = (str(name), time.time())
+
+    def dashboard_presence_viewers(self, guild_id: str) -> List[str]:
+        now = time.time()
+        entries = self._dashboard_presence.get(str(guild_id), {})
+        return [name for name, last_seen in entries.values() if now - last_seen < self.PRESENCE_TTL_SECONDS]
+
     def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
         bot = core.bot
         if bot is None or not bot.is_ready():
