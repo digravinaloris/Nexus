@@ -28,8 +28,9 @@ def signed(data, event="release"):
     return raw, {"X-Hub-Signature-256": sig, "X-GitHub-Event": event, "X-GitHub-Delivery": DELIVERY}
 
 
-def app():
+def app(secret=SECRET):
     flask_app = Flask(__name__)
+    flask_app.config["GITHUB_RELEASE_WEBHOOK_SECRET"] = secret
     github_webhook.routes.register(flask_app)
     return flask_app.test_client()
 
@@ -61,26 +62,22 @@ def test_payload_validation_only_accepts_own_published_release():
     assert github_webhook.validate_release(payload(id=0)) is None
 
 
-def test_missing_secret_returns_503(monkeypatch):
-    monkeypatch.delenv("GITHUB_RELEASE_WEBHOOK_SECRET", raising=False)
-    assert app().post("/webhooks/github/releases", data=b"{}").status_code == 503
+def test_missing_secret_returns_503():
+    assert app(secret="").post("/webhooks/github/releases", data=b"{}").status_code == 503
 
 
-def test_bad_signature_returns_401(monkeypatch):
-    monkeypatch.setenv("GITHUB_RELEASE_WEBHOOK_SECRET", SECRET)
+def test_bad_signature_returns_401():
     client = app()
     response = client.post("/webhooks/github/releases", data=b"{}", headers={"X-Hub-Signature-256": "sha256=wrong"})
     assert response.status_code == 401
 
 
-def test_payload_limit_returns_413(monkeypatch):
-    monkeypatch.setenv("GITHUB_RELEASE_WEBHOOK_SECRET", SECRET)
+def test_payload_limit_returns_413():
     response = app().post("/webhooks/github/releases", data=b"x" * (github_webhook.MAX_PAYLOAD_BYTES + 1))
     assert response.status_code == 413
 
 
-def test_unknown_length_payload_read_is_bounded(monkeypatch):
-    monkeypatch.setenv("GITHUB_RELEASE_WEBHOOK_SECRET", SECRET)
+def test_unknown_length_payload_read_is_bounded():
 
     class TrackingStream(io.BytesIO):
         requested_size = None
@@ -103,8 +100,7 @@ def test_unknown_length_payload_read_is_bounded(monkeypatch):
     assert stream.tell() == github_webhook.MAX_PAYLOAD_BYTES + 1
 
 
-def test_non_release_event_ignored_after_signature(monkeypatch):
-    monkeypatch.setenv("GITHUB_RELEASE_WEBHOOK_SECRET", SECRET)
+def test_non_release_event_ignored_after_signature():
     body, headers = signed(payload(), event="issues")
     response = app().post("/webhooks/github/releases", data=body, headers=headers)
     assert response.status_code == 202
@@ -112,7 +108,6 @@ def test_non_release_event_ignored_after_signature(monkeypatch):
 
 
 def test_duplicate_delivery_suppressed_and_valid_event_dispatched(monkeypatch):
-    monkeypatch.setenv("GITHUB_RELEASE_WEBHOOK_SECRET", SECRET)
     body, headers = signed(payload())
     deliveries = []
 
