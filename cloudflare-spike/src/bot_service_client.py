@@ -100,12 +100,22 @@ class CloudflareFetchBotService:
         self._key_id = key_id
         self._secret = secret
 
-    def _dispatch_snapshot(self, method: str) -> dict:
-        if method not in {"health_snapshot", "public_status_snapshot"}:
+    def _dispatch(self, method: str, args: list, expected_type: type):
+        if method in {"health_snapshot", "public_status_snapshot"}:
+            if args != [] or expected_type is not dict:
+                raise ValueError("Invalid snapshot BotService arguments")
+        elif method == "is_guild_owner":
+            if (
+                expected_type is not bool
+                or len(args) != 2
+                or any(not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,20}", value) for value in args)
+            ):
+                raise ValueError("Invalid guild owner check arguments")
+        else:
             raise ValueError("Unsupported internal BotService operation")
 
         body = json.dumps(
-            {"method": method, "args": [], "kwargs": {}},
+            {"method": method, "args": args, "kwargs": {}},
             separators=(",", ":"),
             ensure_ascii=True,
         ).encode("utf-8")
@@ -114,7 +124,7 @@ class CloudflareFetchBotService:
         if not _NONCE_RE.fullmatch(nonce):
             raise CloudflareBotServiceError("Could not create an internal request nonce")
 
-        canonical = "\n".join(
+        canonical = "\\n".join(
             (
                 "NEXUS-BOT-SERVICE-V1",
                 self._key_id,
@@ -157,13 +167,19 @@ class CloudflareFetchBotService:
         if (
             not isinstance(payload, dict)
             or payload.get("ok") is not True
-            or not isinstance(payload.get("result"), dict)
+            or not isinstance(payload.get("result"), expected_type)
         ):
             raise CloudflareBotServiceError("Internal BotService returned an invalid response")
         return payload["result"]
+
+    def _dispatch_snapshot(self, method: str) -> dict:
+        return self._dispatch(method, [], dict)
 
     def health_snapshot(self) -> dict:
         return self._dispatch_snapshot("health_snapshot")
 
     def public_status_snapshot(self) -> dict:
         return self._dispatch_snapshot("public_status_snapshot")
+
+    def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
+        return self._dispatch("is_guild_owner", [guild_id, user_id], bool)
