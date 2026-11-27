@@ -162,6 +162,24 @@ def get_sanction_stats(guild_id, days=30):
 
 
 
+def get_dashboard_warning_counts(guild_id, since):
+    """Return active warned users and warning sanctions since a UTC timestamp."""
+    guild_key = str(guild_id)
+    warned_count = col.warns.count_documents({
+        "guild_id": guild_key,
+        "count": {"$gt": 0},
+    })
+    warns_today = col.sanctions.count_documents({
+        "guild_id": guild_key,
+        "type": "warn",
+        "timestamp": {"$gte": since},
+    })
+    return {
+        "warned_count": warned_count,
+        "warns_today": warns_today,
+    }
+
+
 def get_warnlist(guild_id):
     """Return active warning counts for one guild, without exposing Mongo details."""
     return list(col.warns.find({"guild_id": str(guild_id), "count": {"$gt": 0}}))
