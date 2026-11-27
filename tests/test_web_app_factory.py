@@ -243,3 +243,22 @@ assert "pymongo" not in sys.modules
         timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_factory_accepts_explicit_environment_mapping():
+    app = _create_app(
+        {},
+        environ={
+            "FLASK_SECRET_KEY": "injected-secret",
+            "DISCORD_CLIENT_ID": "injected-client",
+            "DISCORD_CLIENT_SECRET": "injected-oauth-secret",
+            "DISCORD_REDIRECT_URI": "https://injected.example/callback",
+            "API_KEY": "injected-api-key",
+        },
+    )
+
+    assert app.config["SECRET_KEY"] == "injected-secret"
+    assert app.config["DISCORD_CLIENT_ID"] == "injected-client"
+    assert app.config["DISCORD_CLIENT_SECRET"] == "injected-oauth-secret"
+    assert app.config["DISCORD_REDIRECT_URI"] == "https://injected.example/callback"
+    assert app.config["API_KEY"] == "injected-api-key"
