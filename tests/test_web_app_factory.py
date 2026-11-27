@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 
-def _create_app(config):
+def _create_app(config, bot_service=None):
     # Import after test modules have populated their OAuth environment defaults.
     from web.app_factory import create_web_app
 
-    return create_web_app(config=config)
+    return create_web_app(config=config, bot_service=bot_service)
 
 
 def _config(**overrides):
@@ -54,6 +54,31 @@ def test_factory_installs_csrf_protection():
     app = _create_app(_config())
     response = app.test_client().post("/dashboard/lang/fr", data={"next": "/dashboard"})
     assert response.status_code == 400
+
+
+
+def test_factory_injects_bot_service_per_app_without_global_leakage():
+    class FakeBotService:
+        def __init__(self, source):
+            self.source = source
+
+        def health_snapshot(self):
+            return {"source": self.source}
+
+    first_service = FakeBotService("first")
+    second_service = FakeBotService("second")
+    first_app = _create_app(_config(), bot_service=first_service)
+    second_app = _create_app(_config(), bot_service=second_service)
+
+    assert first_app.test_client().get("/").get_json() == {"source": "first"}
+    assert second_app.test_client().get("/").get_json() == {"source": "second"}
+
+    from web.bot_service import get_bot_service
+
+    with first_app.app_context():
+        assert get_bot_service() is first_service
+    with second_app.app_context():
+        assert get_bot_service() is second_service
 
 
 def test_factory_requires_a_secret_key():

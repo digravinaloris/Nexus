@@ -7,6 +7,8 @@ contract in a later migration step without changing route response shapes.
 """
 from typing import Dict, List, Optional
 
+from flask import current_app, has_app_context
+
 
 class BotService:
     """Minimal interface consumed by web routes."""
@@ -303,7 +305,12 @@ _service_instance: Optional[BotService] = None
 
 
 def get_bot_service() -> BotService:
-    """Return the lazily created process-wide adapter instance."""
+    """Return the app-injected adapter, or the legacy process-wide fallback."""
+    if has_app_context():
+        app_service = current_app.extensions.get("nexus_bot_service")
+        if app_service is not None:
+            return app_service
+
     global _service_instance
     if _service_instance is None:
         from web.in_process_bot_service import InProcessBotService
