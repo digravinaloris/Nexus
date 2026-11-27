@@ -188,12 +188,17 @@ def test_signed_dispatch_rejects_invalid_guild_admin_arguments(args):
     assert service.calls == []
 
 
-def test_signed_dispatch_fails_closed_when_guild_admin_result_is_not_boolean():
+@pytest.mark.parametrize(
+    ("method", "args"),
+    [
+        ("is_guild_owner", ["123", "42"]),
+        ("is_guild_admin", ["123", "43"]),
+    ],
+)
+def test_signed_dispatch_fails_closed_when_authorization_result_is_not_boolean(method, args):
     client, service = _client()
-    service.is_guild_admin = lambda guild_id, user_id: "true"
-    body = _request_body(
-        {"method": "is_guild_admin", "args": ["123", "43"], "kwargs": {}}
-    )
+    setattr(service, method, lambda guild_id, user_id: "true")
+    body = _request_body({"method": method, "args": args, "kwargs": {}})
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 503
     assert response.get_json() == {"error": "internal service unavailable"}
