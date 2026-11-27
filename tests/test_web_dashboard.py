@@ -552,14 +552,14 @@ def test_template_import_unknown_get_and_apply(dash):
     page = resp.get_data(as_text=True)
     assert resp.status_code == 200 and "My preset" in page
     assert "Mods" in page and "@everyone" not in page
-    before_invalid_import = dash.cfg()
+    before_invalid_import = dash.col.config.find_one({"guild_id": GID})
     invalid = dash.client.post(
         dash.url("/templates/import/abc12345"),
         data={"map__0": "999", "map__1": "9"},
     )
     assert invalid.status_code == 302
     assert invalid.headers["Location"].endswith("/templates/import/abc12345")
-    assert dash.cfg() == before_invalid_import
+    assert dash.col.config.find_one({"guild_id": GID}) == before_invalid_import
     resp = dash.client.post(dash.url("/templates/import/abc12345"), data={"map__0": "10", "map__1": "9"})
     # noms triés : ["Ghost", "Mods"] -> Ghost -> 10, Mods -> 9
     assert resp.status_code == 302 and resp.headers["Location"].endswith(f"/dashboard/{GID}")
