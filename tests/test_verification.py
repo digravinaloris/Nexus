@@ -123,11 +123,31 @@ def test_check_turnstile_success_sends_secret_response_and_ip(keys, monkeypatch)
     assert "remoteip" not in calls[0]["data"]
 
 
+def test_check_turnstile_uses_injected_http_client(keys):
+    calls = []
+
+    class InjectedClient:
+        def post(self, url, data=None, timeout=None):
+            calls.append({"url": url, "data": data, "timeout": timeout})
+            return types.SimpleNamespace(json=lambda: {"success": True})
+
+    assert verification.check_turnstile("worker-token", "1.2.3.4", http_client=InjectedClient()) == (True, None)
+    assert calls == [{
+        "url": "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+        "data": {"secret": SECRET, "response": "worker-token", "remoteip": "1.2.3.4"},
+        "timeout": 10,
+    }]
+
+
 def test_check_turnstile_failure_modes(keys, monkeypatch):
     fake_cloudflare(monkeypatch, {"success": False, "error-codes": ["invalid-input-response", "timeout-or-duplicate"]})
     assert verification.check_turnstile("tok") == (False, "invalid-input-response,timeout-or-duplicate")
     fake_cloudflare(monkeypatch, {"success": "true"})  # pas un vrai booléen : refusé
     assert verification.check_turnstile("tok")[0] is False
+    fake_cloudflare(monkeypatch, ["unexpected-json-shape"])
+    assert verification.check_turnstile("tok") == (False, "service_unavailable")
+    fake_cloudflare(monkeypatch, {"success": False, "error-codes": "not-a-list"})
+    assert verification.check_turnstile("tok") == (False, "failed")
     fake_cloudflare(monkeypatch, exc=requests_module.ConnectionError("down"))
     assert verification.check_turnstile("tok") == (False, "service_unavailable")  # échoue FERMÉ
     monkeypatch.delenv("TURNSTILE_SECRET_KEY")
@@ -230,6 +250,25 @@ def test_three_failures_kill_the_link(vguild, keys, monkeypatch):
     assert codes == [400, 400, 410]
     assert vguild.client.get(f"/verify/{token}").status_code == 410
     assert vguild.vguild.member.calls == []  # personne n'a été vérifié
+
+
+def test_submit_uses_app_injected_turnstile_http_client(vguild, keys, monkeypatch):
+    calls = []
+
+    class InjectedClient:
+        def post(self, url, data=None, timeout=None):
+            calls.append({"url": url, "data": data, "timeout": timeout})
+            return types.SimpleNamespace(json=lambda: {"success": True})
+
+    monkeypatch.setitem(vguild.nexus.api.config, "TURNSTILE_HTTP_CLIENT", InjectedClient())
+    token = _link(vguild)
+    resp = vguild.client.post(
+        f"/verify/{token}",
+        data={"cf-turnstile-response": "worker-token"},
+    )
+    assert resp.status_code == 200 and "verified" in resp.get_data(as_text=True)
+    assert len(calls) == 1
+    assert calls[0]["data"] == {"secret": SECRET, "response": "worker-token", "remoteip": "127.0.0.1"}
 
 
 def test_cloudflare_outage_is_not_the_members_fault(vguild, keys, monkeypatch):

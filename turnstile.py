@@ -38,8 +38,13 @@ def verification_url(token):
     return f"{public_base_url()}/verify/{token}"
 
 
-def check_turnstile(response_token, remote_ip=None):
-    """Validate a response with Cloudflare; fail closed on provider errors."""
+def check_turnstile(response_token, remote_ip=None, http_client=None):
+    """Validate a response with Cloudflare; fail closed on provider errors.
+
+    ``http_client`` may provide a requests-compatible ``post`` method. Keeping
+    the default import lazy lets the standalone web app inject a Worker-native
+    transport without importing the requests package.
+    """
     secret = _secret_key()
     if not secret:
         return False, "not_configured"
@@ -47,14 +52,18 @@ def check_turnstile(response_token, remote_ip=None):
     if remote_ip:
         payload["remoteip"] = remote_ip
     try:
-        requests = importlib.import_module("requests")
-        data = requests.post(TURNSTILE_VERIFY_URL, data=payload, timeout=10).json()
-    except (ImportError, ValueError) as exc:
+        client = http_client if http_client is not None else importlib.import_module("requests")
+        data = client.post(TURNSTILE_VERIFY_URL, data=payload, timeout=10).json()
+    except Exception as exc:
+        # Provider, transport and malformed-response errors all fail closed.
         log_json("error", "turnstile_unreachable", error=repr(exc))
         return False, "service_unavailable"
-    except requests.RequestException as exc:
-        log_json("error", "turnstile_unreachable", error=repr(exc))
+    if not isinstance(data, dict):
+        log_json("error", "turnstile_invalid_response", response_type=type(data).__name__)
         return False, "service_unavailable"
     if data.get("success") is True:
         return True, None
-    return False, ",".join(data.get("error-codes", [])) or "failed"
+    error_codes = data.get("error-codes", [])
+    if not isinstance(error_codes, list) or not all(isinstance(code, str) for code in error_codes):
+        return False, "failed"
+    return False, ",".join(error_codes) or "failed"

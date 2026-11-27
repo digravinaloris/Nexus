@@ -4,7 +4,7 @@ Le jeton de l'URL est l'unique credential : lié à un serveur + un membre, 10 m
 3 échecs maximum. Aucune session ni connexion Discord n'est nécessaire. Ce module n'importe JAMAIS
 main.py (bot -> `core.bot`).
 """
-from flask import make_response, render_template, request
+from flask import current_app, make_response, render_template, request
 
 from turnstile import MAX_ATTEMPTS, check_turnstile, site_key, turnstile_configured
 from web.public import get_client_ip
@@ -55,7 +55,11 @@ def verify_submit(token):
     if not response_token:  # widget pas encore résolu : on ne consomme pas d'essai
         return _form(doc, 400, "Please complete the check before continuing.")
 
-    ok, reason = check_turnstile(response_token, get_client_ip())
+    ok, reason = check_turnstile(
+        response_token,
+        get_client_ip(),
+        http_client=current_app.config.get("TURNSTILE_HTTP_CLIENT"),
+    )
     if not ok:
         if reason == "service_unavailable":  # panne côté Cloudflare : pas la faute du membre
             return _form(doc, 503, "The verification service is unreachable. Please try again in a moment.")
