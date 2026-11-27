@@ -4,7 +4,7 @@ Extrait de main.py (étape 2b-1). Le bot est lu via `core.bot` (jamais `import m
 """
 import asyncio
 
-import core
+from nexus_runtime import core
 
 
 def run_coroutine(coro, timeout=10):

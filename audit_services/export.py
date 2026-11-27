@@ -1,5 +1,5 @@
 """Database-backed audit export queries and compatibility re-exports."""
-from core import col
+from nexus_runtime.core import col
 from audit_helpers.export_utils import _safe_csv_cell, _build_audit_csv_bytes, _build_audit_pdf_bytes
 
 
