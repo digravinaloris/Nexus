@@ -63,9 +63,14 @@ from services.template_ops import _apply_template_base_config
 from nexus_logging.jsonlog import log_json
 from services.welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
 from services.server_backups import create_server_backup, restore_server_backup
+from services.automod_checks import (
+    is_automod_exempt, check_spam, check_raid, record_join_name_and_check_pattern,
+    check_media_flood, check_channel_burst, check_invite_link,
+    SPAM_MESSAGE_COUNT, SPAM_WINDOW_SECONDS, RAID_JOIN_COUNT, RAID_WINDOW_SECONDS,
+)
 from helpers.utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
-    is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
+    is_mention_spam, detect_phone_number, detect_address_hint,
     parse_bounded_number, normalize_banned_word, normalize_domain, parse_lines_list,
 )
 import csv
@@ -4308,22 +4313,8 @@ async def apply(interaction: discord.Interaction, role: discord.Role):
 # ===================  AUTO-MODERATION  =====================
 # ============================================================
 
-# Suivi en mémoire des messages récents par utilisateur, pour la détection de spam.
-# Pas besoin de persister ça en DB : ça repart à zéro si le bot redémarre, ce qui est très bien.
-_recent_messages = {}  # {(guild_id, user_id): [timestamps]}
-
-# Suivi en mémoire des arrivées récentes par serveur, pour la détection de raid.
-_recent_joins = {}  # {guild_id: [timestamps]}
-_recent_join_names = {}  # {guild_id: [(timestamp, display_name)]} -- pour la détection de pattern de raid
-_media_flood_tracker = {}  # {(guild_id, user_id): [timestamps]}
-_channel_activity_tracker = {}  # {channel_id: [timestamps]} -- pour déclencher l'auto-slowmode
+# Temporary auto-slowmode state remains owned by the bot event loop.
 _auto_slowmode_active = {}  # {channel_id: revert_at (datetime aware UTC)}
-
-SPAM_MESSAGE_COUNT = 10
-SPAM_WINDOW_SECONDS = 5
-INVITE_LINK_RE = re.compile(r"(discord\.gg/|discord(?:app)?\.com/invite/)", re.IGNORECASE)
-RAID_JOIN_COUNT = 5
-RAID_WINDOW_SECONDS = 10
 
 # Suivi en mémoire des actions destructrices récentes par (serveur, auteur),
 # pour l'anti-nuke. Repart à zéro si le bot redémarre — acceptable ici, un
@@ -4407,89 +4398,6 @@ async def on_audit_log_entry_create(entry: discord.AuditLogEntry):
         inline=False,
     )
     await _send_log_embed(guild, embed)
-
-
-def is_automod_exempt(member, cfg):
-    """Les modérateurs (rôles autorisés ou permission gérer les messages) ne sont jamais auto-modérés."""
-    if member.guild_permissions.manage_messages:
-        return True
-    allowed = set(cfg.get("allowed_roles", []))
-    member_roles = {role.id for role in member.roles}
-    if member_roles & allowed:
-        return True
-    exempt_roles = {int(r) for r in cfg.get("automod_exempt_role_ids", []) if str(r).isdigit()}
-    return bool(member_roles & exempt_roles)
-
-
-def check_spam(guild_id, user_id, cfg=None):
-    cfg = cfg or get_config(guild_id)
-    spam_count = cfg.get("automod_spam_count", SPAM_MESSAGE_COUNT)
-    spam_window = cfg.get("automod_spam_window", SPAM_WINDOW_SECONDS)
-    key = (guild_id, user_id)
-    now = time.time()
-    timestamps = _recent_messages.get(key, [])
-    timestamps = [t for t in timestamps if now - t < spam_window]
-    timestamps.append(now)
-    _recent_messages[key] = timestamps
-    return len(timestamps) > spam_count
-
-
-def check_raid(guild_id, cfg=None):
-    """Retourne True si assez de membres ont rejoint en peu de temps (seuils
-    configurables par serveur, /config automod raidcount/raidwindow)."""
-    cfg = cfg or get_config(guild_id)
-    raid_count = cfg.get("automod_raid_count", RAID_JOIN_COUNT)
-    raid_window = cfg.get("automod_raid_window", RAID_WINDOW_SECONDS)
-    now = time.time()
-    timestamps = _recent_joins.get(guild_id, [])
-    timestamps = [t for t in timestamps if now - t < raid_window]
-    timestamps.append(now)
-    _recent_joins[guild_id] = timestamps
-    return len(timestamps) >= raid_count
-
-
-def record_join_name_and_check_pattern(guild_id, display_name, window_seconds=30):
-    """Enregistre le pseudo d'un membre qui vient de join, et retourne True si
-    les pseudos récents (fenêtre glissante) partagent un pattern suspect
-    (voir utils.detect_raid_username_pattern). Indépendant du seuil brut de
-    check_raid -- peut se déclencher même sous le seuil de comptage."""
-    now = time.time()
-    entries = _recent_join_names.get(guild_id, [])
-    entries = [(t, n) for t, n in entries if now - t < window_seconds]
-    entries.append((now, display_name))
-    _recent_join_names[guild_id] = entries
-    return detect_raid_username_pattern([n for _, n in entries])
-
-
-def check_media_flood(guild_id, user_id, cfg):
-    """True si ce membre poste des images/pièces jointes trop vite (seuils
-    /config dans media_flood_count / media_flood_window)."""
-    count_threshold = cfg.get("media_flood_count", 5)
-    window = cfg.get("media_flood_window", 10)
-    now = time.time()
-    key = (guild_id, user_id)
-    timestamps = _media_flood_tracker.get(key, [])
-    timestamps = [t for t in timestamps if now - t < window]
-    timestamps.append(now)
-    _media_flood_tracker[key] = timestamps
-    return len(timestamps) > count_threshold
-
-
-def check_channel_burst(channel_id, cfg):
-    """True si ce salon reçoit trop de messages trop vite (tous auteurs
-    confondus) -- déclenche l'auto-slowmode temporaire."""
-    threshold = cfg.get("auto_slowmode_threshold", 10)
-    window = cfg.get("auto_slowmode_window", 10)
-    now = time.time()
-    timestamps = _channel_activity_tracker.get(channel_id, [])
-    timestamps = [t for t in timestamps if now - t < window]
-    timestamps.append(now)
-    _channel_activity_tracker[channel_id] = timestamps
-    return len(timestamps) > threshold
-
-
-def check_invite_link(content):
-    return bool(INVITE_LINK_RE.search(content))
 
 
 async def apply_automod_action(message, violation_type, reason):
