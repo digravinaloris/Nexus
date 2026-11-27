@@ -75,6 +75,7 @@ from services.welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_
 from services.server_backups import create_server_backup, restore_server_backup
 from services.role_menus import RoleMenuSelect, RoleMenuView
 from services.setup_wizard import SetupWizardView
+from services.pagination import PaginatedEmbedView
 from services.automod_checks import (
     is_automod_exempt, check_spam, check_raid, record_join_name_and_check_pattern,
     check_media_flood, check_channel_burst, check_invite_link,
@@ -3522,57 +3523,6 @@ class AppealButton(discord.ui.DynamicItem[discord.ui.Button], template=r"nexus_a
             )
             return
         await interaction.response.send_modal(AppealModal(self.token))
-
-
-class PaginatedEmbedView(discord.ui.View):
-    """Vue générique de pagination par boutons — réutilisée par toutes les
-    commandes qui listent potentiellement beaucoup d'entrées (mutelist,
-    warnlist, banlist, history...), pour ne jamais dépasser les limites
-    d'un embed Discord."""
-    def __init__(self, title, lines, color=0x3399ff, per_page=10, author_id=None):
-        super().__init__(timeout=120)
-        self.title = title
-        self.lines = lines
-        self.color = color
-        self.per_page = per_page
-        self.page = 0
-        self.author_id = author_id
-        self.max_page = max(0, (len(lines) - 1) // per_page)
-        self._update_buttons()
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if self.author_id and interaction.user.id != self.author_id:
-            await interaction.response.send_message(
-                "Only the person who ran this command can navigate pages.", ephemeral=True
-            )
-            return False
-        return True
-
-    def _update_buttons(self):
-        self.previous_page.disabled = self.page <= 0
-        self.next_page.disabled = self.page >= self.max_page
-
-    def build_embed(self):
-        start = self.page * self.per_page
-        chunk = self.lines[start:start + self.per_page]
-        embed = discord.Embed(title=self.title, description="\n".join(chunk) or "—", color=self.color)
-        if self.max_page > 0:
-            embed.set_footer(text=f"Page {self.page + 1}/{self.max_page + 1}")
-        return embed
-
-    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
-    async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.page -= 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
-
-    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
-    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.page += 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
-
-
 
 
 
