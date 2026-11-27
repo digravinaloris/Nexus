@@ -27,10 +27,15 @@ UTC = datetime.timezone.utc
 
 
 @pytest.fixture
-def keys(monkeypatch):
+def keys(monkeypatch, vguild):
     monkeypatch.setenv("TURNSTILE_SITE_KEY", SITE)
     monkeypatch.setenv("TURNSTILE_SECRET_KEY", SECRET)
     monkeypatch.setenv("PUBLIC_BASE_URL", BASE)
+    vguild.nexus.api.config.update(
+        TURNSTILE_SITE_KEY=SITE,
+        TURNSTILE_SECRET_KEY=SECRET,
+        PUBLIC_BASE_URL=BASE,
+    )
 
 
 def fake_cloudflare(monkeypatch, result=None, exc=None):
