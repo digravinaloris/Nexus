@@ -308,7 +308,7 @@ class InProcessBotService(BotService):
     def dashboard_calendar_insert_event(self, event: Dict[str, object]):
         return calendar_store.insert_event(event)
 
-    def dashboard_calendar_delete_event(self, guild_id: str, event_id) -> bool:
+    def dashboard_calendar_delete_event(self, guild_id: str, event_id: str) -> bool:
         return calendar_store.delete_event(guild_id, event_id)
 
     def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> List[Dict[str, object]]:
