@@ -369,3 +369,35 @@ def test_factory_injects_github_webhook_secret_without_process_fallback(monkeypa
 
     assert app.config["GITHUB_RELEASE_WEBHOOK_SECRET"] == "injected-webhook-secret"
     assert isolated_app.config["GITHUB_RELEASE_WEBHOOK_SECRET"] == ""
+
+
+def test_login_uses_injected_session_backend_without_setting_a_client_cookie():
+    from flask.sessions import SessionInterface, SessionMixin
+
+    class BackendSession(dict, SessionMixin):
+        new = False
+        modified = False
+        accessed = False
+
+    class FakeSessionInterface(SessionInterface):
+        def __init__(self):
+            self.session = BackendSession()
+            self.saved = 0
+
+        def open_session(self, app, request):
+            return self.session
+
+        def save_session(self, app, session, response):
+            self.saved += 1
+
+    backend = FakeSessionInterface()
+    app = _create_app(_config(), session_interface=backend)
+
+    response = app.test_client().get("/login")
+
+    assert response.status_code == 302
+    assert "oauth_state" in backend.session
+    assert "oauth_state_created_at" in backend.session
+    assert "oauth_code_verifier" in backend.session
+    assert "Set-Cookie" not in response.headers
+    assert backend.saved == 1
