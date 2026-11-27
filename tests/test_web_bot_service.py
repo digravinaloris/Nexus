@@ -10,6 +10,21 @@ def test_bot_service_interface_module_has_no_runtime_imports():
     assert "discord" not in vars(interface_module)
 
 
+def test_in_process_adapter_implements_every_service_contract_method():
+    from web.bot_service import BotService
+
+    interface_methods = {
+        name for name, value in vars(BotService).items()
+        if callable(value) and not name.startswith("_")
+    }
+    adapter_methods = {
+        name for name, value in vars(InProcessBotService).items()
+        if callable(value)
+    }
+
+    assert interface_methods <= adapter_methods
+
+
 class FakeBot:
     def __init__(self, ready=True, guilds=None):
         self.ready = ready
