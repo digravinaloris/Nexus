@@ -66,6 +66,16 @@ def setup_schema():
             probe_key TEXT PRIMARY KEY
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS spike_encrypted_sessions (
+            session_hash TEXT PRIMARY KEY,
+            ciphertext_hex TEXT NOT NULL,
+            nonce_hex TEXT NOT NULL,
+            key_version INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            revoked_at INTEGER
+        )
+        """,
     ]
     try:
         db = _db()
@@ -259,6 +269,129 @@ def batch_rollback():
         except Exception:
             return jsonify({"error": "local D1 unavailable"}), 503
         return jsonify({"rolled_back": count == 0})
+
+
+def _test_encryption_key() -> bytes:
+    """Read the disposable key supplied by the local smoke workflow only."""
+    raw_key = str(request.environ["workers.env"].SPIKE_TEST_ENCRYPTION_KEY)
+    try:
+        key = bytes.fromhex(raw_key)
+    except ValueError as exc:
+        raise RuntimeError("local test encryption key is malformed") from exc
+    if len(key) != 32:
+        raise RuntimeError("local test encryption key must be 32 bytes")
+    return key
+
+
+def _session_aad(session_hash: str, key_version: int) -> bytes:
+    return f"nexus-spike:session:v{key_version}:{session_hash}".encode("ascii")
+
+
+def _row_value(row, name):
+    try:
+        return row[name]
+    except (KeyError, TypeError):
+        return getattr(row, name)
+
+
+@app.post("/__spike/encrypted-session")
+def create_encrypted_session():
+    """Persist only ciphertext; the raw opaque ID is returned once for the test."""
+    raw_id = secrets.token_urlsafe(32)
+    session_hash = _digest(raw_id)
+    key_version = 1
+    nonce = secrets.token_bytes(12)
+    fixture = b"nexus-cloudflare-spike-persisted-non-sensitive-fixture"
+    try:
+        ciphertext = aes_gcm_encrypt(
+            _test_encryption_key(),
+            nonce,
+            fixture,
+            _session_aad(session_hash, key_version),
+        )
+        now = int(time.time())
+        _await(
+            _db()
+            .prepare(
+                """
+                INSERT INTO spike_encrypted_sessions
+                    (session_hash, ciphertext_hex, nonce_hex, key_version, expires_at)
+                VALUES (?, ?, ?, ?, ?)
+                """
+            )
+            .bind(
+                session_hash,
+                ciphertext.hex(),
+                nonce.hex(),
+                key_version,
+                now + 3600,
+            )
+            .run()
+        )
+    except Exception as exc:
+        print(f"Local encrypted D1 session creation failed: {type(exc).__name__}: {exc}", flush=True)
+        return jsonify({"error": "local encrypted session unavailable"}), 503
+    return jsonify({"session_id": raw_id})
+
+
+@app.get("/__spike/encrypted-session/<session_id>")
+def read_encrypted_session(session_id):
+    if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
+        return jsonify({"active": False})
+    now = int(time.time())
+    session_hash = _digest(session_id)
+    try:
+        row = _await(
+            _db()
+            .prepare(
+                """
+                SELECT ciphertext_hex, nonce_hex, key_version
+                FROM spike_encrypted_sessions
+                WHERE session_hash = ? AND revoked_at IS NULL AND expires_at > ?
+                LIMIT 1
+                """
+            )
+            .bind(session_hash, now)
+            .first()
+        )
+        if row is None:
+            return jsonify({"active": False})
+        key_version = int(_row_value(row, "key_version"))
+        ciphertext = bytes.fromhex(_row_value(row, "ciphertext_hex"))
+        nonce = bytes.fromhex(_row_value(row, "nonce_hex"))
+        plaintext = aes_gcm_decrypt(
+            _test_encryption_key(),
+            nonce,
+            ciphertext,
+            _session_aad(session_hash, key_version),
+        )
+    except Exception:
+        # Missing keys, malformed rows, and authentication failures all fail closed.
+        return jsonify({"active": False})
+    fixture = b"nexus-cloudflare-spike-persisted-non-sensitive-fixture"
+    return jsonify({"active": plaintext == fixture})
+
+
+@app.post("/__spike/encrypted-session/<session_id>/tamper")
+def tamper_encrypted_session(session_id):
+    if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
+        return jsonify({"updated": False}), 400
+    try:
+        result = _await(
+            _db()
+            .prepare(
+                """
+                UPDATE spike_encrypted_sessions
+                SET ciphertext_hex = '00'
+                WHERE session_hash = ? AND revoked_at IS NULL
+                """
+            )
+            .bind(_digest(session_id))
+            .run()
+        )
+    except Exception:
+        return jsonify({"error": "local D1 unavailable"}), 503
+    return jsonify({"updated": True})
 
 
 @app.post("/__spike/crypto")
