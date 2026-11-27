@@ -332,6 +332,26 @@ def main():
         f"Signed available guild filtering failed: {available}",
     )
 
+    status, fetch_channels = call(
+        "/__spike/fetch-client/api_text_channels_snapshot", "POST", {}
+    )
+    require(
+        status == 200
+        and fetch_channels.get("result") == [
+            {"id": "456", "name": "general"},
+            {"id": "789", "name": "staff-chat"},
+        ],
+        f"Signed text-channel snapshot failed: {fetch_channels}",
+    )
+    status, invalid_channels = call(
+        "/__spike/fetch-client/api_text_channels_snapshot_invalid", "POST", {}
+    )
+    require(
+        status == 503
+        and invalid_channels.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted malformed text-channel DTOs: {invalid_channels}",
+    )
+
     status, fetch_response_validation = call(
         "/__spike/fetch-client-response-validation", "POST", {}
     )
