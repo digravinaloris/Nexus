@@ -5,7 +5,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dashboard_utils import (\n    read_bounded_form_numbers, validate_channel_selection, validate_role_selection,\n)
+from dashboard_utils import (
+    read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
+)
 
 FIELDS = [
     ("count", int, 1, 100),
