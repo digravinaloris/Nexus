@@ -592,3 +592,22 @@ def test_invite_tracking_store_records_queries_and_ranks(mongo_db):
 
     leaderboard = invite_tracking_store.get_inviter_leaderboard(1, limit=1)
     assert leaderboard == [{"_id": "10", "count": 2}]
+
+
+# ------------------------------------------------ global template persistence
+
+def test_template_store_uses_global_shareable_codes(mongo_db):
+    from stores import template_store
+
+    assert template_store.template_code_exists("shared") is False
+    template_store.create_template({
+        "code": "shared",
+        "created_guild_id": "1",
+        "snapshot": {"features": ["tickets"]},
+    })
+
+    assert template_store.template_code_exists("shared") is True
+    assert template_store.get_template_by_code("shared")["created_guild_id"] == "1"
+    # Templates are globally addressable by code, not scoped to the importing guild.
+    assert template_store.get_template_by_code("shared")["snapshot"] == {"features": ["tickets"]}
+    assert template_store.get_template_by_code("missing") is None
