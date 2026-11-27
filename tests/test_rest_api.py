@@ -265,14 +265,14 @@ def test_invalid_guild_snowflakes_are_rejected_before_config_lookup(env, monkeyp
             return unexpected_lookup(guild_id)
 
     monkeypatch.setattr(rest_module, "get_bot_service", lambda: UnexpectedConfigService())
-    for invalid in ("abc", "0", str(2**64), "１２３"):
+    for invalid in ("abc", "0", str(2**64), "１２３", "9" * 21, "9" * 5000):
         response = env.client.get(url("/features", invalid), headers=MASTER)
         assert response.status_code == 400
         assert response.get_json() == {"error": "Invalid guild_id"}
 
 
 def test_invalid_user_snowflakes_are_rejected(env):
-    for invalid in ("abc", "0", str(2**64), "１２３"):
+    for invalid in ("abc", "0", str(2**64), "１２３", "9" * 21, "9" * 5000):
         response = env.client.get(
             url(f"/members/{invalid}/warnings"), headers=MASTER
         )
