@@ -67,8 +67,8 @@ def test_signature_binds_method_path_and_exact_body(method, path, body):
         )
 
 
-@pytest.mark.parametrize("timestamp", [1 - CLOCK_SKEW_SECONDS - 1, 1 + CLOCK_SKEW_SECONDS + 1])
-def test_expired_and_future_timestamps_are_rejected(timestamp):
+@pytest.mark.parametrize(("timestamp", "now"), [(1, 100), (62, 1)])
+def test_expired_and_future_timestamps_are_rejected(timestamp, now):
     with pytest.raises(BotServiceAuthError):
         verify_internal_request(
             keyring={"current": SECRET},
@@ -76,7 +76,7 @@ def test_expired_and_future_timestamps_are_rejected(timestamp):
             path=PATH,
             body=BODY,
             headers=_signed(timestamp=timestamp),
-            now=1,
+            now=now,
         )
 
 
