@@ -4,9 +4,9 @@ Extrait de main.py (étapes 2b-1 et 2b-2a). Le bot est lu via `core.bot` (jamais
 """
 import discord
 
-import core
-from config_store import get_config
-from sanctions_store import get_warns, set_warns
+from nexus_runtime import core
+from stores.config_store import get_config
+from stores.sanctions_store import get_warns, set_warns
 
 SANCTION_ICONS = {
     "ban": "🔨",

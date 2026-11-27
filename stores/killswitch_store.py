@@ -1,7 +1,7 @@
 """Persistence helpers for the email/TOTP global kill-switch tokens."""
 from pymongo import ReturnDocument
 
-from core import col
+from nexus_runtime.core import col
 
 
 def get_killswitch_token(token):

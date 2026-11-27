@@ -6,8 +6,8 @@ automatiquement), avec repli sur un envoi classique. Le bot est lu via
 """
 import discord
 
-import core
-from config_store import get_config, update_config
+from nexus_runtime import core
+from stores.config_store import get_config, update_config
 
 
 async def get_or_create_log_webhook(guild, channel):

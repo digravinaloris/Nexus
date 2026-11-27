@@ -18,8 +18,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from faq_store import get_or_create_faq, save_faq_entries
-from utils import looks_like_question, match_faq_entries
+from stores.faq_store import get_or_create_faq, save_faq_entries
+from helpers.utils import looks_like_question, match_faq_entries
 
 # Référence au bot, renseignée par setup() au chargement de l'extension.
 _bot = None

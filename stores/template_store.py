@@ -1,6 +1,6 @@
 """Persistence helpers for public dashboard templates."""
 
-from core import col
+from nexus_runtime.core import col
 
 
 def list_public_templates(limit=50):

@@ -3,7 +3,7 @@
 Keep MongoDB collection access out of Flask routes. A future remote bot-service
 adapter can replace this store without changing dashboard request handling.
 """
-import core
+from nexus_runtime import core
 
 
 def _collection():

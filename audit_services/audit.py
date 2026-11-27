@@ -7,8 +7,8 @@ rechargerait une 2e fois, avec un 2e bot).
 """
 import datetime
 
-import core
-from core import col
+from nexus_runtime import core
+from nexus_runtime.core import col
 
 
 def record_audit(guild_id, actor_id, actor_name, action, details=""):

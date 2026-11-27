@@ -4,7 +4,7 @@ Extrait de main.py (étape 2b-2a). Le bot vient de `core.bot` (jamais `import ma
 """
 import discord
 
-import core
+from nexus_runtime import core
 
 
 async def get_owner_user():

@@ -27,13 +27,13 @@ import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
 import json as _json
 import zipfile
-import utils
+from helpers import utils
 from nexus_runtime import core
-from config_store import (
+from stores.config_store import (
     get_config, update_config, add_command_role, remove_command_role,
     set_command_template, get_global_lock, set_global_lock,
 )
-from sanctions_store import (
+from stores.sanctions_store import (
     get_warns, set_warns, mark_channel_locked, mark_channel_unlocked,
     get_locked_channels, get_next_case_id, log_sanction, get_case,
     create_sanction_appeal, get_ban_appeal, get_ban_appeal_by_case,
@@ -57,7 +57,7 @@ from services.template_ops import _apply_template_base_config
 from nexus_logging.jsonlog import log_json
 from services.welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
 from services.server_backups import create_server_backup, restore_server_backup
-from utils import (
+from helpers.utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
     is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
     parse_bounded_number, normalize_banned_word, normalize_domain, parse_lines_list,
@@ -1674,7 +1674,7 @@ async def config_automodexempt(interaction: discord.Interaction, role: discord.R
     if role.is_default():
         await interaction.response.send_message("❌ @everyone cannot be exempted from AutoMod.", ephemeral=True)
         return
-    from config_store import get_config, update_config
+    from stores.config_store import get_config, update_config
     exempt_roles = set(map(str, get_config(interaction.guild_id).get("automod_exempt_role_ids", [])))
     role_id = str(role.id)
     if action == "add":
