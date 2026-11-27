@@ -64,6 +64,22 @@ class InProcessBotService(BotService):
         guild = bot.get_guild(int(guild_id))
         return bool(guild is not None and str(guild.owner_id) == str(user_id))
 
+    def is_guild_admin(self, guild_id: str, user_id: str) -> bool:
+        """Confirm owner or Administrator access using the current Discord cache."""
+        bot = core.bot
+        if bot is None or not bot.is_ready():
+            return False
+        try:
+            guild = bot.get_guild(int(guild_id))
+            if guild is None:
+                return False
+            if str(guild.owner_id) == str(user_id):
+                return True
+            member = guild.get_member(int(user_id))
+            return bool(member is not None and member.guild_permissions.administrator)
+        except (AttributeError, TypeError, ValueError):
+            return False
+
     def available_guild_ids(self, candidate_ids: List[str]) -> List[str]:
         bot = core.bot
         if bot is None or not bot.is_ready():
