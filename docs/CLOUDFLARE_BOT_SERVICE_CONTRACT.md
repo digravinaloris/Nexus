@@ -52,7 +52,8 @@ Still not implemented: production OAuth server-side sessions, production key pro
 
 - PR #203 adds the versioned HMAC-SHA256 helper in `web.bot_service_signing`. The canonical message binds `NEXUS-BOT-SERVICE-V1`, key ID, POST method, path, timestamp, nonce and SHA-256 digest of the exact body. Headers are `X-Nexus-Key-Id`, `X-Nexus-Timestamp`, `X-Nexus-Nonce` and `X-Nexus-Signature`; timestamp skew is limited to 60 seconds and bodies to 1 MiB.
 - PR #204 adds an opt-in `POST /internal/v1/dispatch` blueprint factory, verifies signatures before parsing, and consumes the nonce before dispatch. `MongoNonceStore` uses a unique compound `(key_id, nonce)` index and a TTL index on `expires_at`.
-- The blueprint currently allows only read-only `health_snapshot` and is not registered by the production app. The durable nonce store and endpoint are tested, but no HMAC key is configured and no remote Worker client is active.
+- PR #205 lets the Flask factory register that blueprint only when a service, keyring and nonce store are all explicitly injected; the current production `main.py` supplies none, so the endpoint remains absent.
+- The blueprint currently allows only read-only `health_snapshot`. The factory supports explicit opt-in registration, but the production `main.py` supplies no service/keyring/nonce-store dependencies, so the route remains absent. No HMAC key is configured and no remote Worker client is active.
 
 The signed endpoint must remain disabled until a separately reviewed configuration change supplies the keyring and registers the blueprint. Add methods only with explicit schemas, permission checks and idempotency rules; never dispatch arbitrary BotService method names.
 
