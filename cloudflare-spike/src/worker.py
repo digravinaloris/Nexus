@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
+import re
 import secrets
 import time
 
@@ -11,6 +14,7 @@ from pyodide.ffi import run_sync
 from workers import wsgi
 
 from crypto import aes_gcm_decrypt, aes_gcm_encrypt, sha256 as webcrypto_sha256
+from bot_service_client import CloudflareFetchBotService
 
 
 app = Flask(__name__)
@@ -33,6 +37,98 @@ def _digest(value: str) -> str:
 def _json_body():
     value = request.get_json(silent=True)
     return value if isinstance(value, dict) else {}
+
+
+def _test_bot_service_secret() -> bytes:
+    raw = str(request.environ["workers.env"].SPIKE_TEST_BOT_SERVICE_HMAC_SECRET)
+    secret = bytes.fromhex(raw)
+    if len(secret) < 32:
+        raise RuntimeError("local BotService test key must contain at least 32 bytes")
+    return secret
+
+
+@app.post("/internal/v1/dispatch")
+def mock_internal_bot_service():
+    """Local-only mock of the remote bot host; verifies the real signed wire format."""
+    body = request.get_data(cache=False)
+    headers = request.headers
+    key_id = headers.get("X-Nexus-Key-Id", "")
+    timestamp_text = headers.get("X-Nexus-Timestamp", "")
+    nonce = headers.get("X-Nexus-Nonce", "")
+    signature = headers.get("X-Nexus-Signature", "")
+    if (
+        key_id != "spike-test"
+        or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
+        or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
+        or not re.fullmatch(r"[a-f0-9]{64}", signature)
+        or abs(int(time.time()) - int(timestamp_text)) > 60
+        or len(body) > 1_048_576
+    ):
+        return jsonify({"error": "unauthorized"}), 401
+
+    canonical = "\\n".join(
+        (
+            "NEXUS-BOT-SERVICE-V1",
+            key_id,
+            request.method,
+            "/internal/v1/dispatch",
+            timestamp_text,
+            nonce,
+            hashlib.sha256(body).hexdigest(),
+        )
+    ).encode("utf-8")
+    expected = hmac.new(_test_bot_service_secret(), canonical, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        return jsonify({"error": "unauthorized"}), 401
+
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return jsonify({"error": "invalid request"}), 400
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"method", "args", "kwargs"}
+        or payload.get("args") != []
+        or payload.get("kwargs") != {}
+    ):
+        return jsonify({"error": "unsupported operation"}), 403
+
+    results = {
+        "health_snapshot": {"status": "alive", "guild_count": 12},
+        "public_status_snapshot": {
+            "online": True,
+            "guild_count": 12,
+            "latency_ms": 31,
+            "uptime": "3h 12m",
+        },
+    }
+    method = payload.get("method")
+    if not isinstance(method, str) or method not in results:
+        return jsonify({"error": "unsupported operation"}), 403
+    return jsonify({"ok": True, "result": results[method]})
+
+
+@app.post("/__spike/fetch-client/<method>")
+def exercise_fetch_bot_service_client(method):
+    """Call the local mock bot host through Workers Fetch from inside the Worker."""
+    try:
+        env = request.environ["workers.env"]
+        client = CloudflareFetchBotService(
+            base_url="http://127.0.0.1:8787",
+            key_id="spike-test",
+            secret=_test_bot_service_secret(),
+            allow_local_http=True,
+        )
+        if method == "health_snapshot":
+            result = client.health_snapshot()
+        elif method == "public_status_snapshot":
+            result = client.public_status_snapshot()
+        else:
+            return jsonify({"error": "unsupported operation"}), 403
+    except Exception as exc:
+        print(f"Local Worker Fetch BotService probe failed: {type(exc).__name__}", flush=True)
+        return jsonify({"error": "local Worker Fetch transport unavailable"}), 503
+    return jsonify({"result": result})
 
 
 @app.get("/")
