@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dashboard_utils import (
-    read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
+    read_bounded_form_numbers, validate_channel_selection, validate_role_selection, is_safe_relative_redirect,
 )
 
 FIELDS = [
@@ -97,3 +97,22 @@ def test_role_selection_object_rejects_default_role():
         pass
     else:
         raise AssertionError("@everyone/default role must not be selectable")
+
+
+
+def test_safe_relative_redirect_accepts_local_paths_and_queries():
+    assert is_safe_relative_redirect("/dashboard")
+    assert is_safe_relative_redirect("/dashboard/lang/fr?next=%2Fsettings")
+
+
+def test_safe_relative_redirect_rejects_external_and_ambiguous_targets():
+    for target in (
+        "https://evil.example", "//evil.example", "/\\\\evil.example",
+        "/\\t/evil.example", "/path\\\\evil", "dashboard", "",
+    ):
+        assert not is_safe_relative_redirect(target), target
+
+
+def test_safe_relative_redirect_rejects_non_string_values():
+    assert not is_safe_relative_redirect(None)
+    assert not is_safe_relative_redirect(123)
