@@ -8,7 +8,6 @@ vient de `core.bot`). Les routes sont enregistrées sur l'app par main.py via
 from functools import wraps
 import math
 import re
-import os
 import secrets
 import time
 from urllib.parse import urlencode
@@ -58,17 +57,12 @@ def _oauth_http_client():
     return requests if client is None else client
 
 
-DASH_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
-DASH_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
-DASH_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "")
-
-
 def _oauth_config():
-    """Resolve OAuth settings from the current app, with import-time compatibility fallbacks."""
+    """Resolve OAuth credentials exclusively from the current Flask app."""
     return (
-        current_app.config.get("DISCORD_CLIENT_ID", DASH_CLIENT_ID),
-        current_app.config.get("DISCORD_CLIENT_SECRET", DASH_CLIENT_SECRET),
-        current_app.config.get("DISCORD_REDIRECT_URI", DASH_REDIRECT_URI),
+        current_app.config.get("DISCORD_CLIENT_ID", ""),
+        current_app.config.get("DISCORD_CLIENT_SECRET", ""),
+        current_app.config.get("DISCORD_REDIRECT_URI", ""),
     )
 DISCORD_API_BASE = "https://discord.com/api"
 ADMINISTRATOR_PERM = 0x8

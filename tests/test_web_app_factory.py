@@ -51,6 +51,30 @@ def test_factory_registers_existing_routes_and_security_hooks():
 
 
 
+
+def test_factory_resolves_oauth_settings_per_app():
+    first = _create_app(_config(
+        DISCORD_CLIENT_ID="first-client",
+        DISCORD_CLIENT_SECRET="first-secret",
+        DISCORD_REDIRECT_URI="https://first.example/callback",
+    ))
+    second = _create_app(_config(
+        DISCORD_CLIENT_ID="second-client",
+        DISCORD_CLIENT_SECRET="second-secret",
+        DISCORD_REDIRECT_URI="https://second.example/callback",
+    ))
+
+    from web.auth import _oauth_config
+
+    with first.app_context():
+        assert _oauth_config() == (
+            "first-client", "first-secret", "https://first.example/callback"
+        )
+    with second.app_context():
+        assert _oauth_config() == (
+            "second-client", "second-secret", "https://second.example/callback"
+        )
+
 def test_factory_injects_flask_session_interface():
     class FakeSessionInterface:
         pass
