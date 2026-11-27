@@ -49,6 +49,35 @@ def test_rest_api_is_a_registered_blueprint():
     assert callable(rest_api.require_api_key)
 
 
+def test_every_rest_endpoint_requires_api_key():
+    path = os.path.join(ROOT, "web/rest_api.py")
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+
+    route_functions = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        has_route = any(
+            isinstance(decorator, ast.Call)
+            and isinstance(decorator.func, ast.Attribute)
+            and isinstance(decorator.func.value, ast.Name)
+            and decorator.func.value.id == "bp"
+            and decorator.func.attr == "route"
+            for decorator in node.decorator_list
+        )
+        if has_route:
+            route_functions.append(node)
+
+    assert route_functions, "REST API must declare at least one route"
+    for function in route_functions:
+        assert any(
+            isinstance(decorator, ast.Name)
+            and decorator.id == "require_api_key"
+            for decorator in function.decorator_list
+        ), f"REST endpoint {function.name} is missing require_api_key"
+
+
 WEB_RUNTIME_MODULES = (
     "web/auth.py",
     "web/public.py",
