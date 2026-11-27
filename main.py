@@ -18,9 +18,6 @@ import subprocess
 import signal
 import io
 from PIL import Image, ImageDraw, ImageFont
-import matplotlib
-matplotlib.use("Agg")  # pas d'affichage sur Render -- rendu fichier uniquement
-import matplotlib.pyplot as plt
 from deep_translator import GoogleTranslator
 import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -73,6 +70,7 @@ from services.template_ops import _apply_template_base_config
 from nexus_logging.jsonlog import log_json
 from services.welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
 from services.server_backups import create_server_backup, restore_server_backup
+from services.activity_charts import _generate_activity_chart
 from services.role_menus import RoleMenuSelect, RoleMenuView
 from services.setup_wizard import SetupWizardView
 from services.pagination import PaginatedEmbedView
@@ -3164,23 +3162,7 @@ async def remindme(interaction: discord.Interaction, duration: str, text: str):
     await interaction.response.send_message(f"⏰ Got it — I'll DM you in **{duration}**: \"{text}\"", ephemeral=True)
 
 
-def _generate_activity_chart(guild_id):
-    """CPU-bound (matplotlib) -- toujours appelée via asyncio.to_thread.
-    Barres sobres, cohérentes avec le reste de l'identité visuelle du bot (bleu #3399ff)."""
-    stats = get_sanction_stats(guild_id, days=7)
-    labels = [label for label, _ in stats]
-    values = [count for _, count in stats]
-    fig, ax = plt.subplots(figsize=(6, 2.2), dpi=120)
-    ax.bar(labels, values, color="#3399ff")
-    ax.set_title("Moderation activity · last 7 days", fontsize=10, color="#333333")
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.tick_params(labelsize=8)
-    fig.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", transparent=True)
-    plt.close(fig)
-    buf.seek(0)
-    return buf
+
 
 
 @bot.tree.command(name="serverinfo", description="Show information about the server")
