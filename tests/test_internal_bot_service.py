@@ -125,7 +125,7 @@ def test_replayed_nonce_is_rejected_before_second_dispatch():
 
     assert first.status_code == 200
     assert second.status_code == 409
-    assert service.calls == 1
+    assert service.calls == ["health_snapshot"]
 
 
 def test_invalid_signature_and_expired_timestamp_are_rejected():
@@ -145,7 +145,7 @@ def test_only_allowlisted_read_method_is_dispatchable():
     body = _request_body({"method": "ban_member", "args": [], "kwargs": {}})
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 403
-    assert service.calls == 0
+    assert service.calls == []
 
 
 def test_invalid_payload_query_and_content_type_are_rejected():
@@ -158,7 +158,7 @@ def test_invalid_payload_query_and_content_type_are_rejected():
     headers["Content-Type"] = "text/plain"
     assert client.post(PATH, data=valid_body, headers=headers).status_code == 415
     assert client.post(PATH + "?debug=1", data=valid_body, headers=_signed_headers(valid_body)).status_code == 400
-    assert service.calls == 0
+    assert service.calls == []
 
 
 def test_oversized_body_and_nonce_store_outage_fail_closed():
@@ -169,7 +169,7 @@ def test_oversized_body_and_nonce_store_outage_fail_closed():
         data=oversized,
         headers={"Content-Type": "application/json"},
     ).status_code == 413
-    assert service.calls == 0
+    assert service.calls == []
 
     failing_client, failing_service = _client(MemoryNonceStore(fail=True))
     body = _request_body()
