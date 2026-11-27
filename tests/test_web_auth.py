@@ -407,17 +407,22 @@ def test_logout_rejects_malformed_csrf_strings_without_500(env, token, expected)
     assert response.status_code == 403
 
 
-@pytest.mark.parametrize("refresh_token", ["bad token", "bad\tvalue", "x" * 4097, 123])
-def test_callback_rejects_malformed_refresh_tokens_without_identity_lookup(env, monkeypatch, refresh_token):
+@pytest.mark.parametrize("refresh_token", ["bad token", "bad\\tvalue", "x" * 4097, 123, "valid-refresh-token"])
+def test_callback_never_persists_unused_refresh_tokens(env, monkeypatch, refresh_token):
     class TokenResponse:
         status_code = 200
 
         def json(self):
             return {"access_token": "access", "refresh_token": refresh_token, "expires_in": 3600}
 
-    calls = []
+    class UserResponse:
+        status_code = 200
+
+        def json(self):
+            return {"id": "123456789012345678"}
+
     monkeypatch.setattr(auth.requests, "post", lambda *a, **k: TokenResponse())
-    monkeypatch.setattr(auth.requests, "get", lambda *a, **k: calls.append(True))
+    monkeypatch.setattr(auth.requests, "get", lambda *a, **k: UserResponse())
 
     with env.client.session_transaction() as sess:
         sess["oauth_state"] = "valid-state"
@@ -425,11 +430,12 @@ def test_callback_rejects_malformed_refresh_tokens_without_identity_lookup(env, 
         sess["oauth_state_created_at"] = auth.time.time()
 
     response = env.client.get("/callback?code=authorization-code&state=valid-state")
-    assert response.status_code == 502
-    assert calls == []
+    assert response.status_code == 302
     with env.client.session_transaction() as sess:
+        assert sess["access_token"] == "access"
         assert "refresh_token" not in sess
-        assert "access_token" not in sess
+
+
 
 
 
