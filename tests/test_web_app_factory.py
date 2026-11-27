@@ -147,7 +147,28 @@ import builtins
 import sys
 
 real_import = builtins.__import__
-blocked = {"main", "discord", "pymongo", "core", "bridge", "bson", "cogs", "audit", "audit_export"}
+blocked = {
+    "main",
+    "discord",
+    "pymongo",
+    "bson",
+    "core",
+    "bridge",
+    "cogs",
+    "audit",
+    "audit_export",
+    "calendar_store",
+    "template_ops",
+    "template_store",
+    "killswitch_store",
+    "verification",
+    "config_store",
+    "faq_store",
+    "discord_logging",
+    "sanctions_store",
+    "moderation_actions",
+    "owner_notify",
+}
 
 def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
     # Relative imports such as click.core pass only "core" as the name;
