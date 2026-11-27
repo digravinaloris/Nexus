@@ -68,7 +68,7 @@ def _invoke_authorized(f, args, kwargs):
         and request.content_length > MAX_API_REQUEST_BYTES
     ):
         return jsonify({"error": "Request body too large"}), 413
-    return _invoke_authorized(f, args, kwargs)
+    return f(*args, **kwargs)
 
 
 def require_api_key(f):
