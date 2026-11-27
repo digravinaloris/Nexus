@@ -40,11 +40,12 @@ This is a solo-maintained hobby project, not a company with a security team, so 
 This isn't a claim of being bulletproof — it's a list of what's actually implemented, so reports can focus on what might still be missing.
 
 **Authentication & sessions**
-- Dashboard Discord OAuth uses PKCE and validates callback parameters, authorization codes, refresh tokens, session state, and CSRF tokens before creating or changing an authenticated session.
+- Dashboard Discord OAuth uses PKCE and validates callback parameters, authorization codes, session state, and CSRF tokens before creating or changing an authenticated session. Refresh tokens are not used or persisted.
 - OAuth and dashboard responses are marked `no-store` to prevent sensitive pages and one-time callback data from being cached.
 - Dashboard login uses Discord OAuth2 with a signed, single-use `state` parameter to prevent CSRF on the login flow
-- Session cookies are `Secure`, `HttpOnly`, and `SameSite=Lax`
-- Access tokens are held server-side in the session only, never exposed to the client or logged
+- Session cookies are configured `Secure`, `HttpOnly`, and `SameSite=Lax`.
+- **Known limitation:** the current Flask default session is a signed client-side cookie, not an encrypted or server-side session. The Discord `access_token` is currently stored in that cookie and is therefore readable by anyone who obtains the cookie, even though its contents are integrity-protected. Cookie flags do not provide confidentiality. Do not describe the access token as server-side or hidden from the client.
+- A server-side session/token store with opaque cookie identifiers, encrypted token records, login-time session rotation, and immediate logout revocation is required before the Cloudflare Worker migration. The design and migration requirements are tracked in `docs/CLOUDFLARE_BOT_SERVICE_CONTRACT.md` and `docs/cloudflare-full-site-migration.md`; implementation and backend compatibility validation are still pending.
 
 **Authorization**
 - Every sensitive dashboard action re-checks the user's admin/owner status directly against Discord's API — never trusting a role or permission claimed by the client
