@@ -305,8 +305,8 @@ class InProcessBotService(BotService):
     def dashboard_calendar_has_duplicate_event(self, guild_id: str, title: str, starts_at) -> bool:
         return calendar_store.find_duplicate_event(guild_id, title, starts_at)
 
-    def dashboard_calendar_insert_event(self, event: Dict[str, object]):
-        return calendar_store.insert_event(event)
+    def dashboard_calendar_insert_event(self, event: Dict[str, object]) -> str:
+        return str(calendar_store.insert_event(event))
 
     def dashboard_calendar_delete_event(self, guild_id: str, event_id: str) -> bool:
         return calendar_store.delete_event(guild_id, event_id)
