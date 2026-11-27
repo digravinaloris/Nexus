@@ -2,6 +2,28 @@
 
 All notable changes to Nexus are documented here.
 
+## [1.4.0] - 2026-11-27
+
+### Summary
+This release focuses on Cloudflare migration groundwork, stronger web architecture and security boundaries, and a cleaner, better-tested codebase. **No production migration or deployment is included.**
+
+### Added
+- Cloudflare migration groundwork: isolated Flask app factory, transport-neutral BotService boundary, signed internal HTTP client/dispatch, replay protection, and D1-backed session interface experiments.
+- Read-only Worker-facing snapshots for guilds, channels, roles, members, statistics, and FAQs.
+- Architecture and compatibility checks covering web/runtime import boundaries and service-adapter contracts.
+- Public website and dashboard redesign previews, plus hosting and migration readiness documentation.
+
+### Changed
+- Grouped persistence modules under `stores/`, audit helpers under `audit_helpers/`, calendar helpers under `calendar_helpers/`, dashboard helpers under `web/`, structured logging under `nexus_logging/`, and translations under `locales/`.
+- Retained root-level compatibility imports for moved helper and persistence modules.
+- Kept the Discord bot separate from the planned Cloudflare website/API runtime.
+
+### Security and reliability
+- Strengthened server-side OAuth session handling, session rotation/revocation, host-prefixed cookies, and injected session backends.
+- Added strict API payload, identifier, duration, and request-body limits, plus consistent REST error handling.
+- Added HMAC-signed BotService requests, replay protection, and explicit authorization checks for internal owner/admin operations.
+- Expanded architecture, security, and regression test coverage.
+
 ## [Unreleased]
 
 ### Added since 1.2.0
