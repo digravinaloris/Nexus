@@ -192,7 +192,10 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     from services import ticket_survey
     from services import ticket_helpers
     from services import ticket_transcripts
+    from services import activity_charts
     from services import server_backups
+
+    assert nexus._generate_activity_chart is activity_charts._generate_activity_chart
 
     for mod, names in {
         config_store: ["get_config", "update_config", "add_command_role", "remove_command_role",
