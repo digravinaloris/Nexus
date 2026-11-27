@@ -147,7 +147,7 @@ import builtins
 import sys
 
 real_import = builtins.__import__
-blocked = {"main", "discord", "pymongo"}
+blocked = {"main", "discord", "pymongo", "core", "bridge", "bson", "cogs", "audit", "audit_export"}
 
 def guarded_import(name, *args, **kwargs):
     if name.split(".", 1)[0] in blocked:
