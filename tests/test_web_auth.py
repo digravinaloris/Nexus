@@ -489,3 +489,43 @@ def test_dashboard_guild_guard_allows_present_guild_through_bot_service(env, mon
     with env.nexus.api.test_request_context("/dashboard/123456789012345678"):
         session["access_token"] = "valid-access-token"
         assert protected("123456789012345678") == "allowed"
+
+
+
+def test_callback_uses_app_injected_discord_http_client(env):
+    class Response:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class InjectedHttpClient:
+        def __init__(self):
+            self.calls = []
+
+        def post(self, url, **kwargs):
+            self.calls.append(("POST", url, kwargs))
+            return Response(200, {"access_token": "injected-access", "expires_in": 3600})
+
+        def get(self, url, **kwargs):
+            self.calls.append(("GET", url, kwargs))
+            return Response(200, {"id": "123456789012345678", "username": "worker-user"})
+
+    client = InjectedHttpClient()
+    env.nexus.api.config["DISCORD_HTTP_CLIENT"] = client
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = "injected-state"
+        sess["oauth_code_verifier"] = "A" * 43
+        sess["oauth_state_created_at"] = auth.time.time()
+
+    response = env.client.get("/callback?code=authorization-code&state=injected-state")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/dashboard")
+    assert [call[0] for call in client.calls] == ["POST", "GET"]
+    assert client.calls[0][2]["timeout"] == 10
+    with env.client.session_transaction() as sess:
+        assert sess["access_token"] == "injected-access"
+        assert sess["dash_user"]["username"] == "worker-user"
