@@ -294,6 +294,27 @@ def test_oversized_api_key_is_rejected_before_guild_lookup(env, monkeypatch):
     assert response.get_json() == {"error": "Unauthorized"}
 
 
+def test_oversized_api_body_is_rejected_after_authentication(env):
+    import web.rest_api as rest_module
+
+    payload = b"x" * (rest_module.MAX_API_REQUEST_BYTES + 1)
+    response = env.client.post(
+        url("/faq"),
+        data=payload,
+        content_type="application/json",
+        headers=MASTER,
+    )
+    assert response.status_code == 413
+    assert response.get_json() == {"error": "Request body too large"}
+
+    unauthenticated = env.client.post(
+        url("/faq"),
+        data=payload,
+        content_type="application/json",
+    )
+    assert unauthenticated.status_code == 401
+
+
 def test_wrong_key_is_401(env):
     resp = env.client.get("/api/health", headers={"X-API-Key": "nope"})
     assert resp.status_code == 401
