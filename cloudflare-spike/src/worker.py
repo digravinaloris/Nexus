@@ -9,12 +9,16 @@ import re
 import secrets
 import time
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 from pyodide.ffi import run_sync
 from workers import wsgi
 
 from crypto import aes_gcm_decrypt, aes_gcm_encrypt, sha256 as webcrypto_sha256
-from bot_service_client import CloudflareFetchBotService
+from bot_service_client import (
+    CloudflareBotServiceError,
+    CloudflareFetchBotService,
+    MAX_RESPONSE_BYTES,
+)
 
 
 app = Flask(__name__)
@@ -57,7 +61,13 @@ def mock_internal_bot_service():
     nonce = headers.get("X-Nexus-Nonce", "")
     signature = headers.get("X-Nexus-Signature", "")
     if (
-        key_id != "spike-test"
+        key_id not in {
+            "spike-test",
+            "spike-redirect",
+            "spike-unavailable",
+            "spike-malformed",
+            "spike-oversized",
+        }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
         or not re.fullmatch(r"[a-f0-9]{64}", signature)
@@ -80,6 +90,17 @@ def mock_internal_bot_service():
     expected = hmac.new(_test_bot_service_secret(), canonical, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, signature):
         return jsonify({"error": "unauthorized"}), 401
+
+    # These response modes are disposable local fixtures used only by the smoke test.
+    if key_id == "spike-redirect":
+        return Response("", status=302, headers={"Location": "https://bot.example/"})
+    if key_id == "spike-unavailable":
+        return jsonify({"error": "unavailable"}), 503
+    if key_id == "spike-malformed":
+        return Response("{malformed-json", status=200, mimetype="application/json")
+    if key_id == "spike-oversized":
+        oversized = '{"result":"' + ("x" * (MAX_RESPONSE_BYTES + 32)) + '"}'
+        return Response(oversized, status=200, mimetype="application/json")
 
     try:
         payload = json.loads(body)
@@ -129,6 +150,36 @@ def exercise_fetch_bot_service_client(method):
         print(f"Local Worker Fetch BotService probe failed: {type(exc).__name__}", flush=True)
         return jsonify({"error": "local Worker Fetch transport unavailable"}), 503
     return jsonify({"result": result})
+
+
+@app.post("/__spike/fetch-client-response-validation")
+def validate_fetch_bot_service_error_responses():
+    """Exercise rejected HTTP responses through the actual Workers Fetch adapter."""
+    checks = {}
+    for key_id, name in (
+        ("spike-redirect", "rejects_redirect"),
+        ("spike-unavailable", "rejects_non_200"),
+        ("spike-malformed", "rejects_malformed_json"),
+        ("spike-oversized", "rejects_oversized_body"),
+    ):
+        try:
+            client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id=key_id,
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            client.health_snapshot()
+            checks[name] = False
+        except CloudflareBotServiceError:
+            checks[name] = True
+        except Exception as exc:
+            print(
+                f"Unexpected local Fetch rejection type: {type(exc).__name__}",
+                flush=True,
+            )
+            checks[name] = False
+    return jsonify({"checks": checks, "all_passed": all(checks.values())})
 
 
 @app.post("/__spike/fetch-client-validation")
