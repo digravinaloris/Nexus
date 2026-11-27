@@ -74,3 +74,29 @@ def test_web_routes_do_not_import_bot_or_database_runtime(relative_path):
         elif isinstance(node, ast.ImportFrom):
             root = (node.module or "").split(".")[0]
             assert root not in forbidden_roots, f"{relative_path}: {node.module}"
+
+
+@pytest.mark.parametrize("relative_path", WEB_RUNTIME_MODULES)
+def test_web_routes_do_not_bypass_bot_service_adapter(relative_path):
+    """Routes must not reach into the in-process adapter or persistence stores."""
+    path = os.path.join(ROOT, relative_path)
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+
+    forbidden_modules = {
+        "web.in_process_bot_service",
+        "web.bot_runtime",
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported = {alias.name for alias in node.names}
+            assert not (forbidden_modules & imported), f"{relative_path}: {imported}"
+            assert not any(
+                name.rsplit(".", 1)[-1].endswith("_store") for name in imported
+            ), f"{relative_path}: {imported}"
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            assert module not in forbidden_modules, f"{relative_path}: {module}"
+            assert not module.rsplit(".", 1)[-1].endswith("_store"), (
+                f"{relative_path}: {module}"
+            )
