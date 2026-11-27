@@ -13,7 +13,6 @@ from functools import wraps
 from flask import Blueprint, g, jsonify, request
 
 from web.bot_service import get_bot_service
-from discord_logging import log_ban, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from features import FEATURE_TOGGLES
 
 bp = Blueprint("rest_api", __name__)
