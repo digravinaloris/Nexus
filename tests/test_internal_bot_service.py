@@ -1,5 +1,7 @@
 import json
 import time
+
+import pytest
 from threading import Lock
 
 from flask import Flask
@@ -9,6 +11,7 @@ from web.bot_service_signing import sign_internal_request
 from web.internal_bot_service import (
     MongoNonceStore,
     create_internal_bot_service_blueprint,
+    internal_bot_service_app_options,
 )
 
 
@@ -190,3 +193,43 @@ def test_mongo_nonce_store_fails_closed_when_collection_is_unavailable():
         assert "unavailable" in str(exc)
     else:
         raise AssertionError("Unavailable Mongo collection must fail closed")
+
+
+def test_internal_service_options_are_disabled_by_default():
+    service_calls = []
+    options = internal_bot_service_app_options(
+        environ={},
+        service_factory=lambda: service_calls.append("created"),
+        nonce_collection_provider=lambda: None,
+    )
+    assert options == {}
+    assert service_calls == []
+
+
+def test_internal_service_options_require_valid_keyring_and_wire_dependencies():
+    service = FakeBotService()
+    collection = FakeMongoCollection()
+    options = internal_bot_service_app_options(
+        environ={
+            "NEXUS_BOT_SERVICE_INTERNAL_ENABLED": "true",
+            "NEXUS_BOT_SERVICE_HMAC_KEYS": json.dumps({"current": SECRET.hex()}),
+        },
+        service_factory=lambda: service,
+        nonce_collection_provider=lambda: collection,
+    )
+
+    assert options["bot_service"] is service
+    assert options["internal_bot_service"] is service
+    assert options["internal_bot_service_keyring"] == {"current": SECRET}
+    assert isinstance(options["internal_nonce_store"], MongoNonceStore)
+
+
+def test_internal_service_enabled_with_missing_keyring_fails_closed():
+    service_calls = []
+    with pytest.raises(ValueError, match="keyring"):
+        internal_bot_service_app_options(
+            environ={"NEXUS_BOT_SERVICE_INTERNAL_ENABLED": "true"},
+            service_factory=lambda: service_calls.append("created"),
+            nonce_collection_provider=lambda: None,
+        )
+    assert service_calls == []
