@@ -1,0 +1,177 @@
+"""Pure validation helpers for dashboard form data."""
+
+from utils import parse_bounded_number
+
+
+def read_bounded_form_numbers(values, fields):
+    """Parse bounded numeric form values, ignoring blanks.
+
+    fields contains (key, type, minimum, maximum) tuples. Invalid values
+    raise ValueError with the offending field name, matching dashboard routes.
+    """
+    parsed = {}
+    for key, kind, minimum, maximum in fields:
+        raw = values.get(key, "")
+        if not isinstance(raw, str):
+            raw = str(raw)
+        if not raw.strip():
+            continue
+        try:
+            parsed[key] = parse_bounded_number(raw, kind, minimum, maximum)
+        except ValueError as exc:
+            raise ValueError(key) from exc
+    return parsed
+
+
+
+def validate_channel_selection(raw, channels):
+    """Return a selected channel ID if it exists in the supplied channel list."""
+    raw = raw.strip()
+    if not raw or raw == "none":
+        return None
+    if raw.isdigit():
+        channel_ids = {
+            int(channel["id"] if isinstance(channel, dict) else channel.id)
+            for channel in channels
+        }
+        if int(raw) in channel_ids:
+            return int(raw)
+    raise ValueError("invalid channel selection")
+
+
+def validate_role_selection(raw, guild):
+    """Return a selected role ID, rejecting unknown roles and @everyone."""
+    raw = raw.strip()
+    if not raw or raw == "none":
+        return None
+    if raw.isdigit():
+        role_id = int(raw)
+        if isinstance(guild, dict):
+            role = next((r for r in guild["roles"] if int(r["id"]) == role_id), None)
+            if role is not None:
+                return int(role["id"])
+        else:
+            role = guild.get_role(role_id)
+            if role is not None and not role.is_default():
+                return role.id
+    raise ValueError("invalid role selection")
+
+
+
+def is_safe_relative_redirect(target):
+    """Return whether target is a safe, same-site absolute-path redirect."""
+    from urllib.parse import urlparse
+
+    if not isinstance(target, str):
+        return False
+    parsed = urlparse(target)
+    return (
+        target.startswith("/")
+        and not target.startswith("//")
+        and "\\" not in target
+        and not any(ord(char) < 32 or ord(char) == 127 for char in target)
+        and not parsed.scheme
+        and not parsed.netloc
+    )
+
+
+def build_feature_toggle_updates(feature_toggles, config, submitted_keys, defaults=None):
+    """Return config writes and effective feature changes for a dashboard submission.
+
+    Missing stored values use code defaults when calculating effective changes,
+    but are still written when the submitted value differs from the stored state.
+    """
+    defaults = defaults or {}
+    updates = []
+    enabled_now = []
+    disabled_now = []
+
+    for key, meta in feature_toggles.items():
+        config_key = meta["config_key"]
+        new_value = key in submitted_keys
+        stored = config.get(config_key)
+        if config_key in config and bool(stored) == new_value:
+            continue
+
+        effective_old = bool(defaults.get(config_key, False)) if config_key not in config else bool(stored)
+        updates.append((config_key, new_value))
+        if effective_old != new_value:
+            (enabled_now if new_value else disabled_now).append(key)
+
+    return updates, enabled_now, disabled_now
+
+
+def describe_setting_change(key, old, new):
+    """Format a setting change for the dashboard audit log."""
+    if isinstance(new, list):
+        return f"{key}: {len(old or [])} -> {len(new)} entries"
+    return f"{key}: {old} -> {new}"
+
+
+def build_settings_update_plan(updates, config, defaults=None):
+    """Return config writes and audit descriptions for a settings submission.
+
+    Missing stored values use effective defaults for audit comparison, while
+    explicit None values remain distinct and missing None values are not written.
+    """
+    defaults = defaults or {}
+    writes = []
+    changes = []
+    unset = object()
+
+    for key, value in updates.items():
+        stored = config.get(key, unset)
+        if stored == value or (stored is unset and value is None):
+            continue
+        effective_old = defaults.get(key) if stored is unset else stored
+        writes.append((key, value))
+        if effective_old != value:
+            changes.append(describe_setting_change(key, effective_old, value))
+
+    return writes, changes
+
+
+def get_template_role_names(command_roles_by_name):
+    """Return unique source role names from a portable template mapping."""
+    if not isinstance(command_roles_by_name, dict):
+        raise ValueError("invalid template role mapping")
+    names = set()
+    for command, role_names in command_roles_by_name.items():
+        if not isinstance(command, str) or not command or not isinstance(role_names, list):
+            raise ValueError("invalid template role mapping")
+        if any(not isinstance(name, str) or not name for name in role_names):
+            raise ValueError("invalid template role mapping")
+        names.update(role_names)
+    return sorted(names)
+
+
+def build_template_command_role_mapping(command_roles_by_name, submitted_values, roles, existing=None):
+    """Validate submitted role IDs against this guild before building permission mappings."""
+    names = get_template_role_names(command_roles_by_name)
+    valid_role_ids = set()
+    for role in roles:
+        if not isinstance(role, dict) or "id" not in role:
+            raise ValueError("invalid guild role data")
+        raw_id = str(role["id"])
+        if not raw_id.isdigit() or int(raw_id) <= 0:
+            raise ValueError("invalid guild role data")
+        valid_role_ids.add(int(raw_id))
+
+    name_to_new_id = {}
+    for index, name in enumerate(names):
+        raw_id = submitted_values.get(f"map__{index}", "")
+        if raw_id in (None, ""):
+            continue
+        if not isinstance(raw_id, str) or not raw_id.isdigit():
+            raise ValueError("invalid role selection")
+        role_id = int(raw_id)
+        if role_id not in valid_role_ids:
+            raise ValueError("invalid role selection")
+        name_to_new_id[name] = role_id
+
+    command_roles = dict(existing) if isinstance(existing, dict) else {}
+    for command, old_names in command_roles_by_name.items():
+        mapped_ids = [name_to_new_id[name] for name in old_names if name in name_to_new_id]
+        if mapped_ids:
+            command_roles[command] = mapped_ids
+    return command_roles
