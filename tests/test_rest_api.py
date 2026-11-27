@@ -294,6 +294,20 @@ def test_oversized_api_key_is_rejected_before_guild_lookup(env, monkeypatch):
     assert response.get_json() == {"error": "Unauthorized"}
 
 
+def test_non_ascii_api_keys_are_rejected_without_server_error(env):
+    import web.rest_api as rest_module
+
+    assert rest_module._api_key_matches("master-key", "master-key")
+    assert not rest_module._api_key_matches("clé", "master-key")
+    assert not rest_module._api_key_matches("master-key", "clé")
+
+    response = env.client.get(
+        "/api/health", headers={"X-API-Key": "clé"}
+    )
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Unauthorized"}
+
+
 def test_oversized_api_body_is_rejected_after_authentication(env):
     import web.rest_api as rest_module
 
