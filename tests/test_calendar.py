@@ -8,7 +8,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import pytest
-from cogs.calendar import parse_event_datetime, validate_timezone, UTC
+from calendar_utils import parse_event_datetime, validate_timezone, local_when, UTC
 
 def test_timezone_validation():
     assert validate_timezone('Europe/Paris') == 'Europe/Paris'
@@ -31,3 +31,19 @@ def test_past_event_rejected():
 
 def test_dst_gap_rejected():
     with pytest.raises(ValueError,match='does not exist'): parse_event_datetime('2026-03-29','02:30','Europe/Paris',dt.datetime(2026,1,1,tzinfo=UTC))
+
+
+def test_calendar_helpers_import_from_runtime_free_module():
+    # The dashboard can use these helpers without importing the Discord cog.
+    assert parse_event_datetime.__module__ == "calendar_utils"
+
+
+def test_local_when_formats_timezone_and_unspecified_time():
+    event = {
+        "starts_at": dt.datetime(2026, 1, 2, 17, 30, tzinfo=UTC),
+        "timezone": "Europe/Paris",
+        "time_set": True,
+    }
+    assert local_when(event) == "2026-01-02 18:30 CET"
+    event["time_set"] = False
+    assert local_when(event) == "2026-01-02 (time unspecified)"
