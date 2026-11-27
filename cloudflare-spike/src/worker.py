@@ -262,7 +262,7 @@ def exercise_fetch_bot_service_client(method):
         elif method == "api_guild_stats_snapshot":
             result = client.api_guild_stats_snapshot("123")
         elif method == "api_guild_stats_snapshot_with_ticket_category":
-            result = client.api_guild_stats_snapshot("123", "456")
+            result = client.api_guild_stats_snapshot("123", 456)
         elif method == "api_guild_stats_snapshot_invalid":
             invalid_client = CloudflareFetchBotService(
                 base_url="http://127.0.0.1:8787",
