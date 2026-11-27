@@ -109,7 +109,7 @@ def get_user_admin_guilds():
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
         )
-    except requests.RequestException:
+    except OAuthTransportError:
         return None
 
     if response.status_code == 401:
