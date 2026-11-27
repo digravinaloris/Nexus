@@ -118,7 +118,7 @@ def test_signed_dispatch_rejects_malformed_member_dtos():
     extra = dict(VALID_MEMBER, extra=True)
     invalid_members.extend(([extra], "not-a-list"))
 
-    invalid_members.append([dict(VALID_MEMBER) for _ in range(501)]))
+    invalid_members.append([dict(VALID_MEMBER) for _ in range(501)])
 
     for index, result in enumerate(invalid_members):
         client, service = _client(result)
