@@ -9,7 +9,7 @@ Nexus keeps its Discord bot entrypoint at the repository root while implementati
 | `main.py` | Discord bot entrypoint and startup orchestration |
 | `nexus_runtime/` | Shared process state, bot reference, and MongoDB collection registry |
 | `cogs/` | Discord commands and event handlers |
-| `services/` | Bot-backed operations shared by Discord commands and the in-process web adapter |
+| `services/` | Bot-backed operations, including server backup snapshots and safe restoration, shared by Discord commands and the in-process web adapter |
 | `security/` | Turnstile integration and member verification flows |
 | `stores/` | MongoDB persistence and data-access functions |
 | `web/` | Flask app factory, routes, dashboard, API, and bot-service adapters |
