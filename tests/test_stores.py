@@ -436,3 +436,26 @@ def test_tempban_store_lifecycle_and_sanction_history(mongo_db):
     })
     history = sanctions_store.get_sanction_history(1, 42)
     assert [entry["type"] for entry in history] == ["ban", "warn"]
+
+
+# ------------------------------------------------ server backup persistence
+
+def test_server_backup_store_lifecycle_and_retention(mongo_db):
+    from stores import server_backup_store
+
+    ids = []
+    for minute in range(6):
+        ids.append(server_backup_store.insert_server_backup({
+            "guild_id": "1",
+            "created_at": datetime.datetime(2026, 11, 27, 12, minute, tzinfo=UTC),
+            "roles": [],
+            "channels": [],
+        }))
+
+    backups = server_backup_store.list_server_backups(1)
+    assert len(backups) == 5
+    assert backups[0]["_id"] == ids[-1]
+    assert backups[-1]["_id"] == ids[1]
+    assert server_backup_store.get_server_backup(1, str(ids[-1]))["_id"] == ids[-1]
+    assert server_backup_store.get_server_backup(2, str(ids[-1])) is None
+    assert server_backup_store.get_server_backup(1, "not-an-object-id") is None

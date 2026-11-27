@@ -8,7 +8,7 @@ import datetime
 
 import discord
 
-from nexus_runtime import core
+from stores.server_backup_store import insert_server_backup
 
 
 def _serialize_overwrites(channel_or_category):
@@ -79,15 +79,10 @@ def create_server_backup(guild):
         "roles": roles_data,
         "channels": channels_data,
     }
-    result = core.col.server_backups.insert_one(backup_doc)
+    return insert_server_backup(backup_doc)
 
-    # Ne garde que les 5 derniers backups par serveur (évite une croissance
-    # illimitée de la base pour un usage qui reste occasionnel).
-    all_backups = list(core.col.server_backups.find({"guild_id": str(guild.id)}).sort("created_at", -1))
-    for old in all_backups[5:]:
-        core.col.server_backups.delete_one({"_id": old["_id"]})
 
-    return result.inserted_id
+
 
 
 async def restore_server_backup(guild, backup):
