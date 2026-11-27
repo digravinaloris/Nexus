@@ -39,6 +39,10 @@ The following PRs validate isolated building blocks. The internal endpoint remai
 - [#206](https://github.com/digravinaloris/Nexus/pull/206): partial signed HTTP client for the read-only health snapshot.
 - [#207](https://github.com/digravinaloris/Nexus/pull/207): strict environment keyring parsing and disabled-by-default endpoint configuration in `main.py`.
 - [#208](https://github.com/digravinaloris/Nexus/pull/208): adds the read-only public status snapshot to the signed client and endpoint.
+- [#209](https://github.com/digravinaloris/Nexus/pull/209): synchronizes the migration checkpoint and signed BotService status.
+- [#210](https://github.com/digravinaloris/Nexus/pull/210): validates the Workers Fetch FFI transport against a local signed mock.
+- [#211](https://github.com/digravinaloris/Nexus/pull/211): adds fail-closed configuration validation for the Worker Fetch client.
+- [#212](https://github.com/digravinaloris/Nexus/pull/212): verifies redirect, non-200, malformed JSON and oversized-response rejection in the Worker runtime.
 
 Still not implemented: production OAuth server-side sessions, production HMAC key provisioning/rotation, full BotService method parity, complete route parity on Workers, and Cloudflare resource creation or deployment. The local D1 spike uses disposable fixtures and a local database only.
 
@@ -60,8 +64,8 @@ Still not implemented: production OAuth server-side sessions, production HMAC ke
 - PR #204 adds `POST /internal/v1/dispatch`, verifies signatures before parsing, and consumes the nonce before dispatch. `MongoNonceStore` uses a unique compound `(key_id, nonce)` index and a TTL index on `expires_at`.
 - PR #205 makes app-factory registration all-or-nothing: a service, keyring and nonce store must all be explicitly supplied.
 - PR #207 adds the opt-in `NEXUS_BOT_SERVICE_INTERNAL_ENABLED=true` gate and strict `NEXUS_BOT_SERVICE_HMAC_KEYS` parser. When enabled, `main.py` injects the in-process BotService and a lazy Mongo nonce store; missing or malformed key material fails startup closed. With the flag unset, the endpoint is not registered.
-- The endpoint allowlist currently exposes only the read-only `health_snapshot` and `public_status_snapshot` methods. Arbitrary method names and arguments are rejected.
-- PRs #206 and #208 add a partial `SignedHttpBotService` client for those two methods. It signs the exact JSON body, requires HTTPS origins, disables redirects, applies bounded timeouts and response sizes, and fails closed on non-200 or malformed responses. The client is not yet wired into the Cloudflare Worker.
+- The endpoint allowlist exposes read-only `health_snapshot` and `public_status_snapshot` methods. PR #213 adds one narrowly scoped authorization query, `is_guild_owner(guild_id, user_id)`, with decimal-ID validation; arbitrary method names, kwargs and other arguments remain rejected.
+- PRs #206 and #208 add a partial `SignedHttpBotService` client for the two snapshots. PR #210 adds a Worker-native Fetch/FFI adapter; PRs #211 and #212 validate its unsafe-configuration and HTTP-error rejection paths. PR #213 extends that Worker adapter with the explicit owner-check operation. These adapters are still isolated proofs and are not wired into the production Cloudflare web app.
 
 The endpoint remains disabled by default. Enabling it requires the explicit environment flag and a correctly provisioned keyring; no hosting environment or production secret has been changed in these PRs. Add methods only with explicit schemas, permission checks and idempotency rules; never dispatch arbitrary BotService method names.
 

@@ -49,6 +49,10 @@ class FakeBotService:
         self.calls.append("public_status_snapshot")
         return {"online": True, "guild_count": 4, "latency_ms": 23, "uptime": "1h"}
 
+    def is_guild_owner(self, guild_id, user_id):
+        self.calls.append(("is_guild_owner", guild_id, user_id))
+        return guild_id == "123" and user_id == "42"
+
 
 def _request_body(payload=None):
     if payload is None:
@@ -115,6 +119,33 @@ def test_signed_dispatch_allows_public_status_snapshot():
         },
     }
     assert service.calls == ["public_status_snapshot"]
+
+
+def test_signed_dispatch_checks_guild_owner_with_server_side_bot_service():
+    client, service = _client()
+    body = _request_body({"method": "is_guild_owner", "args": ["123", "42"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": True}
+    assert service.calls == [("is_guild_owner", "123", "42")]
+
+
+def test_signed_dispatch_returns_false_for_non_owner():
+    client, service = _client()
+    body = _request_body({"method": "is_guild_owner", "args": ["123", "43"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": False}
+    assert service.calls == [("is_guild_owner", "123", "43")]
+
+
+@pytest.mark.parametrize("args", [[], ["123"], ["123", "42", "extra"], [123, "42"], ["123", 42], ["guild", "42"], ["123", "42\\n"]])
+def test_signed_dispatch_rejects_invalid_guild_owner_arguments(args):
+    client, service = _client()
+    body = _request_body({"method": "is_guild_owner", "args": args, "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
 
 
 def test_replayed_nonce_is_rejected_before_second_dispatch():

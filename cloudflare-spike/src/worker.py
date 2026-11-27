@@ -109,7 +109,8 @@ def mock_internal_bot_service():
     if (
         not isinstance(payload, dict)
         or set(payload) != {"method", "args", "kwargs"}
-        or payload.get("args") != []
+        or not isinstance(payload.get("args"), list)
+        or not isinstance(payload.get("kwargs"), dict)
         or payload.get("kwargs") != {}
     ):
         return jsonify({"error": "unsupported operation"}), 403
@@ -124,9 +125,16 @@ def mock_internal_bot_service():
         },
     }
     method = payload.get("method")
-    if not isinstance(method, str) or method not in results:
-        return jsonify({"error": "unsupported operation"}), 403
-    return jsonify({"ok": True, "result": results[method]})
+    args = payload["args"]
+    if isinstance(method, str) and method in results and args == []:
+        return jsonify({"ok": True, "result": results[method]})
+    if (
+        method == "is_guild_owner"
+        and len(args) == 2
+        and all(isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) for value in args)
+    ):
+        return jsonify({"ok": True, "result": args == ["123", "42"]})
+    return jsonify({"error": "unsupported operation"}), 403
 
 
 @app.post("/__spike/fetch-client/<method>")
@@ -144,6 +152,10 @@ def exercise_fetch_bot_service_client(method):
             result = client.health_snapshot()
         elif method == "public_status_snapshot":
             result = client.public_status_snapshot()
+        elif method == "is_guild_owner":
+            result = client.is_guild_owner("123", "42")
+        elif method == "is_guild_owner_denied":
+            result = client.is_guild_owner("123", "43")
         else:
             return jsonify({"error": "unsupported operation"}), 403
     except Exception as exc:
