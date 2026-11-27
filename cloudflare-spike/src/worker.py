@@ -131,6 +131,55 @@ def exercise_fetch_bot_service_client(method):
     return jsonify({"result": result})
 
 
+@app.post("/__spike/fetch-client-validation")
+def validate_fetch_bot_service_configuration():
+    """Exercise fail-closed client configuration checks in the Worker runtime."""
+    valid = {
+        "key_id": "spike-test",
+        "secret": b"x" * 32,
+    }
+    checks = {}
+
+    def rejected(name, **overrides):
+        options = {**valid, **overrides}
+        try:
+            CloudflareFetchBotService(
+                base_url=options.pop("base_url", "https://bot.example"),
+                **options,
+            )
+        except ValueError:
+            checks[name] = True
+        else:
+            checks[name] = False
+
+    rejected("rejects_plain_http_origin", base_url="http://bot.example")
+    rejected("rejects_origin_credentials", base_url="https://user:pass@bot.example")
+    rejected("rejects_origin_path", base_url="https://bot.example/internal")
+    rejected("rejects_origin_query", base_url="https://bot.example?debug=1")
+    rejected("rejects_origin_fragment", base_url="https://bot.example#fragment")
+    rejected("rejects_invalid_key_id", key_id="invalid/key")
+    rejected("rejects_short_secret", secret=b"x" * 31)
+    rejected("rejects_local_http_without_opt_in", base_url="http://127.0.0.1:8787")
+    rejected(
+        "rejects_nonlocal_http_with_opt_in",
+        base_url="http://bot.example",
+        allow_local_http=True,
+    )
+
+    try:
+        client = CloudflareFetchBotService(
+            base_url="https://bot.example",
+            key_id=valid["key_id"],
+            secret=valid["secret"],
+        )
+        client._dispatch_snapshot("api_ban_member")
+        checks["rejects_unallowlisted_operation"] = False
+    except ValueError:
+        checks["rejects_unallowlisted_operation"] = True
+
+    return jsonify({"checks": checks, "all_passed": all(checks.values())})
+
+
 @app.get("/")
 @app.get("/health")
 def health():
