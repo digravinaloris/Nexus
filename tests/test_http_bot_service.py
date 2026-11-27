@@ -14,15 +14,22 @@ SECRET = b"signed-http-bot-service-test-secret-32-bytes"
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, payload=None, error=None):
+    def __init__(self, status_code=200, payload=None, error=None, body=None, headers=None):
         self.status_code = status_code
         self.payload = payload
         self.error = error
+        self.headers = headers or {}
+        self.body = body if body is not None else (
+            json.dumps(payload).encode("utf-8") if error is None else b""
+        )
+        self.closed = False
 
-    def json(self):
-        if self.error is not None:
-            raise self.error
-        return self.payload
+    def iter_content(self, chunk_size=8192):
+        for offset in range(0, len(self.body), chunk_size):
+            yield self.body[offset : offset + chunk_size]
+
+    def close(self):
+        self.closed = True
 
 
 class FakeSession:
@@ -62,6 +69,7 @@ def test_health_snapshot_sends_signed_exact_body_and_returns_result():
     assert url == "https://bot.internal.example/internal/v1/dispatch"
     assert options["timeout"] == 3.5
     assert options["allow_redirects"] is False
+    assert options["stream"] is True
     assert options["headers"]["Content-Type"] == "application/json"
 
     body = options["data"]
@@ -140,3 +148,22 @@ def test_network_errors_are_normalized_without_leaking_transport_details():
     with pytest.raises(BotServiceTransportError, match="request failed") as raised:
         _client(session).health_snapshot()
     assert "private host detail" not in str(raised.value)
+
+
+
+def test_response_body_size_is_bounded_and_response_is_closed():
+    response = FakeResponse(
+        body=b"x" * (65_536 + 1),
+        headers={"Content-Length": str(65_537)},
+    )
+    session = FakeSession(response=response)
+    with pytest.raises(BotServiceTransportError, match="size limit"):
+        _client(session).health_snapshot()
+    assert response.closed is True
+
+
+def test_response_is_closed_after_success():
+    response = FakeResponse(payload={"ok": True, "result": {"status": "alive"}})
+    result = _client(FakeSession(response=response)).health_snapshot()
+    assert result == {"status": "alive"}
+    assert response.closed is True
