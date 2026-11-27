@@ -47,3 +47,30 @@ def test_rest_api_is_a_registered_blueprint():
     from web import rest_api
     assert rest_api.bp.name == "rest_api"
     assert callable(rest_api.require_api_key)
+
+
+WEB_RUNTIME_MODULES = (
+    "web/auth.py",
+    "web/public.py",
+    "web/verify.py",
+    "web/github_webhook.py",
+    "web/rest_api.py",
+    "web/dashboard.py",
+)
+
+
+@pytest.mark.parametrize("relative_path", WEB_RUNTIME_MODULES)
+def test_web_routes_do_not_import_bot_or_database_runtime(relative_path):
+    """Keep route modules portable; runtime coupling belongs in the adapter."""
+    path = os.path.join(ROOT, relative_path)
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+
+    forbidden_roots = {"core", "bridge", "discord", "pymongo"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported = [alias.name.split(".")[0] for alias in node.names]
+            assert not (forbidden_roots & set(imported)), f"{relative_path}: {imported}"
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            assert root not in forbidden_roots, f"{relative_path}: {node.module}"
