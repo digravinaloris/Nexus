@@ -283,3 +283,19 @@ def test_factory_config_overrides_injected_environment(monkeypatch):
     assert app.config["DISCORD_CLIENT_ID"] == "config-client"
     assert app.config["DISCORD_CLIENT_SECRET"] == "mapping-oauth-secret"
     assert app.config["DISCORD_REDIRECT_URI"] == "https://mapping.example/callback"
+
+
+def test_factory_empty_environment_mapping_does_not_read_process_secrets(monkeypatch):
+    monkeypatch.setenv("FLASK_SECRET_KEY", "process-secret")
+    monkeypatch.setenv("DISCORD_CLIENT_ID", "process-client")
+    monkeypatch.setenv("DISCORD_CLIENT_SECRET", "process-oauth-secret")
+    monkeypatch.setenv("DISCORD_REDIRECT_URI", "https://process.example/callback")
+    monkeypatch.setenv("API_KEY", "process-api-key")
+
+    app = _create_app({"SECRET_KEY": "config-secret"}, environ={})
+
+    assert app.config["SECRET_KEY"] == "config-secret"
+    assert app.config["DISCORD_CLIENT_ID"] == ""
+    assert app.config["DISCORD_CLIENT_SECRET"] == ""
+    assert app.config["DISCORD_REDIRECT_URI"] == ""
+    assert app.config["API_KEY"] is None
