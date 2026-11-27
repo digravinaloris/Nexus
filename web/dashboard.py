@@ -20,7 +20,7 @@ from calendar_utils import parse_event_datetime, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from utils import normalize_banned_word, normalize_domain, parse_lines_list
-from dashboard_utils import read_bounded_form_numbers, validate_channel_selection, validate_role_selection, is_safe_relative_redirect
+from dashboard_utils import (\n    read_bounded_form_numbers, validate_channel_selection, validate_role_selection,\n    is_safe_relative_redirect, build_feature_toggle_updates,\n)
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
 from web.bot_service import get_bot_service
 from web.routing import Routes
@@ -89,10 +89,6 @@ SETTINGS_DEFAULTS = {
 
 
 FEATURE_DEFAULT_ENABLED = {"remindme_enabled": True}
-
-
-# Sentinelle "clé absente de la config stockée" (None est une valeur valide : salon non défini).
-_UNSET = object()
 
 
 # (clé de config = nom du champ de formulaire, type, min, max). Les minimums
@@ -185,20 +181,12 @@ def dash_features_page(guild_id):
         return bool(cfg.get(meta["config_key"], FEATURE_DEFAULT_ENABLED.get(meta["config_key"], False)))
 
     if request.method == "POST":
-        enabled_now, disabled_now = [], []
-        for key, meta in FEATURE_TOGGLES.items():
-            config_key = meta["config_key"]
-            new_value = f"feat__{key}" in request.form
-            stored = cfg.get(config_key, _UNSET)
-            if stored is not _UNSET and bool(stored) == new_value:
-                continue
-            # On écrit dès que la valeur STOCKÉE diffère (ou manque) : le résultat ne
-            # dépend jamais de la parité avec les défauts du code. L'audit, lui, ne
-            # note que les changements EFFECTIFS (défaut implicite compris).
-            effective_old = bool(FEATURE_DEFAULT_ENABLED.get(config_key, False)) if stored is _UNSET else bool(stored)
+        submitted_keys = {key for key in FEATURE_TOGGLES if f"feat__{key}" in request.form}
+        updates, enabled_now, disabled_now = build_feature_toggle_updates(
+            FEATURE_TOGGLES, cfg, submitted_keys, FEATURE_DEFAULT_ENABLED
+        )
+        for config_key, new_value in updates:
             get_bot_service().api_update_config(guild_id, {config_key: new_value})
-            if effective_old != new_value:
-                (enabled_now if new_value else disabled_now).append(key)
         if enabled_now or disabled_now:
             parts = []
             if enabled_now:
