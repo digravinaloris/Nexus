@@ -361,7 +361,7 @@ def test_sanctions_store_submits_only_pending_appeals(mongo_db):
 
 
 def test_killswitch_store_token_lifecycle(mongo_db):
-    import killswitch_store
+    import stores.killswitch_store as killswitch_store
 
     mongo_db["killswitch_tokens"].insert_one({"token": "one-time", "used": False, "attempts": 0})
     assert killswitch_store.get_killswitch_token("one-time")["attempts"] == 0
@@ -374,7 +374,7 @@ def test_killswitch_store_token_lifecycle(mongo_db):
 
 
 def test_killswitch_store_stops_attempts_at_limit(mongo_db):
-    import killswitch_store
+    import stores.killswitch_store as killswitch_store
 
     mongo_db["killswitch_tokens"].insert_one({"token": "limited", "used": False, "attempts": 4})
     assert killswitch_store.increment_killswitch_attempts("limited") == 5
