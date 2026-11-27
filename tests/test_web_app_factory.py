@@ -166,7 +166,6 @@ blocked = {
     "faq_store",
     "discord_logging",
     "sanctions_store",
-    "utils",
     "moderation_actions",
     "owner_notify",
 }
