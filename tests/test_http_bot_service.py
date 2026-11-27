@@ -88,6 +88,44 @@ def test_health_snapshot_sends_signed_exact_body_and_returns_result():
     assert claims.key_id == "current"
 
 
+def test_public_status_snapshot_uses_the_same_signed_transport():
+    session = FakeSession(
+        response=FakeResponse(
+            payload={
+                "ok": True,
+                "result": {
+                    "online": True,
+                    "guild_count": 8,
+                    "latency_ms": 42,
+                    "uptime": "2h",
+                },
+            }
+        )
+    )
+    result = _client(session).public_status_snapshot()
+
+    assert result == {
+        "online": True,
+        "guild_count": 8,
+        "latency_ms": 42,
+        "uptime": "2h",
+    }
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {
+        "method": "public_status_snapshot",
+        "args": [],
+        "kwargs": {},
+    }
+    claims = verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+    assert claims.nonce
+
+
 @pytest.mark.parametrize(
     "base_url",
     [
