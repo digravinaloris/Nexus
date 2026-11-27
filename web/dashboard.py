@@ -21,7 +21,7 @@ from calendar_utils import parse_event_datetime, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from utils import normalize_banned_word, normalize_domain, parse_lines_list
-from dashboard_utils import read_bounded_form_numbers
+from dashboard_utils import read_bounded_form_numbers, validate_channel_selection, validate_role_selection
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
 from web.bot_service import get_bot_service
 from web.routing import Routes
@@ -155,32 +155,19 @@ def _read_numbers(fields):
 
 
 def _read_channel(key, channels):
-    """ID de salon du formulaire, validé contre les salons RÉELS de ce serveur."""
-    raw = request.form.get(key, "").strip()
-    if not raw or raw == "none":
-        return None
-    if raw.isdigit() and int(raw) in {
-        int(c["id"] if isinstance(c, dict) else c.id) for c in channels
-    }:
-        return int(raw)
-    raise ValueError(key)
+    """Validate a channel selection against this server's actual channels."""
+    try:
+        return validate_channel_selection(request.form.get(key, ""), channels)
+    except ValueError as exc:
+        raise ValueError(key) from exc
 
 
 def _read_role(key, guild):
-    """ID de rôle du formulaire, validé contre les rôles réels (pas @everyone)."""
-    raw = request.form.get(key, "").strip()
-    if not raw or raw == "none":
-        return None
-    if raw.isdigit():
-        if isinstance(guild, dict):
-            role = next((r for r in guild["roles"] if int(r["id"]) == int(raw)), None)
-            if role is not None:
-                return int(role["id"])
-        else:
-            role = guild.get_role(int(raw))
-            if role is not None and not role.is_default():
-                return role.id
-    raise ValueError(key)
+    """Validate a role selection against actual server roles, excluding @everyone."""
+    try:
+        return validate_role_selection(request.form.get(key, ""), guild)
+    except ValueError as exc:
+        raise ValueError(key) from exc
 
 
 def _describe_change(key, old, new):
