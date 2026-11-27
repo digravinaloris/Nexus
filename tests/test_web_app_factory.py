@@ -591,3 +591,48 @@ def test_expired_oauth_session_is_revoked_by_injected_backend():
     assert backend.revocations == 1
     assert not backend.session
     assert "Set-Cookie" not in response.headers
+
+
+def test_discord_401_revokes_injected_server_session():
+    from flask.sessions import SessionInterface, SessionMixin
+    from web.auth import get_user_admin_guilds
+
+    class BackendSession(dict, SessionMixin):
+        new = False
+        modified = False
+        accessed = False
+
+    class FakeSessionInterface(SessionInterface):
+        def __init__(self):
+            self.session = BackendSession(access_token="revoked-discord-token")
+            self.revocations = 0
+
+        def open_session(self, app, request):
+            return self.session
+
+        def save_session(self, app, session, response):
+            pass
+
+        def revoke_session(self, session):
+            assert dict(session) == dict(self.session)
+            self.revocations += 1
+
+    class UnauthorizedResponse:
+        status_code = 401
+
+    class FakeDiscordHttpClient:
+        def get(self, url, **kwargs):
+            assert url.endswith("/users/@me/guilds")
+            return UnauthorizedResponse()
+
+    backend = FakeSessionInterface()
+    app = _create_app(
+        _config(DISCORD_HTTP_CLIENT=FakeDiscordHttpClient()),
+        session_interface=backend,
+    )
+
+    with app.test_request_context("/dashboard"):
+        assert get_user_admin_guilds() is None
+
+    assert backend.revocations == 1
+    assert not backend.session
