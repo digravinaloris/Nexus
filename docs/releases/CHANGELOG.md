@@ -2,6 +2,19 @@
 
 All notable changes to Nexus are documented here.
 
+## [1.4.1] - 2026-11-27
+
+### Summary
+This patch release organizes Nexus's Python implementation into focused packages while preserving legacy root-level imports. It contains no feature behavior changes and no production deployment.
+
+### Changed
+- Moved bot-backed operations, shared runtime state, verification, localization, audit services, catalogs, and common helpers into dedicated packages.
+- Kept compatibility aliases at the repository root to avoid breaking existing imports.
+- Added a project structure guide and expanded architecture checks to cover all implementation packages.
+
+### Validation
+- All pull requests in this reorganization series were merged only after their CI test workflow completed successfully.
+
 ## [Unreleased]
 
 ### Summary
