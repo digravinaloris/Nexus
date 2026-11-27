@@ -23,7 +23,8 @@ from utils import normalize_banned_word, normalize_domain, parse_lines_list
 from dashboard_utils import (
     read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
     is_safe_relative_redirect, build_feature_toggle_updates,
-    build_settings_update_plan,
+    build_settings_update_plan, get_template_role_names,
+    build_template_command_role_mapping,
 )
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
 from web.bot_service import get_bot_service
@@ -423,23 +424,36 @@ def dash_template_import(guild_id, code):
         flash("No template found with that code." if current_lang() == "en" else "Aucun template trouvé avec ce code.")
         return redirect(url_for("dash_template_marketplace", guild_id=guild_id))
 
-    snapshot = doc["snapshot"]
-    command_roles_by_name = snapshot.get("command_roles_by_name", {})
-    distinct_names = sorted({name for names in command_roles_by_name.values() for name in names})
+    snapshot = doc.get("snapshot") or {}
+    try:
+        if not isinstance(snapshot, dict):
+            raise ValueError("invalid template snapshot")
+        command_roles_by_name = snapshot.get("command_roles_by_name", {})
+        distinct_names = get_template_role_names(command_roles_by_name)
+    except ValueError:
+        flash("This template contains invalid role mappings." if current_lang() == "en" else "Ce template contient des associations de rôles invalides.")
+        return redirect(url_for("dash_template_marketplace", guild_id=guild_id))
 
     if request.method == "POST":
-        get_bot_service().dashboard_apply_template_snapshot(guild_id, snapshot)
-        name_to_new_id = {}
-        for i, old_name in enumerate(distinct_names):
-            selected = request.form.get(f"map__{i}", "")
-            if selected:
-                name_to_new_id[old_name] = int(selected)
-        new_command_roles = get_bot_service().api_config_snapshot(guild_id).get("command_roles", {})
-        for command, old_names in command_roles_by_name.items():
-            mapped_ids = [name_to_new_id[n] for n in old_names if n in name_to_new_id]
-            if mapped_ids:
-                new_command_roles[command] = mapped_ids
-        get_bot_service().api_update_config(guild_id, {"command_roles": new_command_roles})
+        service = get_bot_service()
+        submitted_mappings = {
+            f"map__{i}": request.form.get(f"map__{i}", "")
+            for i in range(len(distinct_names))
+        }
+        try:
+            build_template_command_role_mapping(
+                command_roles_by_name, submitted_mappings, guild.get("roles", []), {}
+            )
+        except ValueError:
+            flash("One or more selected roles are invalid." if current_lang() == "en" else "Un ou plusieurs rôles sélectionnés sont invalides.")
+            return redirect(url_for("dash_template_import", guild_id=guild_id, code=code))
+
+        service.dashboard_apply_template_snapshot(guild_id, snapshot)
+        current_command_roles = service.api_config_snapshot(guild_id).get("command_roles", {})
+        new_command_roles = build_template_command_role_mapping(
+            command_roles_by_name, submitted_mappings, guild.get("roles", []), current_command_roles
+        )
+        service.api_update_config(guild_id, {"command_roles": new_command_roles})
         dash_log_action(guild_id, f"Imported template '{doc.get('name', doc['code'])}' from {doc['created_guild_name']}")
         flash("Template applied." if current_lang() == "en" else "Template appliqué.")
         return redirect(url_for("dash_guild_page", guild_id=guild_id))

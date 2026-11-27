@@ -129,3 +129,49 @@ def build_settings_update_plan(updates, config, defaults=None):
             changes.append(describe_setting_change(key, effective_old, value))
 
     return writes, changes
+
+
+def get_template_role_names(command_roles_by_name):
+    """Return unique source role names from a portable template mapping."""
+    if not isinstance(command_roles_by_name, dict):
+        raise ValueError("invalid template role mapping")
+    names = set()
+    for command, role_names in command_roles_by_name.items():
+        if not isinstance(command, str) or not command or not isinstance(role_names, list):
+            raise ValueError("invalid template role mapping")
+        if any(not isinstance(name, str) or not name for name in role_names):
+            raise ValueError("invalid template role mapping")
+        names.update(role_names)
+    return sorted(names)
+
+
+def build_template_command_role_mapping(command_roles_by_name, submitted_values, roles, existing=None):
+    """Validate submitted role IDs against this guild before building permission mappings."""
+    names = get_template_role_names(command_roles_by_name)
+    valid_role_ids = set()
+    for role in roles:
+        if not isinstance(role, dict) or "id" not in role:
+            raise ValueError("invalid guild role data")
+        raw_id = str(role["id"])
+        if not raw_id.isdigit() or int(raw_id) <= 0:
+            raise ValueError("invalid guild role data")
+        valid_role_ids.add(int(raw_id))
+
+    name_to_new_id = {}
+    for index, name in enumerate(names):
+        raw_id = submitted_values.get(f"map__{index}", "")
+        if raw_id in (None, ""):
+            continue
+        if not isinstance(raw_id, str) or not raw_id.isdigit():
+            raise ValueError("invalid role selection")
+        role_id = int(raw_id)
+        if role_id not in valid_role_ids:
+            raise ValueError("invalid role selection")
+        name_to_new_id[name] = role_id
+
+    command_roles = dict(existing) if isinstance(existing, dict) else {}
+    for command, old_names in command_roles_by_name.items():
+        mapped_ids = [name_to_new_id[name] for name in old_names if name in name_to_new_id]
+        if mapped_ids:
+            command_roles[command] = mapped_ids
+    return command_roles
