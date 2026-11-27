@@ -143,11 +143,24 @@ def mock_internal_bot_service():
             "latency_ms": 31,
             "uptime": "3h 12m",
         },
+        "api_health_snapshot": {"online": True, "locked": False, "guild_count": 1},
+        "api_guild_list_snapshot": [{"id": "123", "name": "Spike Test Server"}],
+        "api_guild_id_candidates": ["123", "456"],
     }
     method = payload.get("method")
     args = payload["args"]
     if isinstance(method, str) and method in results and args == []:
         return jsonify({"ok": True, "result": results[method]})
+    if method == "api_health_snapshot" and args == ["123"]:
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "api_guild_list_snapshot" and args == ["123"]:
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "guild_presence" and args == ["123"]:
+        return jsonify({"ok": True, "result": {"bot_ready": True, "guild_present": True}})
+    if method == "guild_name" and args == ["123"]:
+        return jsonify({"ok": True, "result": "Spike Test Server"})
+    if method == "available_guild_ids" and args == [["123", "456"]]:
+        return jsonify({"ok": True, "result": ["123"]})
     if (
         isinstance(method, str)
         and method in {"is_guild_owner", "is_guild_admin"}
@@ -185,6 +198,18 @@ def exercise_fetch_bot_service_client(method):
             result = client.is_guild_admin("123", "43")
         elif method == "is_guild_admin_denied":
             result = client.is_guild_admin("123", "44")
+        elif method == "guild_presence":
+            result = client.guild_presence("123")
+        elif method == "guild_name":
+            result = client.guild_name("123")
+        elif method == "api_health_snapshot":
+            result = client.api_health_snapshot("123")
+        elif method == "api_guild_list_snapshot":
+            result = client.api_guild_list_snapshot("123")
+        elif method == "api_guild_id_candidates":
+            result = client.api_guild_id_candidates()
+        elif method == "available_guild_ids":
+            result = client.available_guild_ids(["123", "456"])
         else:
             return jsonify({"error": "unsupported operation"}), 403
     except Exception as exc:

@@ -101,16 +101,37 @@ class CloudflareFetchBotService:
         self._secret = secret
 
     def _dispatch(self, method: str, args: list, expected_type: type):
-        if method in {"health_snapshot", "public_status_snapshot"}:
-            if args != [] or expected_type is not dict:
+        valid_id = lambda value: (
+            isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) is not None
+        )
+        if method in {"health_snapshot", "public_status_snapshot", "api_guild_id_candidates"}:
+            expected = dict if method != "api_guild_id_candidates" else list
+            if args != [] or expected_type != expected:
                 raise ValueError("Invalid snapshot BotService arguments")
         elif method in {"is_guild_owner", "is_guild_admin"}:
             if (
                 expected_type is not bool
                 or len(args) != 2
-                or any(not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,20}", value) for value in args)
+                or not all(valid_id(value) for value in args)
             ):
                 raise ValueError("Invalid guild owner check arguments")
+        elif method in {"guild_presence", "guild_name"}:
+            expected = dict if method == "guild_presence" else str
+            if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
+                raise ValueError("Invalid guild read arguments")
+        elif method in {"api_health_snapshot", "api_guild_list_snapshot"}:
+            expected = dict if method == "api_health_snapshot" else (list, type(None))
+            if expected_type != expected or len(args) > 1 or (args and not valid_id(args[0])):
+                raise ValueError("Invalid API snapshot arguments")
+        elif method == "available_guild_ids":
+            if (
+                expected_type is not list
+                or len(args) != 1
+                or not isinstance(args[0], list)
+                or len(args[0]) > 500
+                or not all(valid_id(value) for value in args[0])
+            ):
+                raise ValueError("Invalid available guild ID arguments")
         else:
             raise ValueError("Unsupported internal BotService operation")
 
@@ -170,7 +191,24 @@ class CloudflareFetchBotService:
             or not isinstance(payload.get("result"), expected_type)
         ):
             raise CloudflareBotServiceError("Internal BotService returned an invalid response")
-        return payload["result"]
+        result = payload["result"]
+        if method in {"api_guild_id_candidates", "available_guild_ids"} and (
+            len(result) > (2000 if method == "api_guild_id_candidates" else 500)
+            or not all(valid_id(value) for value in result)
+        ):
+            raise CloudflareBotServiceError("Internal BotService returned invalid guild IDs")
+        if method == "guild_presence" and (
+            set(result) != {"bot_ready", "guild_present"}
+            or any(not isinstance(value, bool) for value in result.values())
+        ):
+            raise CloudflareBotServiceError("Internal BotService returned invalid guild presence")
+        if method == "guild_name" and (not result or len(result) > 256):
+            raise CloudflareBotServiceError("Internal BotService returned an invalid guild name")
+        if method == "api_guild_list_snapshot" and result is not None and (
+            len(result) > 500 or not all(isinstance(value, dict) for value in result)
+        ):
+            raise CloudflareBotServiceError("Internal BotService returned an invalid guild list")
+        return result
 
     def _dispatch_snapshot(self, method: str) -> dict:
         return self._dispatch(method, [], dict)
@@ -186,3 +224,23 @@ class CloudflareFetchBotService:
 
     def is_guild_admin(self, guild_id: str, user_id: str) -> bool:
         return self._dispatch("is_guild_admin", [guild_id, user_id], bool)
+
+    def guild_presence(self, guild_id: str) -> dict:
+        return self._dispatch("guild_presence", [guild_id], dict)
+
+    def guild_name(self, guild_id: str) -> str:
+        return self._dispatch("guild_name", [guild_id], str)
+
+    def api_health_snapshot(self, guild_id: str | None = None) -> dict:
+        args = [] if guild_id is None else [guild_id]
+        return self._dispatch("api_health_snapshot", args, dict)
+
+    def api_guild_list_snapshot(self, guild_id: str | None = None):
+        args = [] if guild_id is None else [guild_id]
+        return self._dispatch("api_guild_list_snapshot", args, (list, type(None)))
+
+    def api_guild_id_candidates(self) -> list:
+        return self._dispatch("api_guild_id_candidates", [], list)
+
+    def available_guild_ids(self, candidate_ids: list[str]) -> list:
+        return self._dispatch("available_guild_ids", [candidate_ids], list)

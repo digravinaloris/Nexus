@@ -298,6 +298,40 @@ def main():
     status, fetch_non_admin = call("/__spike/fetch-client/is_guild_admin_denied", "POST", {})
     require(status == 200 and fetch_non_admin.get("result") is False, f"Signed guild Administrator authorization accepted a non-admin: {fetch_non_admin}")
 
+    status, fetch_presence = call("/__spike/fetch-client/guild_presence", "POST", {})
+    require(
+        status == 200
+        and fetch_presence.get("result") == {"bot_ready": True, "guild_present": True},
+        f"Signed guild presence read failed: {fetch_presence}",
+    )
+    status, fetch_name = call("/__spike/fetch-client/guild_name", "POST", {})
+    require(
+        status == 200 and fetch_name.get("result") == "Spike Test Server",
+        f"Signed guild name read failed: {fetch_name}",
+    )
+    status, fetch_api_health = call("/__spike/fetch-client/api_health_snapshot", "POST", {})
+    require(
+        status == 200
+        and fetch_api_health.get("result") == {"online": True, "locked": False, "guild_count": 1},
+        f"Signed API health read failed: {fetch_api_health}",
+    )
+    status, fetch_api_guilds = call("/__spike/fetch-client/api_guild_list_snapshot", "POST", {})
+    require(
+        status == 200
+        and fetch_api_guilds.get("result") == [{"id": "123", "name": "Spike Test Server"}],
+        f"Signed API guild-list read failed: {fetch_api_guilds}",
+    )
+    status, fetch_candidates = call("/__spike/fetch-client/api_guild_id_candidates", "POST", {})
+    require(
+        status == 200 and fetch_candidates.get("result") == ["123", "456"],
+        f"Signed API-key guild candidates read failed: {fetch_candidates}",
+    )
+    status, available = call("/__spike/fetch-client/available_guild_ids", "POST", {})
+    require(
+        status == 200 and available.get("result") == ["123"],
+        f"Signed available guild filtering failed: {available}",
+    )
+
     status, fetch_response_validation = call(
         "/__spike/fetch-client-response-validation", "POST", {}
     )
