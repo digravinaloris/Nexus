@@ -20,7 +20,10 @@ from calendar_utils import parse_event_datetime, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from utils import normalize_banned_word, normalize_domain, parse_lines_list
-from dashboard_utils import (\n    read_bounded_form_numbers, validate_channel_selection, validate_role_selection,\n    is_safe_relative_redirect, build_feature_toggle_updates,\n)
+from dashboard_utils import (
+    read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
+    is_safe_relative_redirect, build_feature_toggle_updates,
+)
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
 from web.bot_service import get_bot_service
 from web.routing import Routes
