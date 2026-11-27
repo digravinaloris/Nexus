@@ -77,6 +77,7 @@ If CI cannot execute the actual Python Worker runtime, mark the runtime proof as
 - PR #199 validates version-1 to version-2 key rotation, key-version-bound AAD, sliding idle expiry plus absolute expiry, and immediate revocation in the local Worker/D1 runtime.
 - PR #200 extracts Flask construction into `web.app_factory.create_web_app()` and verifies the factory imports without `main.py`, discord.py, or PyMongo.
 - PR #201 adds app-scoped BotService injection while preserving the existing in-process fallback; a signed remote adapter is still future work.
+- PR #203 adds versioned HMAC request signing; PR #204 adds an opt-in dispatch blueprint with Mongo-backed nonce replay protection, currently unregistered and limited to read-only health.
 - Both proofs run in the dedicated local Wrangler GitHub Actions workflow without Cloudflare credentials or remote resources.
 
 These results validate the runtime primitives only. They do not constitute a production session store: key provisioning and rotation, persistent ciphertext records, cookie integration, operational recovery, and full OAuth lifecycle tests remain separate requirements. No production routes or real Discord tokens have been migrated.
