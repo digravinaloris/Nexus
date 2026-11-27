@@ -144,6 +144,10 @@ def test_check_turnstile_failure_modes(keys, monkeypatch):
     assert verification.check_turnstile("tok") == (False, "invalid-input-response,timeout-or-duplicate")
     fake_cloudflare(monkeypatch, {"success": "true"})  # pas un vrai booléen : refusé
     assert verification.check_turnstile("tok")[0] is False
+    fake_cloudflare(monkeypatch, ["unexpected-json-shape"])
+    assert verification.check_turnstile("tok") == (False, "service_unavailable")
+    fake_cloudflare(monkeypatch, {"success": False, "error-codes": "not-a-list"})
+    assert verification.check_turnstile("tok") == (False, "failed")
     fake_cloudflare(monkeypatch, exc=requests_module.ConnectionError("down"))
     assert verification.check_turnstile("tok") == (False, "service_unavailable")  # échoue FERMÉ
     monkeypatch.delenv("TURNSTILE_SECRET_KEY")
