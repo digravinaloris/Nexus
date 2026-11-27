@@ -9,6 +9,24 @@ This is a research-only decision note. **No accounts, services, DNS, secrets, or
 - **Discord bot:** Keep it separate from the website runtime. A gateway-connected bot needs a persistent connection, so serverless/sleeping web hosts are not a safe default.
 - **Fallback:** Keep Render as a migration rollback target only if its quota is available again; otherwise choose a host based on verified free-tier constraints instead of making a migration solely to chase “free”.
 
+## Website migration status (PR-only)
+
+The migration is being prepared incrementally. This is a tracking snapshot, not a deployment approval.
+
+### Completed in repository
+- [x] Isolated public-site visual preview: `docs/design/public-site-preview.html` (PR #257)
+- [x] Dashboard visual preview: `docs/design/dashboard-redesign-preview.html` (PR #253)
+- [x] Static contract tests for the public-site preview (PR #258)
+- [x] Worker fetch adapter and read-only BotService operation allowlist experiments (PRs #246–#248)
+
+### Next gates (must be completed before any cutover)
+1. Inventory all current public website routes, templates, static assets, auth/session flows, API endpoints, and webhook handlers.
+2. Decide which pages are static Pages assets and which authenticated/API routes remain WSGI or move to Workers.
+3. Prove Worker Python WSGI + D1 session persistence in an isolated test app; document quotas, migration/rollback and secret-key rotation.
+4. Extract Flask web startup away from bot startup and `main.py`; keep bot-side service transport independent.
+5. Add route-level parity tests and security review, including OAuth lifecycle, CSRF, session revocation and storage outage behavior.
+6. Only after tests and review: prepare deployment steps and a rollback checklist. **No production deployment, DNS changes, Cloudflare account/resource setup, or secret changes are authorized by this document.**
+
 ## Candidate comparison
 
 | Provider | $0 tier / current caveat | Fit for Nexus |
