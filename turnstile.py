@@ -6,7 +6,7 @@ public web routes can import it without loading the bot runtime.
 import importlib
 import os
 
-from jsonlog import log_json
+from nexus_logging.jsonlog import log_json
 
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 MAX_ATTEMPTS = 3
