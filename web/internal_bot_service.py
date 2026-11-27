@@ -303,7 +303,12 @@ def create_internal_bot_service_blueprint(
                         }
                     )
                 result = {"enabled": enabled, "entries": safe_entries}
-                if len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024:
+                serialized_size = len(
+                    json.dumps(
+                        result, separators=(",", ":"), ensure_ascii=True
+                    ).encode("utf-8")
+                )
+                if serialized_size > 60 * 1024:
                     return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "api_guild_stats_snapshot" and result not in (None, {}):
                 count_fields = {
