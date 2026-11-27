@@ -262,3 +262,24 @@ def test_factory_accepts_explicit_environment_mapping():
     assert app.config["DISCORD_CLIENT_SECRET"] == "injected-oauth-secret"
     assert app.config["DISCORD_REDIRECT_URI"] == "https://injected.example/callback"
     assert app.config["API_KEY"] == "injected-api-key"
+
+
+def test_factory_config_overrides_injected_environment(monkeypatch):
+    monkeypatch.setenv("FLASK_SECRET_KEY", "process-secret")
+    app = _create_app(
+        {
+            "SECRET_KEY": "config-secret",
+            "DISCORD_CLIENT_ID": "config-client",
+        },
+        environ={
+            "FLASK_SECRET_KEY": "mapping-secret",
+            "DISCORD_CLIENT_ID": "mapping-client",
+            "DISCORD_CLIENT_SECRET": "mapping-oauth-secret",
+            "DISCORD_REDIRECT_URI": "https://mapping.example/callback",
+        },
+    )
+
+    assert app.config["SECRET_KEY"] == "config-secret"
+    assert app.config["DISCORD_CLIENT_ID"] == "config-client"
+    assert app.config["DISCORD_CLIENT_SECRET"] == "mapping-oauth-secret"
+    assert app.config["DISCORD_REDIRECT_URI"] == "https://mapping.example/callback"
