@@ -142,6 +142,16 @@ def main():
         isinstance(delete_cookie, str) and "max-age=0" in delete_cookie.lower(),
         "Logout did not clear the browser cookie",
     )
+
+    status, storage_failure, _ = call_with_cookie(
+        "/__spike/flask-session/storage-failure", "POST", logout_cookie
+    )
+    require(
+        status == 503
+        and storage_failure.get("error") == "session storage unavailable",
+        "D1 session storage failure did not return a controlled 503",
+    )
+
     status, after_logout, _ = call_with_cookie(
         "/__spike/flask-session/me", cookie=logout_cookie
     )
