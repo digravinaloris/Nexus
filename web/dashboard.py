@@ -253,14 +253,14 @@ def dash_calendar_page(guild_id):
             title = request.form.get("title", "").strip()
             description = request.form.get("description", "").strip()
             role_raw = request.form.get("role_id", "")
+            if not title or len(title) > 100 or len(description) > 1000 or not role_raw.isdigit():
+                flash("Invalid event fields." if current_lang() == "en" else "Champs d'événement invalides.", "error-calendar")
+                return redirect(url_for("dash_calendar_page", guild_id=guild_id))
             try:
                 role_id = validate_role_selection(role_raw, guild)
             except ValueError:
                 role_id = None
-            if not title or len(title) > 100 or len(description) > 1000 or role_id is None:
-                flash("Invalid event fields." if current_lang() == "en" else "Champs d'événement invalides.", "error-calendar")
-                return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-            role = next((r for r in guild["roles"] if int(r["id"]) == role_id), None)
+            role = next((r for r in guild["roles"] if int(r["id"]) == role_id), None) if role_id is not None else None
             if role is None:
                 flash("Choose a valid notification role." if current_lang() == "en" else "Choisis un rôle de notification valide.", "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
