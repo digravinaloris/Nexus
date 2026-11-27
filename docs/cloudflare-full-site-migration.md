@@ -50,6 +50,7 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 - Replace direct bot/database access with the service interfaces and authenticated bot-service client.
 - Replace process-local state (dashboard presence, OAuth transient state, rate limits, webhook delivery coordination) with durable Cloudflare-backed state or a safe external service.
 - Review Flask sessions: secure cookie settings, token exposure, session rotation, CSRF, cookie domain/SameSite/Secure settings, and OAuth redirect URI configuration.
+- **OAuth session blocker identified (2026-11-27):** `web/auth.py` currently stores Discord `access_token` and `refresh_token` in Flask's default client-side session. Flask signs these cookies but does not encrypt their payload, so a cookie holder can read the bearer credentials even though `Secure`, `HttpOnly`, and `SameSite=Lax` are enabled. Do not treat cookie flags or signing as confidentiality protection. Before Worker rollout, move OAuth credentials to a server-side session/token store and keep only a high-entropy opaque session identifier plus non-secret CSRF/session metadata in the browser cookie. Rotate the session identifier after successful OAuth login, expire/revoke stored credentials on logout and invalidation, and test that serialized cookies never contain either token. Choose the backing store only after its durability, TTL, availability, and Worker compatibility are established.
 - Audit every dependency against Python Workers/Pyodide compatibility; replace unsupported socket/native/thread/process dependencies rather than silently dropping functionality.
 
 ### Phase 4 — Pages frontend and asset/template migration
@@ -87,6 +88,7 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 - PyMongo's normal socket-based connection model and Discord.py's Gateway/event-loop model are not suitable for running inside the request-scoped Worker runtime. They stay behind the persistent bot service.
 - The route layer is now behind `BotService`, but the in-process adapter is still tightly coupled to `core.bot`, `core.col`, Discord.py, storage modules, and `bridge.run_coroutine`. Replacing this adapter with a separately hosted authenticated HTTP client is the main remaining runtime boundary.
 - Process-local dictionaries and filesystem assumptions are not durable across Worker isolates.
+- Flask's default signed client-side session is readable by the browser; Discord OAuth bearer tokens must not remain in that cookie. A server-side session/token store is a release blocker, not an optional optimization.
 - Flask/Jinja templates and generated reports need an explicit asset strategy; Pages static hosting alone cannot execute the current Flask application.
 
 ## Acceptance criteria
@@ -94,6 +96,7 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 - Existing Render behavior remains unchanged throughout the migration PR series.
 - Worker code contains no direct Discord.py, PyMongo, bot event-loop, or arbitrary database access.
 - All existing dashboard, OAuth, public, verification, appeals, webhook, and mobile API tests continue to pass.
+- OAuth access/refresh tokens are stored server-side; browser session cookies contain no bearer credentials, and login rotates the session identifier.
 - New contract, Worker compatibility, security, and end-to-end tests cover success and failure paths.
 - The final documentation includes a complete configuration matrix and a tested rollback procedure.
 - Production remains on the existing host until a separate, explicit deployment approval.
