@@ -186,8 +186,8 @@ class BotService:
         """Check whether an equivalent calendar event already exists."""
         raise NotImplementedError
 
-    def dashboard_calendar_insert_event(self, event: Dict[str, object]):
-        """Persist a prepared calendar event and return its database ID."""
+    def dashboard_calendar_insert_event(self, event: Dict[str, object]) -> str:
+        """Persist an event and return its ID as a transport-safe hexadecimal string."""
         raise NotImplementedError
 
     def dashboard_calendar_delete_event(self, guild_id: str, event_id: str) -> bool:
