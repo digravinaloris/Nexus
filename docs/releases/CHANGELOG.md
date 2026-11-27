@@ -2,6 +2,16 @@
 
 All notable changes to Nexus are documented here.
 
+## [Unreleased]
+
+### Summary
+Repository organization cleanup: implementation modules now live in focused Python packages, while root-level compatibility aliases preserve existing imports. No feature behavior or deployment configuration is changed.
+
+### Changed
+- Grouped bot-backed operations under `services/`, verification under `security/`, shared state under `nexus_runtime/`, catalogs under `catalogs/`, audit services under `audit_services/`, localization under `localization/`, and common helpers under `helpers/`.
+- Kept root-level compatibility aliases for existing imports and documented the package layout in `docs/PROJECT_STRUCTURE.md`.
+- Expanded the architecture guard to scan all Python implementation packages.
+
 ## [1.4.0] - 2026-11-27
 
 ### Summary
