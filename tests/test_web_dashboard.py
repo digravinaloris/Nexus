@@ -242,7 +242,7 @@ def test_presence_ping_and_who_with_ttl(dash, monkeypatch):
     assert dash.client.post(dash.url("/presence/ping")).get_json() == {"ok": True}
     assert dash.client.get(dash.url("/presence/who")).get_json() == {"viewers": ["bob"]}
     real = time.time
-    monkeypatch.setattr(time, "time", lambda: real() + 30)  # > 25 s de TTL
+    monkeypatch.setattr("web.in_process_bot_service.time.time", lambda: real() + 30)  # > 25 s de TTL
     assert dash.client.get(dash.url("/presence/who")).get_json() == {"viewers": []}
 
 
