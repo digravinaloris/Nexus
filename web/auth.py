@@ -12,15 +12,50 @@ import os
 import secrets
 import time
 from urllib.parse import urlencode
+import importlib
 
 from flask import current_app, jsonify, redirect, request, session, url_for
-import requests
 
 from web.oauth_utils import OAUTH_STATE_MAX_AGE, create_code_challenge, is_fresh_state_timestamp, is_valid_code_verifier, is_valid_oauth_code
 from web.bot_service import get_bot_service
 from web.routing import Routes
 
 routes = Routes()
+
+
+class OAuthTransportError(Exception):
+    """A network failure while contacting Discord's OAuth or identity API."""
+
+
+class _LazyRequestsTransport:
+    """Load requests only when the default non-Worker transport is actually used."""
+
+    @staticmethod
+    def _request(method, *args, **kwargs):
+        try:
+            requests_module = importlib.import_module("requests")
+        except ImportError as exc:
+            raise OAuthTransportError("No Discord HTTP transport is configured") from exc
+        try:
+            return getattr(requests_module, method)(*args, **kwargs)
+        except requests_module.RequestException as exc:
+            raise OAuthTransportError("Discord HTTP request failed") from exc
+
+    def get(self, *args, **kwargs):
+        return self._request("get", *args, **kwargs)
+
+    def post(self, *args, **kwargs):
+        return self._request("post", *args, **kwargs)
+
+
+# Kept as a patchable compatibility seam for the existing Requests-based tests.
+requests = _LazyRequestsTransport()
+
+
+def _oauth_http_client():
+    """Return an app-injected transport or the lazy Requests compatibility client."""
+    client = current_app.config.get("DISCORD_HTTP_CLIENT")
+    return requests if client is None else client
 
 
 DASH_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
@@ -70,12 +105,12 @@ def get_user_admin_guilds():
         return None
 
     try:
-        response = requests.get(
+        response = _oauth_http_client().get(
             f"{DISCORD_API_BASE}/users/@me/guilds",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
         )
-    except requests.RequestException:
+    except OAuthTransportError:
         return None
 
     if response.status_code == 401:
@@ -205,7 +240,7 @@ def dash_callback():
     session.clear()
 
     try:
-        token_r = requests.post(
+        token_r = _oauth_http_client().post(
             f"{DISCORD_API_BASE}/oauth2/token",
             data={
                 "client_id": client_id,
@@ -243,7 +278,7 @@ def dash_callback():
         ):
             return jsonify({"error": "Invalid token expiration"}), 502
 
-        user_r = requests.get(
+        user_r = _oauth_http_client().get(
             f"{DISCORD_API_BASE}/users/@me",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
@@ -255,7 +290,7 @@ def dash_callback():
         user_id = user_data.get("id") if isinstance(user_data, dict) else None
         if not isinstance(user_id, str) or not re.fullmatch(r"\d{17,20}", user_id):
             return jsonify({"error": "Invalid Discord user response"}), 502
-    except (requests.RequestException, ValueError):
+    except (OAuthTransportError, ValueError):
         return jsonify({"error": "Discord authentication is temporarily unavailable"}), 502
 
     # Store credentials only after both OAuth exchange and identity lookup succeed.
