@@ -8,9 +8,10 @@ Move the complete Nexus web experience to Cloudflare, including the public websi
 
 - Flask application and Discord bot are started together from `main.py`.
 - Flask routes are split across `web/auth.py`, `web/dashboard.py`, `web/public.py`, `web/verify.py`, `web/rest_api.py`, and `web/github_webhook.py`.
-- Dashboard and public routes directly read MongoDB through `core.col` and `core.db`.
-- Many routes call `core.bot` and `bridge.run_coroutine`, which schedules work on the Discord bot's long-lived asyncio loop.
-- The mobile API also directly reads bot guild/member/channel state and performs Discord actions.
+- Web route modules (dashboard, REST API, public, verification, OAuth, and GitHub webhook) use the transport-neutral `BotService` interface; they do not import the Discord client, bot runtime, BSON, or PyMongo directly.
+- The current `InProcessBotService` adapter still owns the legacy integration: it reads `core.bot` / `core.col`, imports `discord.py`, accesses storage helpers, and uses `bridge.run_coroutine` for operations on the bot's long-lived asyncio loop.
+- The mobile API and dashboard therefore remain operationally coupled to the bot process through that adapter, even though the route layer is separated from those implementation details.
+- Calendar event IDs now cross the web/service boundary as hexadecimal strings; BSON `ObjectId` parsing stays in the persistence layer.
 - The Flask app currently relies on server-side Python dependencies and templates from the repository.
 
 ## Target architecture
@@ -84,7 +85,7 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 
 - Python Workers execute through Pyodide/WebAssembly. Flask has a supported WSGI adapter, but that does not make every CPython package or OS feature compatible.
 - PyMongo's normal socket-based connection model and Discord.py's Gateway/event-loop model are not suitable for running inside the request-scoped Worker runtime. They stay behind the persistent bot service.
-- Current web routes are tightly coupled to `core.bot`, `core.col`, `core.db`, and `bridge.run_coroutine`; this is the main refactoring boundary.
+- The route layer is now behind `BotService`, but the in-process adapter is still tightly coupled to `core.bot`, `core.col`, Discord.py, storage modules, and `bridge.run_coroutine`. Replacing this adapter with a separately hosted authenticated HTTP client is the main remaining runtime boundary.
 - Process-local dictionaries and filesystem assumptions are not durable across Worker isolates.
 - Flask/Jinja templates and generated reports need an explicit asset strategy; Pages static hosting alone cannot execute the current Flask application.
 
@@ -98,7 +99,7 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 - Production remains on the existing host until a separate, explicit deployment approval.
 
 
-## Progress checkpoint (2026-11-26 — refreshed)
+## Progress checkpoint (2026-11-27 — refreshed)
 
 ### Completed groundwork
 
@@ -112,12 +113,16 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 - [x] REST warning/sanction/appeal read queries extracted into store/service boundaries.
 - [x] FAQ persistence shared between REST endpoints and Discord cog through a dedicated store.
 - [x] Dashboard sanction and FAQ persistence/query paths have begun using dedicated stores (PRs #117–#119 merged and green).
+- [x] Dashboard and public/verification/OAuth/webhook route modules use the transport-neutral `BotService` interface rather than importing bot runtime modules.
+- [x] Dashboard calendar event IDs cross the service boundary as strings; BSON parsing is confined to the calendar persistence layer (PR #178 merged).
+- [x] Architecture CI guard rejects direct BSON imports from web route modules (PR #179 merged).
+- [x] REST API hardening: generic internal-error responses (PR #176), bounded API-key header length (PR #175), and oversized request-body rejection (PR #177).
 
 ### Remaining migration work — priority order
 
-1. **Dashboard contract extraction:** replace dashboard's remaining direct bot/database access with explicit service/store contracts. Keep existing Flask routes and behavior while adding tests.
-2. **Public and verification routes:** move kill-switch, appeal, status, and verification dependencies behind narrowly scoped contracts; identify any routes that truly require bot runtime.
-3. **Runtime separation:** make the web app start/test independently of the Discord Gateway process, without changing production startup.
+1. **Adapter contract completion:** audit every method used by dashboard, public, verification, OAuth, webhook, and REST routes; ensure inputs/outputs are transport-safe DTOs (strings, numbers, booleans, lists, and dictionaries), never Discord or BSON objects.
+2. **In-process adapter hardening:** progressively move direct collection access and Discord-specific operations behind dedicated stores and narrow adapter methods; preserve existing Flask behavior and add contract tests.
+3. **Runtime separation:** make the web app start and test independently of the Discord Gateway process, then replace the in-process adapter with an authenticated remote client without changing production startup prematurely.
 4. **Worker transport:** add a Worker-side signed client only after operation contracts stabilize; test signatures, nonce/replay, timeout, fail-closed behavior, and error mapping.
 5. **Compatibility spike:** build an isolated, CI-checked minimal Worker/Pages scaffold and verify the actual dependency/runtime constraints before attempting a broad Flask/Jinja port. Do not treat Pages as a Flask host.
 6. **Frontend/asset inventory and split:** map every template, route, static asset, cache rule, and redirect; choose Pages for static assets and Worker for dynamic routes, retaining private/no-cache behavior for dashboard, appeals, and verification.
@@ -129,4 +134,4 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 - DNS, domains, secrets, environment changes, or traffic cutover.
 - Removing or changing the existing Render production path.
 
-This checkpoint records PR-level code and documentation progress only. Render remains the rollback path until a separately approved migration and cutover.
+This checkpoint records PR-level code and documentation progress only. The route layer is separated from the runtime, but the in-process adapter still depends on the bot process and MongoDB. Render remains the rollback path until a separately approved migration and cutover.
