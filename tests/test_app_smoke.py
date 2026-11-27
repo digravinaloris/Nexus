@@ -182,6 +182,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     import sanctions_store
     from stores import reaction_roles_store, sticky_store
     from stores import role_menu_store
+    from stores import invite_tracking_store
     from services import automod_checks
     from services import server_backups
 
@@ -206,6 +207,9 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     assert nexus.get_sticky_message is sticky_store.get_sticky_message
     assert nexus.mark_sticky_message_posted is sticky_store.mark_sticky_message_posted
     assert nexus.get_role_menu is role_menu_store.get_role_menu
+    assert nexus.record_invite_use is invite_tracking_store.record_invite_use
+    assert nexus.get_inviter_leaderboard is invite_tracking_store.get_inviter_leaderboard
+    assert nexus.get_invite_for_member is invite_tracking_store.get_invite_for_member
     assert nexus.save_reaction_role is reaction_roles_store.save_reaction_role
     assert nexus.get_reaction_role is reaction_roles_store.get_reaction_role
     assert nexus.delete_reaction_roles is reaction_roles_store.delete_reaction_roles
