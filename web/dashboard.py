@@ -15,9 +15,9 @@ from flask import flash, jsonify, redirect, render_template, request, session, u
 
 from audit_helpers.visuals import build_sparkline_svg
 from audit_helpers.export_utils import _build_audit_csv_bytes, _build_audit_pdf_bytes
-from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
+from catalogs.commands import COMMAND_TEMPLATES, MODERATION_COMMANDS
 from calendar_helpers.utils import parse_event_datetime, local_when, validate_timezone
-from features import FEATURE_TOGGLES
+from catalogs.features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
 from utils import normalize_banned_word, normalize_domain, parse_lines_list
 from web.dashboard_utils import (
