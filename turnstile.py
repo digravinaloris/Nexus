@@ -3,9 +3,8 @@
 This module is deliberately independent from the Discord bot and MongoDB so
 public web routes can import it without loading the bot runtime.
 """
+import importlib
 import os
-
-import requests
 
 from jsonlog import log_json
 
@@ -48,8 +47,12 @@ def check_turnstile(response_token, remote_ip=None):
     if remote_ip:
         payload["remoteip"] = remote_ip
     try:
+        requests = importlib.import_module("requests")
         data = requests.post(TURNSTILE_VERIFY_URL, data=payload, timeout=10).json()
-    except (requests.RequestException, ValueError) as exc:
+    except (ImportError, ValueError) as exc:
+        log_json("error", "turnstile_unreachable", error=repr(exc))
+        return False, "service_unavailable"
+    except requests.RequestException as exc:
         log_json("error", "turnstile_unreachable", error=repr(exc))
         return False, "service_unavailable"
     if data.get("success") is True:
