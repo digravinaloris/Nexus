@@ -28,7 +28,7 @@ def record_audit(guild_id, actor_id, actor_name, action, details=""):
         print(f"[AUDIT] Failed to record audit entry: {e}", flush=True)
 
 
-from audit_visuals import build_sparkline_svg
+from audit_helpers.visuals import build_sparkline_svg
 
 
 def get_audit_log(guild_id, limit=20):
