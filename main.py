@@ -71,6 +71,7 @@ from nexus_logging.jsonlog import log_json
 from services.welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
 from services.server_backups import create_server_backup, restore_server_backup
 from services.activity_charts import _generate_activity_chart
+from services.owner_email import send_email, send_daily_killswitch_email
 from services.role_menus import RoleMenuSelect, RoleMenuView
 from services.setup_wizard import SetupWizardView
 from services.pagination import PaginatedEmbedView
@@ -247,65 +248,6 @@ def is_bot_owner():
             return False
         return True
     return app_commands.check(predicate)
-
-
-def send_email(subject, body):
-    """Envoi via l'API HTTPS de Resend (port 443, jamais bloqué) — Render
-    bloque le SMTP brut (25/465/587) sur son offre gratuite, donc pas de
-    smtplib possible ici. Toujours appelé via asyncio.to_thread depuis le
-    code async pour ne pas geler l'event loop du bot.
-    Retourne (succès: bool, message_erreur: str|None)."""
-    resend_api_key = os.getenv("RESEND_API_KEY")
-    owner_email = os.getenv("OWNER_EMAIL")
-    if not (resend_api_key and owner_email):
-        error = "Missing RESEND_API_KEY / OWNER_EMAIL env var(s)."
-        print(f"[EMAIL] {error}", flush=True)
-        return False, error
-    try:
-        r = requests.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {resend_api_key}"},
-            json={
-                "from": "Nexus <onboarding@resend.dev>",
-                "to": [owner_email],
-                "subject": subject,
-                "text": body,
-            },
-            timeout=15,
-        )
-        if r.status_code >= 400:
-            error = f"Resend API returned {r.status_code}: {r.text[:300]}"
-            print(f"[EMAIL] {error}", flush=True)
-            return False, error
-        return True, None
-    except Exception as e:
-        error = f"{type(e).__name__}: {e}"
-        print(f"[EMAIL] Failed to send: {error}", flush=True)
-        return False, error
-
-
-
-
-
-def send_daily_killswitch_email():
-    base_url = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
-    if not base_url:
-        error = "PUBLIC_BASE_URL not set, cannot build the confirmation link."
-        print(f"[KILLSWITCH] {error}", flush=True)
-        return False, error
-    token = create_killswitch_token()
-    link = f"{base_url}/admin/kill-switch/{token}"
-    locked = get_global_lock()
-    state_txt = "currently LOCKED down" if locked else "currently active (unlocked)"
-    action_txt = "unlock it" if locked else "lock it down"
-    body = (
-        "Nexus — daily control link\n\n"
-        f"The bot is {state_txt} across all servers.\n\n"
-        f"If you need to {action_txt}, open this link and enter your authenticator code:\n{link}\n\n"
-        "This link expires in 30 minutes and can only be used once.\n"
-        "Nothing happens if you ignore this email."
-    )
-    return send_email("Nexus — daily control link", body)
 
 
 async def daily_killswitch_email_loop():

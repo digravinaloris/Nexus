@@ -193,9 +193,12 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     from services import ticket_helpers
     from services import ticket_transcripts
     from services import activity_charts
+    from services import owner_email
     from services import server_backups
 
     assert nexus._generate_activity_chart is activity_charts._generate_activity_chart
+    assert nexus.send_email is owner_email.send_email
+    assert nexus.send_daily_killswitch_email is owner_email.send_daily_killswitch_email
 
     for mod, names in {
         config_store: ["get_config", "update_config", "add_command_role", "remove_command_role",
