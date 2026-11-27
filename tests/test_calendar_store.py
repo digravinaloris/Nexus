@@ -37,8 +37,13 @@ def test_delete_event_is_scoped_to_guild(events_store):
     event_id = ObjectId()
     events_store.insert_one({"_id": event_id, "guild_id": "123"})
 
-    assert not calendar_store.delete_event("456", event_id)
-    assert calendar_store.delete_event("123", event_id)
+    assert not calendar_store.delete_event("456", str(event_id))
+    assert calendar_store.delete_event("123", str(event_id))
+    assert events_store.count_documents({}) == 0
+
+
+def test_delete_event_rejects_invalid_id(events_store):
+    assert not calendar_store.delete_event("123", "not-an-object-id")
     assert events_store.count_documents({}) == 0
 
 
