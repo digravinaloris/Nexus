@@ -334,3 +334,23 @@ def test_factory_injects_totp_secret_from_runtime_environment(monkeypatch):
 
     assert app.config["TOTP_SECRET"] == "injected-totp-secret"
     assert isolated_app.config["TOTP_SECRET"] == ""
+
+
+def test_factory_injects_turnstile_settings_and_derives_public_base_url(monkeypatch):
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "process-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "process-secret-key")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://process.example")
+
+    app = _create_app(_config(), environ={
+        "TURNSTILE_SITE_KEY": "injected-site-key",
+        "TURNSTILE_SECRET_KEY": "injected-secret-key",
+        "DISCORD_REDIRECT_URI": "https://injected.example/callback",
+    })
+    isolated_app = _create_app(_config(), environ={})
+
+    assert app.config["TURNSTILE_SITE_KEY"] == "injected-site-key"
+    assert app.config["TURNSTILE_SECRET_KEY"] == "injected-secret-key"
+    assert app.config["PUBLIC_BASE_URL"] == "https://injected.example"
+    assert isolated_app.config["TURNSTILE_SITE_KEY"] == ""
+    assert isolated_app.config["TURNSTILE_SECRET_KEY"] == ""
+    assert isolated_app.config["PUBLIC_BASE_URL"] == ""
