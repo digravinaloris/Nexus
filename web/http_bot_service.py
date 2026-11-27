@@ -86,6 +86,7 @@ class SignedHttpBotService(BotService):
             "api_faq_snapshot": 1,
             "api_members_snapshot": 1,
             "api_guild_list_snapshot": (0, 1),
+            "api_health_snapshot": (0, 1),
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
@@ -280,6 +281,16 @@ class SignedHttpBotService(BotService):
                 )
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "api_health_snapshot":
+            if (
+                not isinstance(result, dict)
+                or set(result) != {"online", "locked", "guild_count"}
+                or not isinstance(result["online"], bool)
+                or not isinstance(result["locked"], bool)
+                or type(result["guild_count"]) is not int
+                or result["guild_count"] < 0
+            ):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
         return result
 
     def health_snapshot(self):
@@ -311,3 +322,9 @@ class SignedHttpBotService(BotService):
         if guild_id is not None and not self._valid_guild_id(guild_id):
             raise ValueError("Invalid guild ID")
         return self._dispatch_snapshot("api_guild_list_snapshot", args)
+
+    def api_health_snapshot(self, guild_id: str = None):
+        args = () if guild_id is None else (guild_id,)
+        if guild_id is not None and not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        return self._dispatch_snapshot("api_health_snapshot", args)
