@@ -54,7 +54,8 @@ requests = _LazyRequestsTransport()
 
 def _oauth_http_client():
     """Return an app-injected transport or the lazy Requests compatibility client."""
-    return current_app.config.get("DISCORD_HTTP_CLIENT") or requests
+    client = current_app.config.get("DISCORD_HTTP_CLIENT")
+    return requests if client is None else client
 
 
 DASH_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
