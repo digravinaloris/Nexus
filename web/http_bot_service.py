@@ -17,6 +17,7 @@ from web.bot_service_signing import sign_internal_request
 
 INTERNAL_DISPATCH_PATH = "/internal/v1/dispatch"
 DEFAULT_TIMEOUT_SECONDS = 5
+MAX_RESPONSE_BYTES = 65_536
 
 
 class BotServiceTransportError(RuntimeError):
@@ -54,6 +55,10 @@ class SignedHttpBotService(BotService):
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
             raise ValueError("BotService timeout must be positive")
 
+        try:
+            _ = parsed.port
+        except ValueError as exc:
+            raise ValueError("BotService URL must be an HTTPS origin") from exc
         self._base_url = f"{parsed.scheme}://{parsed.netloc}"
         self._key_id = key_id
         self._secret = secret
@@ -82,6 +87,7 @@ class SignedHttpBotService(BotService):
                 headers=headers,
                 timeout=self._timeout,
                 allow_redirects=False,
+                stream=True,
             )
         except requests.RequestException as exc:
             raise BotServiceTransportError(
@@ -96,11 +102,38 @@ class SignedHttpBotService(BotService):
             raise BotServiceTransportError("Internal BotService returned an error")
 
         try:
-            payload = response.json()
-        except (ValueError, TypeError, AttributeError) as exc:
+            content_length = getattr(response, "headers", {}).get("Content-Length")
+            if content_length is not None:
+                try:
+                    if int(content_length) > MAX_RESPONSE_BYTES:
+                        raise BotServiceTransportError(
+                            "Internal BotService response exceeded the size limit"
+                        )
+                except ValueError:
+                    pass
+
+            chunks = []
+            total = 0
+            for chunk in response.iter_content(chunk_size=8192):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_RESPONSE_BYTES:
+                    raise BotServiceTransportError(
+                        "Internal BotService response exceeded the size limit"
+                    )
+                chunks.append(chunk)
+            payload = json.loads(b"".join(chunks))
+        except BotServiceTransportError:
+            raise
+        except (ValueError, TypeError, AttributeError, UnicodeDecodeError) as exc:
             raise BotServiceTransportError(
                 "Internal BotService returned an invalid response"
             ) from exc
+        finally:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
 
         if (
             not isinstance(payload, dict)
