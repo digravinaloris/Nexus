@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
 from audit import build_sparkline_svg
-from audit_export import _build_audit_csv_bytes, _build_audit_pdf_bytes
+from audit_export_utils import _build_audit_csv_bytes, _build_audit_pdf_bytes
 from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
 from calendar_utils import parse_event_datetime, local_when, validate_timezone
 from features import FEATURE_TOGGLES
