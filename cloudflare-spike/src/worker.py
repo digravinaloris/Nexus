@@ -240,10 +240,10 @@ def batch_rollback():
         try:
             count = _await(
                 db.prepare(
-                    "SELECT COUNT(*) FROM spike_batch_probe WHERE probe_key = ?"
+                    "SELECT COUNT(*) AS count FROM spike_batch_probe WHERE probe_key = ?"
                 )
                 .bind(marker)
-                .first("COUNT(*)")
+                .first("count")
             )
         except Exception:
             return jsonify({"error": "local D1 unavailable"}), 503
