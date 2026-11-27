@@ -190,8 +190,8 @@ class BotService:
         """Persist a prepared calendar event and return its database ID."""
         raise NotImplementedError
 
-    def dashboard_calendar_delete_event(self, guild_id: str, event_id) -> bool:
-        """Delete one calendar event belonging to the guild."""
+    def dashboard_calendar_delete_event(self, guild_id: str, event_id: str) -> bool:
+        """Delete one calendar event by its hexadecimal ID, scoped to the guild."""
         raise NotImplementedError
 
     def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> List[Dict[str, object]]:
