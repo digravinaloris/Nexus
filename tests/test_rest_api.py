@@ -539,7 +539,7 @@ def test_mute_rejects_invalid_duration_without_calling_discord(env):
     member = FakeMember(10)
     env.guild.members = [member]
 
-    for minutes in ("abc", -1, 0, 40321, True, 30.5):
+    for minutes in ("abc", -1, 0, 40321, "9" * 5000, True, 30.5):
         response = env.client.post(
             url("/members/10/mute"),
             json={"minutes": minutes},
