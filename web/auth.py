@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 from flask import jsonify, redirect, request, session, url_for
 import requests
 
-from web.oauth_utils import create_code_challenge, is_fresh_state_timestamp, is_valid_code_verifier, is_valid_oauth_code
+from web.oauth_utils import OAUTH_STATE_MAX_AGE, create_code_challenge, is_fresh_state_timestamp, is_valid_code_verifier, is_valid_oauth_code
 from web.bot_service import get_bot_service
 from web.routing import Routes
 
@@ -178,11 +178,7 @@ def dash_callback():
     if len(codes) != 1:
         return jsonify({"error": "Invalid code"}), 400
     code = codes[0]
-    if (
-        not isinstance(code, str)
-        or len(code) > 2048
-        or re.search(r"[\x00-\x20\x7f]", code) is not None
-    ):
+    if not is_valid_oauth_code(code):
         return jsonify({"error": "Invalid code"}), 400
 
     # Consume the one-time state and discard any pre-authentication session data.
