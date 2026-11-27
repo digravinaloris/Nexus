@@ -88,6 +88,17 @@ def update_config(guild_id, key, value):
     col.config.update_one({"guild_id": str(guild_id)}, {"$set": {key: value}}, upsert=True)
 
 
+def update_config_fields(guild_id, updates):
+    """Atomically apply multiple top-level configuration fields for one guild."""
+    if not isinstance(updates, dict) or not updates:
+        raise ValueError("updates must be a non-empty dictionary")
+    col.config.update_one(
+        {"guild_id": str(guild_id)},
+        {"$set": updates},
+        upsert=True,
+    )
+
+
 def add_command_role(guild_id, command_name, role_id):
     """Autorise un rôle à utiliser une commande spécifique pour ce serveur."""
     col.config.update_one(
