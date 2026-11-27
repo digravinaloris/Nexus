@@ -625,3 +625,24 @@ def test_killswitch_store_creates_secure_expiring_token(mongo_db):
     assert record["used"] is False
     assert record["attempts"] == 0
     assert record["expires_at"] - record["created_at"] == datetime.timedelta(minutes=30)
+
+
+def test_sanctions_store_submits_and_resolves_appeal(mongo_db):
+    from stores import sanctions_store
+
+    sanctions_store.create_sanction_appeal(1, 7, "ban", 42, "Member", "reason", "appeal-token")
+    submitted_at = datetime.datetime(2026, 11, 27, 12, 0)
+    assert sanctions_store.submit_ban_appeal("appeal-token", "Please review", submitted_at)
+    submitted = sanctions_store.get_ban_appeal("appeal-token")
+    assert submitted["status"] == "submitted"
+    assert submitted["appeal_text"] == "Please review"
+    assert submitted["submitted_at"] == submitted_at
+
+    resolved_at = submitted_at + datetime.timedelta(minutes=1)
+    assert sanctions_store.resolve_submitted_sanction_appeal("appeal-token", "accepted", resolved_at)
+    resolved = sanctions_store.get_ban_appeal("appeal-token")
+    assert resolved["status"] == "accepted"
+    assert resolved["resolved_at"] == resolved_at
+
+    with pytest.raises(ValueError):
+        sanctions_store.resolve_submitted_sanction_appeal("appeal-token", "processing")

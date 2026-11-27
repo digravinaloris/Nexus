@@ -297,3 +297,16 @@ def list_sanctions_since(guild_id, since):
         "timestamp": {"$gte": since},
     }))
 
+
+
+
+def resolve_submitted_sanction_appeal(token, status, resolved_at=None):
+    """Record an accepted or denied decision for an appeal."""
+    if status not in ("accepted", "denied"):
+        raise ValueError("Invalid appeal resolution status")
+    resolved_at = resolved_at or datetime.datetime.now(datetime.timezone.utc)
+    result = col.ban_appeals.update_one(
+        {"token": token},
+        {"$set": {"status": status, "resolved_at": resolved_at}},
+    )
+    return result.modified_count == 1
