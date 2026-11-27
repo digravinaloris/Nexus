@@ -85,6 +85,23 @@ def test_update_config_upserts(mongo_db):
     assert doc["autorole"] == "999"
 
 
+def test_update_config_fields_applies_all_fields_in_one_update(mongo_db, monkeypatch):
+    calls = []
+    original_update_one = mongo_db["config"].update_one
+
+    def track_update_one(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original_update_one(*args, **kwargs)
+
+    monkeypatch.setattr(config_store.col.config, "update_one", track_update_one)
+    config_store.update_config_fields(6, {"language": "fr", "autorole": "123"})
+
+    assert len(calls) == 1
+    assert calls[0][0][1] == {"$set": {"language": "fr", "autorole": "123"}}
+    assert config_store.get_config(6)["language"] == "fr"
+    assert config_store.get_config(6)["autorole"] == "123"
+
+
 def test_command_roles_add_remove(mongo_db):
     config_store.get_config(7)
     config_store.add_command_role(7, "ban", "10")
