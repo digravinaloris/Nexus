@@ -49,8 +49,7 @@ def test_template_apply_ignores_malformed_sections_and_values(monkeypatch):
         }
     })
 
-    assert updates == [("automod_raid_window", 10)]
-
+    assert updates == [("automod_raid_window", 10), ("warn_escalation_enabled", False)]
 
 
 def test_template_apply_rejects_out_of_range_automod_numbers(monkeypatch):
