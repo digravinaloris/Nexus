@@ -44,10 +44,10 @@ from i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
 )
 from features import FEATURE_TOGGLES
-from bridge import run_coroutine
-from discord_logging import get_or_create_log_webhook, _send_log_embed, log_dashboard_action
-from moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTION_ICONS, post_appeal_for_review
-from owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
+from services.bridge import run_coroutine
+from services.discord_logging import get_or_create_log_webhook, _send_log_embed, log_dashboard_action
+from services.moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTION_ICONS, post_appeal_for_review
+from services.owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
 from web.app_factory import create_web_app
 from verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
                           account_days_left, kick_pass, SETTINGS_LIMITS)
