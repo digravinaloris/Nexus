@@ -21,6 +21,10 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _MAX_SESSION_BYTES = 16_384
 
 
+class SessionStorageUnavailable(RuntimeError):
+    """A durable session operation failed; callers must return HTTP 503."""
+
+
 class D1ServerSession(CallbackDict, SessionMixin):
     """Mutable Flask session carrying only server-side metadata in Python."""
 
@@ -169,6 +173,17 @@ class D1SessionInterface(SessionInterface):
             )
         except Exception:
             # Corrupt or unauthenticated records are never treated as sessions.
+            try:
+                self._awaiter(
+                    self._db_getter()
+                    .prepare(
+                        "UPDATE spike_flask_sessions SET revoked_at = ? WHERE session_hash = ? AND revoked_at IS NULL"
+                    )
+                    .bind(now, session_hash)
+                    .run()
+                )
+            except Exception:
+                return self._new_session(unavailable=True)
             return self._new_session(invalid=True)
 
     def save_session(self, app, session, response):
@@ -183,7 +198,13 @@ class D1SessionInterface(SessionInterface):
 
         if not session:
             if not session.new:
-                self.revoke_session(session)
+                try:
+                    self.revoke_session(session)
+                except SessionStorageUnavailable:
+                    response.status_code = 503
+                    response.set_data(b'{"error":"session storage unavailable"}')
+                    response.headers["Content-Type"] = "application/json"
+                    return
             if session.invalid or not session.new:
                 response.delete_cookie(
                     cookie_name,
@@ -290,55 +311,58 @@ class D1SessionInterface(SessionInterface):
             new_sid, dict(session)
         )
         db = self._db_getter()
-        self._awaiter(
-            db.batch(
-                [
-                    db.prepare(
-                        """
-                        UPDATE spike_flask_sessions
-                        SET revoked_at = ?, rotated_to = ?
-                        WHERE session_hash = ? AND revoked_at IS NULL
-                          AND expires_at > ? AND idle_expires_at > ?
-                        """
-                    ).bind(now, new_hash, old_hash, now, now),
-                    db.prepare(
-                        """
-                        INSERT INTO spike_flask_sessions
-                            (session_hash, ciphertext_hex, nonce_hex, key_version,
-                             created_at, expires_at, idle_expires_at)
-                        SELECT ?, ?, ?, ?, ?, ?, ?
-                        WHERE EXISTS (
-                            SELECT 1 FROM spike_flask_sessions
-                            WHERE session_hash = ? AND rotated_to = ?
-                        )
-                        """
-                    ).bind(
-                        new_hash,
-                        ciphertext_hex,
-                        nonce_hex,
-                        key_version,
-                        now,
-                        expires_at,
-                        now + self.idle_timeout,
-                        old_hash,
-                        new_hash,
-                    ),
-                ]
+        try:
+            self._awaiter(
+                db.batch(
+                    [
+                        db.prepare(
+                            """
+                            UPDATE spike_flask_sessions
+                            SET revoked_at = ?, rotated_to = ?
+                            WHERE session_hash = ? AND revoked_at IS NULL
+                              AND expires_at > ? AND idle_expires_at > ?
+                            """
+                        ).bind(now, new_hash, old_hash, now, now),
+                        db.prepare(
+                            """
+                            INSERT INTO spike_flask_sessions
+                                (session_hash, ciphertext_hex, nonce_hex, key_version,
+                                 created_at, expires_at, idle_expires_at)
+                            SELECT ?, ?, ?, ?, ?, ?, ?
+                            WHERE EXISTS (
+                                SELECT 1 FROM spike_flask_sessions
+                                WHERE session_hash = ? AND rotated_to = ?
+                            )
+                            """
+                        ).bind(
+                            new_hash,
+                            ciphertext_hex,
+                            nonce_hex,
+                            key_version,
+                            now,
+                            expires_at,
+                            now + self.idle_timeout,
+                            old_hash,
+                            new_hash,
+                        ),
+                    ]
+                )
             )
-        )
-        created = self._awaiter(
-            db.prepare(
-                """
-                SELECT session_hash FROM spike_flask_sessions
-                WHERE session_hash = ? AND revoked_at IS NULL AND expires_at > ?
-                LIMIT 1
-                """
+            created = self._awaiter(
+                db.prepare(
+                    """
+                    SELECT session_hash FROM spike_flask_sessions
+                    WHERE session_hash = ? AND revoked_at IS NULL AND expires_at > ?
+                    LIMIT 1
+                    """
+                )
+                .bind(new_hash, now)
+                .first()
             )
-            .bind(new_hash, now)
-            .first()
-        )
+        except Exception as exc:
+            raise SessionStorageUnavailable("D1 session rotation failed") from exc
         if created is None:
-            raise RuntimeError("session rotation could not be committed")
+            raise SessionStorageUnavailable("D1 session rotation was not committed")
 
         session.sid = new_sid
         session.new = False
@@ -351,15 +375,18 @@ class D1SessionInterface(SessionInterface):
         sid = getattr(session, "sid", None)
         if not isinstance(sid, str) or not _SESSION_ID_RE.fullmatch(sid):
             return
-        self._awaiter(
-            self._db_getter()
-            .prepare(
-                """
-                UPDATE spike_flask_sessions
-                SET revoked_at = ?
-                WHERE session_hash = ? AND revoked_at IS NULL
-                """
+        try:
+            self._awaiter(
+                self._db_getter()
+                .prepare(
+                    """
+                    UPDATE spike_flask_sessions
+                    SET revoked_at = ?
+                    WHERE session_hash = ? AND revoked_at IS NULL
+                    """
+                )
+                .bind(int(time.time()), self._digest(sid))
+                .run()
             )
-            .bind(int(time.time()), self._digest(sid))
-            .run()
-        )
+        except Exception as exc:
+            raise SessionStorageUnavailable("D1 session revocation failed") from exc
