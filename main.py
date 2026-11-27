@@ -52,6 +52,7 @@ from stores.scheduled_tasks_store import (
 from stores.quarantine_store import create_quarantine_entry, get_pending_quarantine_reviews, mark_quarantine_reminded
 from stores.role_menu_store import save_role_menu, get_role_menu
 from stores.invite_tracking_store import record_invite_use, get_inviter_leaderboard, get_invite_for_member
+from stores.template_store import template_code_exists, create_template, get_template_by_code
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
@@ -2595,10 +2596,10 @@ async def template_create(interaction: discord.Interaction, name: str = None, pu
     snapshot = _build_template_snapshot(guild, cfg)
 
     code = secrets.token_hex(4)
-    while templates_col.find_one({"code": code}):
+    while template_code_exists(code):
         code = secrets.token_hex(4)
 
-    templates_col.insert_one({
+    create_template({
         "code": code,
         "name": name or f"{guild.name} template",
         "public": bool(public),
@@ -2620,7 +2621,7 @@ async def template_create(interaction: discord.Interaction, name: str = None, pu
 @app_commands.describe(code="The code shared by the server that ran /template create")
 @has_admin()
 async def template_load(interaction: discord.Interaction, code: str):
-    doc = templates_col.find_one({"code": code.strip()})
+    doc = get_template_by_code(code.strip())
     if not doc:
         await interaction.response.send_message("❌ No template found with that code.", ephemeral=True)
         return

@@ -1,13 +1,17 @@
-"""Persistence helpers for public dashboard templates."""
+"""Persistence helpers for shareable server configuration templates.
 
+Templates are intentionally global: they are shared across guilds by code.
+"""
 from nexus_runtime.core import col
 
 
-def list_public_templates(limit=50):
-    """Return the newest public templates, bounded for dashboard rendering."""
-    return list(col.templates.find({"public": True}).sort("created_at", -1).limit(limit))
+def template_code_exists(code):
+    return col.templates.find_one({"code": code}) is not None
+
+
+def create_template(document):
+    return col.templates.insert_one(document)
 
 
 def get_template_by_code(code):
-    """Look up a template by its normalized share code."""
-    return col.templates.find_one({"code": str(code).strip()})
+    return col.templates.find_one({"code": code})
