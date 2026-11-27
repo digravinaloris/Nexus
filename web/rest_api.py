@@ -6,6 +6,7 @@ sur l'app Flask. Ce module n'importe JAMAIS main.py (sous `python main.py` le
 module s'appelle `__main__`, l'importer le rechargerait avec un 2e bot) : le
 bot vient de `core.bot`, la base de `core.col`.
 """
+import logging
 import os
 import secrets
 from functools import wraps
@@ -16,6 +17,7 @@ from web.bot_service import get_bot_service
 from features import FEATURE_TOGGLES
 
 bp = Blueprint("rest_api", __name__)
+logger = logging.getLogger(__name__)
 
 API_KEY = os.getenv("API_KEY")  # clé secrète pour protéger l'API, à définir sur Render
 MAX_API_KEY_LENGTH = 512
@@ -129,8 +131,9 @@ def guild_stats(guild_id):
         snapshot = get_bot_service().api_guild_stats_snapshot(
             guild_id, cfg.get("ticket_category_id")
         )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("REST API operation failed")
+        return jsonify({"error": "Internal server error"}), 500
     if snapshot is None:
         return jsonify({"error": "Bot not ready"}), 503
 
@@ -246,8 +249,9 @@ def broadcast_route(guild_id):
 
     try:
         result = get_bot_service().api_broadcast(guild_id, channel_id, message, mention)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("REST API operation failed")
+        return jsonify({"error": "Internal server error"}), 500
     if result is None:
         return jsonify({"error": "Bot not ready"}), 503
     success, error = result
@@ -274,8 +278,9 @@ def ban_member_route(guild_id, user_id):
 
     try:
         result = get_bot_service().api_ban_member(guild_id, user_id, reason)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("REST API operation failed")
+        return jsonify({"error": "Internal server error"}), 500
     if result is None:
         return jsonify({"error": "Bot not ready"}), 503
     success, error = result
@@ -302,8 +307,9 @@ def kick_member_route(guild_id, user_id):
 
     try:
         result = get_bot_service().api_kick_member(guild_id, user_id, reason)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("REST API operation failed")
+        return jsonify({"error": "Internal server error"}), 500
     if result is None:
         return jsonify({"error": "Bot not ready"}), 503
     success, error = result
@@ -387,8 +393,9 @@ def mute_member_route(guild_id, user_id):
 
     try:
         result = get_bot_service().api_mute_member(guild_id, user_id, minutes, reason)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("REST API operation failed")
+        return jsonify({"error": "Internal server error"}), 500
     if result is None:
         return jsonify({"error": "Bot not ready"}), 503
     success, error = result
@@ -408,8 +415,9 @@ def unmute_member_route(guild_id, user_id):
 
     try:
         success, error = get_bot_service().api_unmute_member(guild_id, user_id)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("REST API operation failed")
+        return jsonify({"error": "Internal server error"}), 500
 
     if not success:
         return jsonify({"error": error}), 400

@@ -815,3 +815,24 @@ def test_guild_key_fallback_uses_constant_time_comparison(env, monkeypatch):
     response = env.client.get("/api/guilds", headers={"X-API-Key": "guild-key"})
     assert response.status_code == 200
     assert ("guild-key", "guild-key") in calls
+
+
+
+def test_broadcast_hides_internal_exception_details(env, monkeypatch):
+    import web.rest_api as rest_module
+
+    service = rest_module.get_bot_service()
+
+    def fail_broadcast(*args, **kwargs):
+        raise RuntimeError("database password leaked")
+
+    monkeypatch.setattr(service, "api_broadcast", fail_broadcast)
+    response = env.client.post(
+        url("/broadcast"),
+        json={"message": "hello", "channel_id": "5"},
+        headers=MASTER,
+    )
+
+    assert response.status_code == 500
+    assert response.get_json() == {"error": "Internal server error"}
+    assert b"database password leaked" not in response.data
