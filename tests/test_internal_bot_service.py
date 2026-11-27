@@ -168,6 +168,37 @@ def test_signed_dispatch_denies_non_administrator_member():
     assert service.calls == [("is_guild_admin", "123", "44")]
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["123"],
+        ["123", "43", "extra"],
+        [123, "43"],
+        ["123", 43],
+        ["guild", "43"],
+        ["123", "43\\n"],
+    ],
+)
+def test_signed_dispatch_rejects_invalid_guild_admin_arguments(args):
+    client, service = _client()
+    body = _request_body({"method": "is_guild_admin", "args": args, "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_fails_closed_when_guild_admin_result_is_not_boolean():
+    client, service = _client()
+    service.is_guild_admin = lambda guild_id, user_id: "true"
+    body = _request_body(
+        {"method": "is_guild_admin", "args": ["123", "43"], "kwargs": {}}
+    )
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
+
+
 def test_replayed_nonce_is_rejected_before_second_dispatch():
     store = MemoryNonceStore()
     client, service = _client(store)
