@@ -180,6 +180,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     import core
     import i18n
     import sanctions_store
+    from stores import reaction_roles_store, sticky_store
     from services import server_backups
 
     for mod, names in {
@@ -197,6 +198,16 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
 
     assert nexus.create_server_backup is server_backups.create_server_backup
     assert nexus.restore_server_backup is server_backups.restore_server_backup
+
+    assert nexus.set_sticky_message is sticky_store.set_sticky_message
+    assert nexus.remove_sticky_message is sticky_store.remove_sticky_message
+    assert nexus.get_sticky_message is sticky_store.get_sticky_message
+    assert nexus.mark_sticky_message_posted is sticky_store.mark_sticky_message_posted
+    assert nexus.save_reaction_role is reaction_roles_store.save_reaction_role
+    assert nexus.get_reaction_role is reaction_roles_store.get_reaction_role
+    assert nexus.delete_reaction_roles is reaction_roles_store.delete_reaction_roles
+    for name in ("get_sanction_history", "save_tempban", "remove_tempban", "get_active_tempbans"):
+        assert getattr(nexus, name) is getattr(sanctions_store, name)
 
     # core.bot doit être branché dès l'import (get_audit_log en dépend)
     assert core.bot is nexus.bot

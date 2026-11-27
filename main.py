@@ -37,8 +37,10 @@ from stores.sanctions_store import (
     get_warns, set_warns, mark_channel_locked, mark_channel_unlocked,
     get_locked_channels, get_next_case_id, log_sanction, get_case,
     create_sanction_appeal, get_ban_appeal, get_ban_appeal_by_case,
-    get_sanction_stats,
+    get_sanction_stats, get_sanction_history, save_tempban, remove_tempban, get_active_tempbans,
 )
+from stores.sticky_store import set_sticky_message, remove_sticky_message, get_sticky_message, mark_sticky_message_posted
+from stores.reaction_roles_store import save_reaction_role, get_reaction_role, delete_reaction_roles
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
@@ -151,64 +153,6 @@ async def send_sanction_dm(member_or_user, guild, sanction_type, reason):
 
     return dm_sent, appeal_token
 
-
-def set_sticky_message(guild_id, channel_id, content):
-    sticky_messages_col.update_one(
-        {"channel_id": str(channel_id)},
-        {"$set": {
-            "guild_id": str(guild_id),
-            "channel_id": str(channel_id),
-            "content": content,
-            "last_message_id": None,
-            "last_reposted_at": None,
-        }},
-        upsert=True,
-    )
-
-def remove_sticky_message(channel_id):
-    sticky_messages_col.delete_one({"channel_id": str(channel_id)})
-
-def get_sticky_message(channel_id):
-    return sticky_messages_col.find_one({"channel_id": str(channel_id)})
-
-def get_sanction_history(guild_id, user_id, limit=15):
-    return list(
-        sanctions_col.find({"guild_id": str(guild_id), "user_id": str(user_id)})
-        .sort("timestamp", -1)
-        .limit(limit)
-    )
-
-def save_reaction_role(guild_id, message_id, channel_id, emoji, role_id):
-    reaction_roles_col.update_one(
-        {"guild_id": str(guild_id), "message_id": str(message_id), "emoji": str(emoji)},
-        {"$set": {"channel_id": str(channel_id), "role_id": str(role_id)}},
-        upsert=True,
-    )
-
-def get_reaction_role(guild_id, message_id, emoji):
-    return reaction_roles_col.find_one({
-        "guild_id": str(guild_id),
-        "message_id": str(message_id),
-        "emoji": str(emoji),
-    })
-
-def delete_reaction_roles(guild_id, message_id):
-    reaction_roles_col.delete_many({"guild_id": str(guild_id), "message_id": str(message_id)})
-
-# Tempbans actifs : {(guild_id, user_id): timestamp_unban}
-# Stocké en mémoire + DB pour survivre aux redémarrages
-def save_tempban(guild_id, user_id, unban_at):
-    sanctions_col.update_one(
-        {"guild_id": str(guild_id), "user_id": str(user_id), "type": "tempban_active"},
-        {"$set": {"unban_at": unban_at}},
-        upsert=True,
-    )
-
-def remove_tempban(guild_id, user_id):
-    sanctions_col.delete_one({"guild_id": str(guild_id), "user_id": str(user_id), "type": "tempban_active"})
-
-def get_active_tempbans():
-    return list(sanctions_col.find({"type": "tempban_active"}))
 
 # Bot setup
 intents = discord.Intents.all()
@@ -4714,10 +4658,7 @@ async def on_message(message):
                     except (discord.NotFound, discord.HTTPException):
                         pass
                 new_msg = await message.channel.send(sticky["content"])
-                sticky_messages_col.update_one(
-                    {"channel_id": str(message.channel.id)},
-                    {"$set": {"last_message_id": str(new_msg.id), "last_reposted_at": now}},
-                )
+                mark_sticky_message_posted(message.channel.id, new_msg.id, now)
             except discord.HTTPException as e:
                 print(f"[STICKY] Failed to repost in channel {message.channel.id}: {e}", flush=True)
 

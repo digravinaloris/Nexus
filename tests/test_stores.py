@@ -380,3 +380,59 @@ def test_killswitch_store_stops_attempts_at_limit(mongo_db):
     assert killswitch_store.increment_killswitch_attempts("limited") == 5
     assert killswitch_store.increment_killswitch_attempts("limited") is None
     assert killswitch_store.mark_killswitch_token_used("limited") is False
+
+
+# ------------------------------------------------ persistence helpers extracted from main.py
+
+def test_sticky_store_lifecycle(mongo_db):
+    from stores import sticky_store
+
+    posted_at = datetime.datetime(2026, 11, 27, tzinfo=UTC)
+    sticky_store.set_sticky_message(1, 100, "Rules")
+    sticky = sticky_store.get_sticky_message(100)
+    assert sticky["guild_id"] == "1"
+    assert sticky["content"] == "Rules"
+    assert sticky["last_message_id"] is None
+
+    sticky_store.mark_sticky_message_posted(100, 999, posted_at)
+    sticky = sticky_store.get_sticky_message(100)
+    assert sticky["last_message_id"] == "999"
+    assert sticky["last_reposted_at"] == posted_at.replace(tzinfo=None)
+
+    sticky_store.remove_sticky_message(100)
+    assert sticky_store.get_sticky_message(100) is None
+
+
+def test_reaction_role_store_lifecycle(mongo_db):
+    from stores import reaction_roles_store
+
+    reaction_roles_store.save_reaction_role(1, 200, 300, "⭐", 400)
+    mapping = reaction_roles_store.get_reaction_role(1, 200, "⭐")
+    assert mapping["channel_id"] == "300"
+    assert mapping["role_id"] == "400"
+    assert reaction_roles_store.get_reaction_role(2, 200, "⭐") is None
+
+    reaction_roles_store.delete_reaction_roles(1, 200)
+    assert reaction_roles_store.get_reaction_role(1, 200, "⭐") is None
+
+
+def test_tempban_store_lifecycle_and_sanction_history(mongo_db):
+    unban_at = datetime.datetime(2026, 11, 28, tzinfo=UTC)
+    sanctions_store.save_tempban(1, 42, unban_at)
+    active = sanctions_store.get_active_tempbans()
+    assert len(active) == 1
+    assert active[0]["unban_at"] == unban_at.replace(tzinfo=None)
+
+    sanctions_store.remove_tempban(1, 42)
+    assert sanctions_store.get_active_tempbans() == []
+
+    first = datetime.datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
+    core.col.sanctions.insert_one({
+        "guild_id": "1", "user_id": "42", "type": "warn", "timestamp": first,
+    })
+    core.col.sanctions.insert_one({
+        "guild_id": "1", "user_id": "42", "type": "ban",
+        "timestamp": first + datetime.timedelta(seconds=1),
+    })
+    history = sanctions_store.get_sanction_history(1, 42)
+    assert [entry["type"] for entry in history] == ["ban", "warn"]
