@@ -36,11 +36,15 @@ class MemoryNonceStore:
 
 class FakeBotService:
     def __init__(self):
-        self.calls = 0
+        self.calls = []
 
     def health_snapshot(self):
-        self.calls += 1
+        self.calls.append("health_snapshot")
         return {"bot": "online", "guild_count": 4}
+
+    def public_status_snapshot(self):
+        self.calls.append("public_status_snapshot")
+        return {"online": True, "guild_count": 4, "latency_ms": 23, "uptime": "1h"}
 
 
 def _request_body(payload=None):
@@ -87,7 +91,27 @@ def test_signed_dispatch_returns_health_snapshot():
         "ok": True,
         "result": {"bot": "online", "guild_count": 4},
     }
-    assert service.calls == 1
+    assert service.calls == ["health_snapshot"]
+
+
+def test_signed_dispatch_allows_public_status_snapshot():
+    client, service = _client()
+    body = _request_body(
+        {"method": "public_status_snapshot", "args": [], "kwargs": {}}
+    )
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "ok": True,
+        "result": {
+            "online": True,
+            "guild_count": 4,
+            "latency_ms": 23,
+            "uptime": "1h",
+        },
+    }
+    assert service.calls == ["public_status_snapshot"]
 
 
 def test_replayed_nonce_is_rejected_before_second_dispatch():
@@ -113,7 +137,7 @@ def test_invalid_signature_and_expired_timestamp_are_rejected():
 
     expired = _signed_headers(body, timestamp=int(time.time()) - 61, nonce="e" * 24)
     assert client.post(PATH, data=body, headers=expired).status_code == 401
-    assert service.calls == 0
+    assert service.calls == []
 
 
 def test_only_allowlisted_read_method_is_dispatchable():
@@ -151,7 +175,7 @@ def test_oversized_body_and_nonce_store_outage_fail_closed():
     body = _request_body()
     response = failing_client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 503
-    assert failing_service.calls == 0
+    assert failing_service.calls == []
 
 
 class FakeMongoCollection:
