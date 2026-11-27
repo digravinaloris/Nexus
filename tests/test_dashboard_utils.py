@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dashboard_utils import (
     read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
     is_safe_relative_redirect, build_feature_toggle_updates,
+    build_settings_update_plan,
 )
 
 FIELDS = [
@@ -167,3 +168,42 @@ def test_feature_toggle_updates_preserve_explicit_stored_values_over_defaults():
     assert updates == []
     assert enabled == []
     assert disabled == []
+
+
+def test_settings_update_plan_skips_unchanged_and_missing_none_values():
+    writes, changes = build_settings_update_plan(
+        {"existing": 3, "unset": None},
+        {"existing": 3},
+        {"existing": 1},
+    )
+    assert writes == []
+    assert changes == []
+
+
+def test_settings_update_plan_uses_defaults_for_missing_values():
+    writes, changes = build_settings_update_plan(
+        {"enabled": True, "disabled": False},
+        {},
+        {"enabled": False, "disabled": False},
+    )
+    assert writes == [("enabled", True), ("disabled", False)]
+    assert changes == ["enabled: False -> True"]
+
+
+def test_settings_update_plan_preserves_explicit_values_over_defaults():
+    writes, changes = build_settings_update_plan(
+        {"enabled": True},
+        {"enabled": False},
+        {"enabled": True},
+    )
+    assert writes == [("enabled", True)]
+    assert changes == ["enabled: False -> True"]
+
+
+def test_settings_update_plan_formats_list_change_counts():
+    writes, changes = build_settings_update_plan(
+        {"banned_words": ["one", "two"]},
+        {"banned_words": ["old"]},
+    )
+    assert writes == [("banned_words", ["one", "two"])]
+    assert changes == ["banned_words: 1 -> 2 entries"]
