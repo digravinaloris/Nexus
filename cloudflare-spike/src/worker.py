@@ -273,9 +273,7 @@ def batch_rollback():
 
 def _test_encryption_key() -> bytes:
     """Read the disposable key supplied by the local smoke workflow only."""
-    raw_key = request.environ["workers.env"].SPIKE_TEST_ENCRYPTION_KEY
-    if not isinstance(raw_key, str):
-        raise RuntimeError("local test encryption key is missing")
+    raw_key = str(request.environ["workers.env"].SPIKE_TEST_ENCRYPTION_KEY)
     try:
         key = bytes.fromhex(raw_key)
     except ValueError as exc:
