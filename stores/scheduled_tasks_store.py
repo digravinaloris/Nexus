@@ -3,7 +3,7 @@ from nexus_runtime.core import col
 
 
 def create_announcement(guild_id, channel_id, content, send_at, author_id):
-    return col.scheduled_announcements.insert_one({
+    return col.scheduled.insert_one({
         "guild_id": str(guild_id),
         "channel_id": str(channel_id),
         "content": content,
@@ -14,13 +14,13 @@ def create_announcement(guild_id, channel_id, content, send_at, author_id):
 
 
 def get_due_announcements(now):
-    return list(col.scheduled_announcements.find({
+    return list(col.scheduled.find({
         "sent": False, "send_at": {"$lte": now},
     }))
 
 
 def mark_announcement_sent(announcement_id):
-    return col.scheduled_announcements.update_one(
+    return col.scheduled.update_one(
         {"_id": announcement_id}, {"$set": {"sent": True}},
     )
 
