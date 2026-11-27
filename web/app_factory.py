@@ -39,8 +39,8 @@ def create_web_app(
     root_dir = Path(__file__).resolve().parent.parent
     app = Flask(
         "",
-        template_folder=template_folder or str(root_dir / "templates",
-    ))
+        template_folder=template_folder or str(root_dir / "templates"),
+    )
     app.config.update(
         SECRET_KEY=runtime_env.get("FLASK_SECRET_KEY"),
         SESSION_COOKIE_SECURE=True,
