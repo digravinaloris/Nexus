@@ -79,7 +79,7 @@ def _post(client, args, nonce):
 def test_signed_dispatch_returns_bounded_guild_stats():
     client, service = _client(VALID_STATS)
 
-    response = _post(client, ["123", "456"], "a" * 24)
+    response = _post(client, ["123", 456], "a" * 24)
 
     assert response.status_code == 200
     assert response.get_json() == {"ok": True, "result": VALID_STATS}
