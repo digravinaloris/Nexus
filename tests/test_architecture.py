@@ -17,14 +17,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _python_files():
     files = []
-    for pattern in ("*.py", "web/**/*.py", "cogs/**/*.py"):
-        files.extend(glob.glob(os.path.join(ROOT, pattern), recursive=True))
+    for path in glob.glob(os.path.join(ROOT, "**", "*.py"), recursive=True):
+        relative = os.path.relpath(path, ROOT).replace(os.sep, "/")
+        if relative.startswith("tests/"):
+            continue
+        files.append(path)
     return sorted(f for f in files if os.path.basename(f) != "main.py")
 
 
 def test_scan_finds_the_modules():
     names = {os.path.relpath(f, ROOT).replace(os.sep, "/") for f in _python_files()}
-    assert {"core.py", "audit.py", "web/rest_api.py", "bridge.py"} <= names
+    assert {"nexus_runtime/core.py", "core.py", "audit.py", "web/rest_api.py", "bridge.py"} <= names
 
 
 @pytest.mark.parametrize("path", _python_files(), ids=lambda p: os.path.relpath(p, ROOT))
