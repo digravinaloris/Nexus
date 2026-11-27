@@ -1,7 +1,7 @@
 """Signed HTTP client for the opt-in internal Nexus BotService endpoint.
 
-The first transport method is deliberately read-only. Additional BotService
-methods must be added explicitly alongside endpoint allowlisting and DTO tests.
+Only explicit read-only BotService snapshots are transported. Additional
+methods must be added alongside endpoint allowlisting and DTO tests.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ class BotServiceTransportError(RuntimeError):
 
 
 class SignedHttpBotService(BotService):
-    """Minimal remote BotService adapter; only health_snapshot is transported."""
+    """Partial remote BotService adapter for allowlisted read-only snapshots."""
 
     def __init__(
         self,
@@ -65,9 +65,11 @@ class SignedHttpBotService(BotService):
         self._session = session if session is not None else requests.Session()
         self._timeout = float(timeout)
 
-    def health_snapshot(self):
+    def _dispatch_snapshot(self, method: str):
+        if method not in {"health_snapshot", "public_status_snapshot"}:
+            raise ValueError("Unsupported internal BotService operation")
         body = json.dumps(
-            {"method": "health_snapshot", "args": [], "kwargs": {}},
+            {"method": method, "args": [], "kwargs": {}},
             separators=(",", ":"),
             ensure_ascii=True,
         ).encode("utf-8")
@@ -144,3 +146,10 @@ class SignedHttpBotService(BotService):
                 "Internal BotService returned an invalid response"
             )
         return payload["result"]
+
+
+    def health_snapshot(self):
+        return self._dispatch_snapshot("health_snapshot")
+
+    def public_status_snapshot(self):
+        return self._dispatch_snapshot("public_status_snapshot")
