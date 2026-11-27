@@ -77,7 +77,7 @@ def test_payload_limit_returns_413():
     assert response.status_code == 413
 
 
-def test_unknown_length_payload_read_is_bounded():
+def test_unknown_length_payload_read_is_bounded(monkeypatch):
 
     class TrackingStream(io.BytesIO):
         requested_size = None
