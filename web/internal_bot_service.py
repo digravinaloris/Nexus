@@ -197,7 +197,7 @@ def create_internal_bot_service_blueprint(
                 return jsonify({"error": "internal service unavailable"}), 503
             if method_name in {"api_guild_id_candidates", "available_guild_ids"} and (
                 not isinstance(result, list)
-                or len(result) > 500
+                or len(result) > (2000 if method_name == "api_guild_id_candidates" else 500)
                 or not all(
                     isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value)
                     for value in result
