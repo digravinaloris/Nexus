@@ -8,6 +8,7 @@ from web.bot_service_signing import (
     HEADER_SIGNATURE,
     HEADER_TIMESTAMP,
     MAX_BODY_BYTES,
+    parse_hmac_keyring,
     sign_internal_request,
     verify_internal_request,
 )
@@ -209,3 +210,25 @@ def test_signer_generates_nonce_and_verifier_returns_it():
     )
     assert claims.nonce == headers[HEADER_NONCE]
     assert len(claims.nonce) >= 24
+
+
+def test_parse_hmac_keyring_accepts_one_or_two_valid_versioned_keys():
+    raw = json.dumps({"current": SECRET.hex(), "previous": OLD_SECRET.hex()})
+    assert parse_hmac_keyring(raw) == {"current": SECRET, "previous": OLD_SECRET}
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "not-json",
+        "[]",
+        "{}",
+        json.dumps({"current": "abcd"}),
+        json.dumps({"bad key id": SECRET.hex()}),
+        json.dumps({"one": SECRET.hex(), "two": OLD_SECRET.hex(), "three": SECRET.hex()}),
+    ],
+)
+def test_parse_hmac_keyring_rejects_malformed_or_weak_configuration(raw):
+    with pytest.raises(ValueError):
+        parse_hmac_keyring(raw)
