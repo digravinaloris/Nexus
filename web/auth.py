@@ -69,6 +69,18 @@ ADMINISTRATOR_PERM = 0x8
 GUILD_ID_RE = re.compile(r"^\d{17,20}$")  # valide un vrai snowflake Discord
 
 
+def _session_backend_action(action):
+    """Invoke an optional lifecycle hook on an injected server-side session backend.
+
+    Flask's default signed-cookie interface intentionally has no such hooks.
+    A durable backend can implement rotate_session(session) and
+    revoke_session(session) to invalidate opaque IDs at the storage layer.
+    """
+    callback = getattr(current_app.session_interface, action, None)
+    if callable(callback):
+        callback(session)
+
+
 def dash_login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -81,6 +93,7 @@ def dash_login_required(f):
             or not math.isfinite(expires_at)
             or time.time() >= expires_at
         ):
+            _session_backend_action("revoke_session")
             session.clear()
             return redirect(url_for("dash_login"))
         return f(*args, **kwargs)
@@ -108,6 +121,7 @@ def get_user_admin_guilds():
         return None
 
     if response.status_code == 401:
+        _session_backend_action("revoke_session")
         session.clear()
         return None
     if response.status_code != 200:
@@ -287,6 +301,11 @@ def dash_callback():
     except (OAuthTransportError, ValueError):
         return jsonify({"error": "Discord authentication is temporarily unavailable"}), 502
 
+    # Rotate any pre-authentication identifier only after both OAuth exchange
+    # and identity lookup succeed. Server-side backends must invalidate the old
+    # opaque ID before persisting the authenticated session.
+    _session_backend_action("rotate_session")
+
     # Store credentials only after both OAuth exchange and identity lookup succeed.
     session["access_token"] = access_token
     session["token_expires_at"] = time.time() + min(expires_in, 60 * 60 * 24)
@@ -308,5 +327,6 @@ def dash_logout():
         or not secrets.compare_digest(token, expected)
     ):
         return jsonify({"error": "Invalid CSRF token"}), 403
+    _session_backend_action("revoke_session")
     session.clear()
     return redirect(url_for("dash_login"))

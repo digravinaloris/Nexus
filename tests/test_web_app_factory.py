@@ -473,3 +473,81 @@ def test_oauth_callback_keeps_discord_credentials_in_injected_session_backend():
     assert "oauth_state" not in backend.session
     assert "oauth_code_verifier" not in backend.session
     assert backend.saved == 1
+
+
+def test_server_session_backend_rotates_after_successful_oauth_and_revokes_on_logout():
+    import time
+    from flask.sessions import SessionInterface, SessionMixin
+
+    class BackendSession(dict, SessionMixin):
+        new = False
+        modified = False
+        accessed = False
+
+    class FakeSessionInterface(SessionInterface):
+        def __init__(self):
+            self.session = BackendSession(
+                oauth_state="pre-auth-state",
+                oauth_state_created_at=time.time(),
+                oauth_code_verifier="A" * 43,
+            )
+            self.rotations = 0
+            self.revocations = 0
+
+        def open_session(self, app, request):
+            return self.session
+
+        def save_session(self, app, session, response):
+            pass
+
+        def rotate_session(self, session):
+            assert dict(session) == dict(self.session)
+            self.rotations += 1
+
+        def revoke_session(self, session):
+            assert dict(session) == dict(self.session)
+            self.revocations += 1
+
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class FakeDiscordHttpClient:
+        def post(self, url, **kwargs):
+            return FakeResponse(200, {
+                "access_token": "server-only-access-token",
+                "expires_in": 3600,
+            })
+
+        def get(self, url, **kwargs):
+            return FakeResponse(200, {
+                "id": "123456789012345678",
+                "username": "session-lifecycle-user",
+            })
+
+    backend = FakeSessionInterface()
+    app = _create_app(
+        _config(DISCORD_HTTP_CLIENT=FakeDiscordHttpClient()),
+        session_interface=backend,
+    )
+    client = app.test_client()
+
+    response = client.get(
+        "/callback?code=valid-authorization-code&state=pre-auth-state"
+    )
+    assert response.status_code == 302
+    assert backend.rotations == 1
+    assert backend.revocations == 0
+    assert backend.session["access_token"] == "server-only-access-token"
+    assert "Set-Cookie" not in response.headers
+
+    csrf_token = backend.session["csrf_token"]
+    response = client.post("/logout", data={"csrf_token": csrf_token})
+    assert response.status_code == 302
+    assert backend.revocations == 1
+    assert not backend.session
+    assert "Set-Cookie" not in response.headers
