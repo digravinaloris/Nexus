@@ -14,7 +14,7 @@ from pyodide.ffi import run_sync
 from workers import wsgi
 
 from crypto import aes_gcm_decrypt, aes_gcm_encrypt, sha256 as webcrypto_sha256
-from d1_session_interface import D1SessionInterface
+from d1_session_interface import D1SessionInterface, SessionStorageUnavailable
 from bot_service_client import (
     CloudflareBotServiceError,
     CloudflareFetchBotService,
@@ -47,6 +47,11 @@ app.session_interface = D1SessionInterface(
 def reject_unavailable_session_storage():
     if getattr(session, "unavailable", False):
         return jsonify({"error": "session storage unavailable"}), 503
+
+
+@app.errorhandler(SessionStorageUnavailable)
+def handle_session_storage_unavailable(_error):
+    return jsonify({"error": "session storage unavailable"}), 503
 
 
 def _digest(value: str) -> str:
