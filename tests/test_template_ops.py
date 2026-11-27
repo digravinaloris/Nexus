@@ -1,4 +1,4 @@
-import template_ops
+import services.template_ops as template_ops
 
 
 def test_template_apply_updates_only_whitelisted_configuration(monkeypatch):
