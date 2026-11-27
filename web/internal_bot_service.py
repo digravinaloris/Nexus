@@ -131,23 +131,34 @@ def create_internal_bot_service_blueprint(
             "health_snapshot": (getattr(service, "health_snapshot", None), []),
             "public_status_snapshot": (getattr(service, "public_status_snapshot", None), []),
         }
-        if method_name == "is_guild_owner":
-            valid_ids = (
-                len(args) == 2
-                and all(
-                    isinstance(value, str)
-                    and re.fullmatch(r"[0-9]{1,20}", value)
-                    for value in args
-                )
-            )
-            if not valid_ids:
+        def valid_guild_id(value):
+            return isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) is not None
+
+        if method_name in {"is_guild_owner", "is_guild_admin"}:
+            if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
-            operations[method_name] = (getattr(service, "is_guild_owner", None), args)
-        elif method_name == "is_guild_admin":
-            valid_ids = len(args) == 2 and all(isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) for value in args)
-            if not valid_ids:
+            operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name in {"guild_presence", "guild_name"}:
+            if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
-            operations[method_name] = (getattr(service, "is_guild_admin", None), args)
+            operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name in {"api_health_snapshot", "api_guild_list_snapshot"}:
+            if len(args) > 1 or (args and not valid_guild_id(args[0])):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "api_guild_id_candidates":
+            if args != []:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "available_guild_ids":
+            if (
+                len(args) != 1
+                or not isinstance(args[0], list)
+                or len(args[0]) > 500
+                or not all(valid_guild_id(value) for value in args[0])
+            ):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif args != []:
             return jsonify({"error": "unsupported internal operation"}), 403
 
@@ -173,6 +184,36 @@ def create_internal_bot_service_blueprint(
         try:
             result = operation(*operation_args)
             if method_name in {"is_guild_owner", "is_guild_admin"} and not isinstance(result, bool):
+                return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "guild_presence" and (
+                not isinstance(result, dict)
+                or set(result) != {"bot_ready", "guild_present"}
+                or any(not isinstance(value, bool) for value in result.values())
+            ):
+                return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "guild_name" and (
+                not isinstance(result, str) or not result or len(result) > 256
+            ):
+                return jsonify({"error": "internal service unavailable"}), 503
+            if method_name in {"api_guild_id_candidates", "available_guild_ids"} and (
+                not isinstance(result, list)
+                or len(result) > 500
+                or not all(
+                    isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value)
+                    for value in result
+                )
+            ):
+                return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_health_snapshot" and not isinstance(result, dict):
+                return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_guild_list_snapshot" and (
+                result is not None
+                and (
+                    not isinstance(result, list)
+                    or len(result) > 500
+                    or not all(isinstance(value, dict) for value in result)
+                )
+            ):
                 return jsonify({"error": "internal service unavailable"}), 503
             return jsonify({"ok": True, "result": result})
         except Exception:
