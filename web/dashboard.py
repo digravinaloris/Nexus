@@ -53,17 +53,13 @@ def dash_set_lang(lang_code):
     return redirect(_safe_next_url(url_for("dash_home")))
 
 
-_dashboard_presence = {}  # {guild_id: {user_id: (name, last_seen_epoch)}}
-_PRESENCE_TTL_SECONDS = 25  # un peu plus que l'intervalle de ping JS (10s) côté client
-
-
 @routes.route("/dashboard/<guild_id>/presence/ping", methods=["POST"])
 @dash_login_required
 @dash_guild_admin_required
 def dash_presence_ping(guild_id):
     user = session.get("dash_user") or {}
     name = user.get("global_name") or user.get("username") or "?"
-    _dashboard_presence.setdefault(guild_id, {})[user.get("id")] = (name, time.time())
+    get_bot_service().dashboard_presence_ping(guild_id, user.get("id"), name)
     return jsonify({"ok": True})
 
 
@@ -71,10 +67,7 @@ def dash_presence_ping(guild_id):
 @dash_login_required
 @dash_guild_admin_required
 def dash_presence_who(guild_id):
-    now = time.time()
-    entries = _dashboard_presence.get(guild_id, {})
-    active = [name for name, last_seen in entries.values() if now - last_seen < _PRESENCE_TTL_SECONDS]
-    return jsonify({"viewers": active})
+    return jsonify({"viewers": get_bot_service().dashboard_presence_viewers(guild_id)})
 
 
 # Valeurs par défaut utilisées à l'AFFICHAGE : le snapshot de configuration ne remplit les
