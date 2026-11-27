@@ -43,7 +43,7 @@ from audit import record_audit, build_sparkline_svg, get_audit_log
 from i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
 )
-from features import FEATURE_TOGGLES
+from catalogs.features import FEATURE_TOGGLES
 from services.bridge import run_coroutine
 from services.discord_logging import get_or_create_log_webhook, _send_log_embed, log_dashboard_action
 from services.moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTION_ICONS, post_appeal_for_review
@@ -51,7 +51,7 @@ from services.owner_notify import get_owner_user, notify_owner_killswitch, notif
 from web.app_factory import create_web_app
 from verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
                           account_days_left, kick_pass, SETTINGS_LIMITS)
-from command_catalog import MODERATION_COMMANDS, COMMAND_TEMPLATES
+from catalogs.commands import MODERATION_COMMANDS, COMMAND_TEMPLATES
 from audit_export import _get_audit_records, _build_audit_csv_bytes
 from template_ops import _apply_template_base_config
 from nexus_logging.jsonlog import log_json
