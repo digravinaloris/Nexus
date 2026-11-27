@@ -49,7 +49,7 @@ from services.discord_logging import get_or_create_log_webhook, _send_log_embed,
 from services.moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTION_ICONS, post_appeal_for_review
 from services.owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
 from web.app_factory import create_web_app
-from verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
+from security.verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
                           account_days_left, kick_pass, SETTINGS_LIMITS)
 from catalogs.commands import MODERATION_COMMANDS, COMMAND_TEMPLATES
 from audit_export import _get_audit_records, _build_audit_csv_bytes
