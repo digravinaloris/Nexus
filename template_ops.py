@@ -7,14 +7,43 @@ from config_store import update_config
 from features import FEATURE_TOGGLES
 
 
+TEMPLATE_AUTOMOD_KEYS = frozenset({
+    "banned_words",
+    "banned_domains",
+    "automod_spam_count",
+    "automod_spam_window",
+    "automod_caps_ratio",
+    "automod_raid_count",
+    "automod_raid_window",
+})
+
+
 def _apply_template_base_config(guild_id, snapshot):
-    """Applique la partie 100% portable (toggles/automod/warn escalation) --
-    jamais les rôles, qui ont toujours besoin d'un remapping explicite.
-    Partagé par /template load (Discord) et l'import depuis la marketplace web."""
-    for key, enabled in snapshot.get("feature_toggles", {}).items():
-        if key in FEATURE_TOGGLES:
-            update_config(guild_id, FEATURE_TOGGLES[key]["config_key"], enabled)
-    for key, value in snapshot.get("automod", {}).items():
-        if value is not None:
-            update_config(guild_id, key, value)
-    update_config(guild_id, "warn_escalation_enabled", snapshot.get("warn_escalation_enabled", False))
+    """Apply only the portable, explicitly supported part of a template.
+
+    Template documents are persisted data, so never use arbitrary keys from
+    their payload as configuration paths.
+    """
+    if not isinstance(snapshot, dict):
+        return
+
+    feature_toggles = snapshot.get("feature_toggles", {})
+    if isinstance(feature_toggles, dict):
+        for key, enabled in feature_toggles.items():
+            if key in FEATURE_TOGGLES and isinstance(enabled, bool):
+                update_config(guild_id, FEATURE_TOGGLES[key]["config_key"], enabled)
+
+    automod = snapshot.get("automod", {})
+    if isinstance(automod, dict):
+        for key, value in automod.items():
+            if key not in TEMPLATE_AUTOMOD_KEYS or value is None:
+                continue
+            if key in {"banned_words", "banned_domains"}:
+                if isinstance(value, list) and all(isinstance(item, str) for item in value):
+                    update_config(guild_id, key, value)
+            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                update_config(guild_id, key, value)
+
+    warn_escalation_enabled = snapshot.get("warn_escalation_enabled", False)
+    if isinstance(warn_escalation_enabled, bool):
+        update_config(guild_id, "warn_escalation_enabled", warn_escalation_enabled)
