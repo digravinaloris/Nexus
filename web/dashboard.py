@@ -270,13 +270,12 @@ def dash_calendar_page(guild_id):
             flash(("Event created and announced." if sent else "Event saved; announcement could not be sent.") if current_lang() == "en"
                   else ("Événement créé et annoncé." if sent else "Événement enregistré, annonce non envoyée."), "calendar")
         elif action == "delete":
-            from bson import ObjectId
-            raw_id = request.form.get("event_id", "")
-            try:
-                oid = ObjectId(raw_id)
-            except Exception:
-                oid = None
-            deleted = get_bot_service().dashboard_calendar_delete_event(guild_id, oid) if oid else False
+            raw_id = request.form.get("event_id", "").strip()
+            deleted = (
+                get_bot_service().dashboard_calendar_delete_event(guild_id, raw_id)
+                if len(raw_id) == 24 and all(char in "0123456789abcdefABCDEF" for char in raw_id)
+                else False
+            )
             if deleted:
                 dash_log_action(guild_id, "Deleted calendar event", raw_id)
                 flash("Event deleted." if current_lang() == "en" else "Événement supprimé.", "calendar")
