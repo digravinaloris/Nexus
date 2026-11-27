@@ -426,6 +426,8 @@ def dash_template_import(guild_id, code):
 
     snapshot = doc.get("snapshot") or {}
     try:
+        if not isinstance(snapshot, dict):
+            raise ValueError("invalid template snapshot")
         command_roles_by_name = snapshot.get("command_roles_by_name", {})
         distinct_names = get_template_role_names(command_roles_by_name)
     except ValueError:
