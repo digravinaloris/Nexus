@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 
-def _create_app(config, bot_service=None):
+def _create_app(config, bot_service=None, **kwargs):
     # Import after test modules have populated their OAuth environment defaults.
     from web.app_factory import create_web_app
 
-    return create_web_app(config=config, bot_service=bot_service)
+    return create_web_app(config=config, bot_service=bot_service, **kwargs)
 
 
 def _config(**overrides):
@@ -79,6 +79,60 @@ def test_factory_injects_bot_service_per_app_without_global_leakage():
         assert get_bot_service() is first_service
     with second_app.app_context():
         assert get_bot_service() is second_service
+
+
+
+def test_internal_dispatch_registration_is_explicit_and_all_or_nothing():
+    from web.app_factory import create_web_app
+    from web.bot_service_signing import sign_internal_request
+
+    default_app = _create_app(_config())
+    assert "/internal/v1/dispatch" not in {
+        rule.rule for rule in default_app.url_map.iter_rules()
+    }
+
+    class FakeBotService:
+        def health_snapshot(self):
+            return {"bot": "online"}
+
+    class FakeNonceStore:
+        def __init__(self):
+            self.seen = set()
+
+        def consume(self, key_id, nonce, expires_at):
+            marker = (key_id, nonce)
+            if marker in self.seen:
+                return False
+            self.seen.add(marker)
+            return True
+
+    secret = b"app-factory-internal-key-material-32-bytes"
+    app = create_web_app(
+        config=_config(),
+        internal_bot_service=FakeBotService(),
+        internal_bot_service_keyring={"test": secret},
+        internal_nonce_store=FakeNonceStore(),
+    )
+    body = b'{"method":"health_snapshot","args":[],"kwargs":{}}'
+    headers = sign_internal_request(
+        secret=secret,
+        key_id="test",
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+    )
+    headers["Content-Type"] = "application/json"
+    response = app.test_client().post(
+        "/internal/v1/dispatch", data=body, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.get_json()["result"] == {"bot": "online"}
+
+    with pytest.raises(ValueError, match="requires a service, keyring, and nonce store"):
+        create_web_app(
+            config=_config(),
+            internal_bot_service=FakeBotService(),
+        )
 
 
 def test_factory_requires_a_secret_key():
