@@ -291,7 +291,13 @@ class BotService:
         raise NotImplementedError
 
 
+_service_instance: Optional[BotService] = None
+
+
 def get_bot_service() -> BotService:
-    """Return the active adapter; import the in-process runtime only on demand."""
-    from web.in_process_bot_service import InProcessBotService
-    return InProcessBotService()
+    """Return the lazily created process-wide adapter instance."""
+    global _service_instance
+    if _service_instance is None:
+        from web.in_process_bot_service import InProcessBotService
+        _service_instance = InProcessBotService()
+    return _service_instance
