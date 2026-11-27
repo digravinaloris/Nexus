@@ -1,4 +1,7 @@
 """Persistence helpers for the email/TOTP global kill-switch tokens."""
+import datetime
+import secrets
+
 from pymongo import ReturnDocument
 
 from nexus_runtime.core import col
@@ -26,3 +29,18 @@ def mark_killswitch_token_used(token):
         return_document=ReturnDocument.AFTER,
     )
     return doc is not None
+
+
+
+def create_killswitch_token():
+    """Create a cryptographically random token valid for 30 minutes."""
+    token = secrets.token_urlsafe(32)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    col.killswitch_tokens.insert_one({
+        "token": token,
+        "created_at": now,
+        "expires_at": now + datetime.timedelta(minutes=30),
+        "used": False,
+        "attempts": 0,
+    })
+    return token

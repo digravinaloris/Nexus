@@ -184,6 +184,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     from stores import role_menu_store
     from stores import invite_tracking_store
     from stores import template_store
+    from stores import killswitch_store
     from services import automod_checks
     from services import server_backups
 
@@ -214,6 +215,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     assert nexus.template_code_exists is template_store.template_code_exists
     assert nexus.create_template is template_store.create_template
     assert nexus.get_template_by_code is template_store.get_template_by_code
+    assert nexus.create_killswitch_token is killswitch_store.create_killswitch_token
     assert nexus.save_reaction_role is reaction_roles_store.save_reaction_role
     assert nexus.get_reaction_role is reaction_roles_store.get_reaction_role
     assert nexus.delete_reaction_roles is reaction_roles_store.delete_reaction_roles
