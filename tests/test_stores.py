@@ -423,10 +423,16 @@ def test_tempban_store_lifecycle_and_sanction_history(mongo_db):
     assert len(active) == 1
     assert active[0]["unban_at"] == unban_at
 
-    sanctions_store.log_sanction(1, 42, "warn", "first", 7)
-    sanctions_store.log_sanction(1, 42, "ban", "second", 7)
-    history = sanctions_store.get_sanction_history(1, 42)
-    assert [entry["type"] for entry in history] == ["ban", "warn"]
-
     sanctions_store.remove_tempban(1, 42)
     assert sanctions_store.get_active_tempbans() == []
+
+    first = datetime.datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
+    core.col.sanctions.insert_one({
+        "guild_id": "1", "user_id": "42", "type": "warn", "timestamp": first,
+    })
+    core.col.sanctions.insert_one({
+        "guild_id": "1", "user_id": "42", "type": "ban",
+        "timestamp": first + datetime.timedelta(seconds=1),
+    })
+    history = sanctions_store.get_sanction_history(1, 42)
+    assert [entry["type"] for entry in history] == ["ban", "warn"]
