@@ -321,6 +321,7 @@ def test_killswitch_wrong_code_counts_attempts_then_dies(env, monkeypatch):
 
 def test_killswitch_no_totp_secret_never_validates(env, monkeypatch):
     monkeypatch.delenv("TOTP_SECRET", raising=False)
+    monkeypatch.setitem(env.nexus.api.config, "TOTP_SECRET", "")
     _token(env)
     env.client.post("/admin/kill-switch/tok", data={"code": "123456"})
     from config_store import get_global_lock
@@ -330,7 +331,7 @@ def test_killswitch_no_totp_secret_never_validates(env, monkeypatch):
 
 def test_killswitch_correct_code_toggles_global_lock_once(env, monkeypatch):
     secret = pyotp.random_base32()
-    monkeypatch.setenv("TOTP_SECRET", secret)
+    monkeypatch.setitem(env.nexus.api.config, "TOTP_SECRET", secret)
     _token(env)
     code = pyotp.TOTP(secret).now()
     resp = env.client.post("/admin/kill-switch/tok", data={"code": code})
