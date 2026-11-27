@@ -19,8 +19,8 @@ from stores.killswitch_store import get_killswitch_token, increment_killswitch_a
 from security.verification import get_valid_challenge, mark_used, record_failed_attempt
 from config_store import add_command_role, get_config, get_global_lock, remove_command_role, set_global_lock, update_config, update_config_fields
 from faq_store import add_faq_entry, get_faq, remove_faq_entry, set_faq_enabled
-from audit import get_audit_log, record_audit
-from audit_export import _get_audit_records
+from audit_services.audit import get_audit_log, record_audit
+from audit_services.export import _get_audit_records
 from services.bridge import run_coroutine
 from services.discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
 from sanctions_store import claim_sanction_appeal, get_ban_appeal, get_dashboard_warning_counts, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns, submit_ban_appeal
