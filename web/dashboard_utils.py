@@ -1,6 +1,6 @@
 """Pure validation helpers for dashboard form data."""
 
-from utils import parse_bounded_number
+from helpers.utils import parse_bounded_number
 
 
 def read_bounded_form_numbers(values, fields):

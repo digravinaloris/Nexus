@@ -5,7 +5,7 @@ Extrait de main.py (étape 2b-2b).
 """
 import math
 
-from config_store import update_config
+from stores.config_store import update_config
 from catalogs.features import FEATURE_TOGGLES
 
 

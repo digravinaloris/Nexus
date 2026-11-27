@@ -1,5 +1,5 @@
 """FAQ persistence helpers shared by REST routes and bot FAQ commands."""
-from core import col
+from nexus_runtime.core import col
 
 
 def get_faq(guild_id):

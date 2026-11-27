@@ -20,8 +20,8 @@ import discord
 import requests  # compatibility alias for existing verification tests/callers
 from pymongo import ReturnDocument
 
-from config_store import get_config
-from core import col
+from stores.config_store import get_config
+from nexus_runtime.core import col
 from services.discord_logging import _send_log_embed
 from nexus_logging.jsonlog import log_json
 from stores.sanctions_store import log_sanction

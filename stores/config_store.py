@@ -4,7 +4,7 @@ Extrait de main.py (étape 2a). N'importe JAMAIS main.py : les collections
 viennent de `core.col`. main.py ré-importe ces noms, donc tout le code existant
 (`get_config(...)`, `update_config(...)`) marche sans modification.
 """
-from core import col
+from nexus_runtime.core import col
 
 
 def get_config(guild_id):

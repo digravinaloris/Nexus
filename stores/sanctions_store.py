@@ -8,7 +8,7 @@ import datetime
 
 from pymongo import ReturnDocument
 
-from core import col
+from nexus_runtime.core import col
 
 
 def get_warns(guild_id, user_id):

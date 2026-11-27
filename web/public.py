@@ -11,7 +11,7 @@ import time
 from flask import current_app, jsonify, render_template, request, send_from_directory
 import pyotp
 
-import utils
+from helpers import utils
 from web.bot_service import get_bot_service
 from web.routing import Routes
 
