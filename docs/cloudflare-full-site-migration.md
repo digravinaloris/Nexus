@@ -114,9 +114,10 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 - [x] FAQ persistence shared between REST endpoints and Discord cog through a dedicated store.
 - [x] Dashboard sanction and FAQ persistence/query paths have begun using dedicated stores (PRs #117–#119 merged and green).
 - [x] Dashboard and public/verification/OAuth/webhook route modules use the transport-neutral `BotService` interface rather than importing bot runtime modules.
+- [x] Dashboard viewer heartbeats now cross the `BotService` contract instead of being stored in the dashboard route module (PR #189; CI green). The current in-process adapter still uses process memory, so this is a boundary refactor—not durable multi-isolate storage.
 - [x] Dashboard calendar event IDs cross the service boundary as strings; BSON parsing is confined to the calendar persistence layer (PR #178 merged).
 - [x] Architecture CI guard rejects direct BSON imports from web route modules (PR #179 merged).
-- [x] REST API hardening: generic internal-error responses (PR #176), bounded API-key header length (PR #175), and oversized request-body rejection (PR #177).
+- [x] REST API hardening: generic internal-error responses for handled operations (PR #176), bounded API-key header length (PR #175), oversized request-body rejection (PR #177), and a blueprint-level fallback for unexpected exceptions while preserving HTTP exceptions (PR #190; PR and main CI green).
 
 ### Remaining migration work — priority order
 
