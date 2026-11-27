@@ -40,7 +40,7 @@ from sanctions_store import (
     get_sanction_stats,
 )
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
-from i18n import (
+from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
 )
 from catalogs.features import FEATURE_TOGGLES

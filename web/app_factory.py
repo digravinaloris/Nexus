@@ -8,7 +8,7 @@ from typing import Mapping, Optional
 
 from flask import Flask, request
 
-from i18n import current_lang, current_theme, t
+from localization.i18n import current_lang, current_theme, t
 from web import auth as web_auth
 from web import dashboard as web_dashboard
 from web import github_webhook
