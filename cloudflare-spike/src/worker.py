@@ -61,8 +61,9 @@ def setup_schema():
     """
     try:
         _await(_db().exec(schema))
-    except Exception:
-        return jsonify({"error": "local D1 setup failed"}), 503
+    except Exception as exc:
+        print(f"Local D1 schema setup failed: {type(exc).__name__}: {exc}", flush=True)
+        return jsonify({"error": "local D1 setup failed", "cause": type(exc).__name__}), 503
     return jsonify({"ready": True})
 
 
