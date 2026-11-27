@@ -50,6 +50,7 @@ from stores.scheduled_tasks_store import (
     create_reminder, get_due_reminders, mark_reminder_sent,
 )
 from stores.quarantine_store import create_quarantine_entry, get_pending_quarantine_reviews, mark_quarantine_reminded
+from stores.role_menu_store import save_role_menu, get_role_menu
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
@@ -1721,12 +1722,7 @@ async def config_rolemenu_post(interaction: discord.Interaction, channel: discor
         await interaction.response.send_message(f"❌ Couldn't post the menu: {e}", ephemeral=True)
         return
 
-    role_menus_col.insert_one({
-        "guild_id": str(interaction.guild_id),
-        "message_id": str(message.id),
-        "channel_id": str(channel.id),
-        "items": items,
-    })
+    save_role_menu(interaction.guild_id, message.id, channel.id, items)
     update_config(interaction.guild_id, "pending_role_menu_items", [])
     await interaction.response.send_message(f"✅ Role menu posted in {channel.mention}.", ephemeral=True)
 
@@ -3593,10 +3589,6 @@ class PaginatedEmbedView(discord.ui.View):
         self.page += 1
         self._update_buttons()
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
-
-
-def get_role_menu(message_id):
-    return role_menus_col.find_one({"message_id": str(message_id)})
 
 
 class RoleMenuSelect(discord.ui.Select):

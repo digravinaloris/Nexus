@@ -556,3 +556,19 @@ def test_quarantine_store_lifecycle_and_reminder_flag(mongo_db):
     assert pending[0]["user_id"] == "42"
     quarantine_store.mark_quarantine_reminded(entry_id)
     assert quarantine_store.get_pending_quarantine_reviews() == []
+
+
+# ------------------------------------------------ role menu persistence
+
+def test_role_menu_store_roundtrip(mongo_db):
+    from stores import role_menu_store
+
+    items = [{"label": "Updates", "role_id": 123}]
+    role_menu_store.save_role_menu(1, 456, 789, items)
+    menu = role_menu_store.get_role_menu(456)
+
+    assert menu["guild_id"] == "1"
+    assert menu["message_id"] == "456"
+    assert menu["channel_id"] == "789"
+    assert menu["items"] == items
+    assert role_menu_store.get_role_menu(999) is None
