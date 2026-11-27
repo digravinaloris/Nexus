@@ -1523,3 +1523,16 @@ def test_dashboard_settings_snapshot_fails_closed_when_guild_unavailable(monkeyp
 
     monkeypatch.setattr(core, "bot", ReadyBot())
     assert service.dashboard_settings_snapshot("123") is None
+
+
+
+def test_get_bot_service_uses_lazy_adapter_factory(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from web.bot_service import get_bot_service
+
+    class FakeService:
+        pass
+
+    monkeypatch.setitem(sys.modules, "web.in_process_bot_service", SimpleNamespace(InProcessBotService=FakeService))
+    assert isinstance(get_bot_service(), FakeService)
