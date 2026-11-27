@@ -1,8 +1,6 @@
 """Unit tests for runtime-free OAuth validation helpers."""
-import datetime
 import hashlib
 import base64
-import math
 
 from web.oauth_utils import (
     create_code_challenge,
@@ -43,6 +41,6 @@ def test_code_verifier_format():
 
 
 def test_authorization_code_rejects_control_characters_and_spaces():
-    for value in ("bad code", "bad\\ncode", "bad\\x7fcode", "x" * 2049):
+    for value in ("bad code", "bad\ncode", "bad\x7fcode", "", "x" * 2049):
         assert not is_valid_oauth_code(value)
     assert is_valid_oauth_code("authorization-code_123")
