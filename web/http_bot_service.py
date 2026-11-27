@@ -85,10 +85,17 @@ class SignedHttpBotService(BotService):
             "api_roles_snapshot": 1,
             "api_faq_snapshot": 1,
             "api_members_snapshot": 1,
+            "api_guild_list_snapshot": (0, 1),
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
-        if not isinstance(args, (list, tuple)) or len(args) != allowed_argument_counts[method]:
+        expected_counts = allowed_argument_counts[method]
+        valid_count = (
+            len(args) in expected_counts
+            if isinstance(expected_counts, tuple)
+            else len(args) == expected_counts
+        )
+        if not isinstance(args, (list, tuple)) or not valid_count:
             raise ValueError("Invalid internal BotService arguments")
         if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
@@ -245,6 +252,32 @@ class SignedHttpBotService(BotService):
                 )
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "api_guild_list_snapshot":
+            if result is not None and (
+                not isinstance(result, list)
+                or len(result) > 500
+                or not all(
+                    isinstance(guild, dict)
+                    and set(guild) == {"id", "name", "member_count", "icon_url"}
+                    and self._valid_guild_id(guild["id"])
+                    and isinstance(guild["name"], str)
+                    and 1 <= len(guild["name"]) <= 100
+                    and (
+                        guild["member_count"] is None
+                        or (type(guild["member_count"]) is int and guild["member_count"] >= 0)
+                    )
+                    and (
+                        guild["icon_url"] is None
+                        or (
+                            isinstance(guild["icon_url"], str)
+                            and len(guild["icon_url"]) <= 2048
+                            and guild["icon_url"].startswith("https://cdn.discordapp.com/icons/")
+                        )
+                    )
+                    for guild in result
+                )
+            ):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
         return result
 
     def health_snapshot(self):
@@ -270,3 +303,9 @@ class SignedHttpBotService(BotService):
 
     def api_members_snapshot(self, guild_id: str):
         return self._dispatch_snapshot("api_members_snapshot", (guild_id,))
+
+    def api_guild_list_snapshot(self, guild_id: str = None):
+        args = () if guild_id is None else (guild_id,)
+        if guild_id is not None and not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        return self._dispatch_snapshot("api_guild_list_snapshot", args)
