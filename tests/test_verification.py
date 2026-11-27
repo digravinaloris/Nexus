@@ -252,7 +252,7 @@ def test_three_failures_kill_the_link(vguild, keys, monkeypatch):
     assert vguild.vguild.member.calls == []  # personne n'a été vérifié
 
 
-def test_submit_uses_app_injected_turnstile_http_client(vguild, keys):
+def test_submit_uses_app_injected_turnstile_http_client(vguild, keys, monkeypatch):
     calls = []
 
     class InjectedClient:
@@ -260,7 +260,7 @@ def test_submit_uses_app_injected_turnstile_http_client(vguild, keys):
             calls.append({"url": url, "data": data, "timeout": timeout})
             return types.SimpleNamespace(json=lambda: {"success": True})
 
-    vguild.nexus.api.config["TURNSTILE_HTTP_CLIENT"] = InjectedClient()
+    monkeypatch.setitem(vguild.nexus.api.config, "TURNSTILE_HTTP_CLIENT", InjectedClient())
     token = _link(vguild)
     resp = vguild.client.post(
         f"/verify/{token}",
@@ -268,7 +268,7 @@ def test_submit_uses_app_injected_turnstile_http_client(vguild, keys):
     )
     assert resp.status_code == 200 and "verified" in resp.get_data(as_text=True)
     assert len(calls) == 1
-    assert calls[0]["data"] == {"secret": SECRET, "response": "worker-token"}
+    assert calls[0]["data"] == {"secret": SECRET, "response": "worker-token", "remoteip": "127.0.0.1"}
 
 
 def test_cloudflare_outage_is_not_the_members_fault(vguild, keys, monkeypatch):
