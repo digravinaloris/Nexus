@@ -131,6 +131,7 @@ def create_internal_bot_service_blueprint(
             "health_snapshot": (getattr(service, "health_snapshot", None), []),
             "public_status_snapshot": (getattr(service, "public_status_snapshot", None), []),
         }
+
         def valid_guild_id(value):
             return isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) is not None
 
@@ -138,7 +139,7 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
-        elif method_name in {"guild_presence", "guild_name"}:
+        elif method_name in {"guild_presence", "guild_name", "api_text_channels_snapshot"}:
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
@@ -212,6 +213,23 @@ def create_internal_bot_service_blueprint(
                     not isinstance(result, list)
                     or len(result) > 500
                     or not all(isinstance(value, dict) for value in result)
+                )
+            ):
+                return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_text_channels_snapshot" and (
+                result is not None
+                and (
+                    not isinstance(result, list)
+                    or len(result) > 500
+                    or not all(
+                        isinstance(channel, dict)
+                        and set(channel) == {"id", "name"}
+                        and isinstance(channel["id"], str)
+                        and re.fullmatch(r"[0-9]{1,20}", channel["id"])
+                        and isinstance(channel["name"], str)
+                        and 1 <= len(channel["name"]) <= 100
+                        for channel in result
+                    )
                 )
             ):
                 return jsonify({"error": "internal service unavailable"}), 503
