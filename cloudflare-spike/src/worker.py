@@ -9,11 +9,12 @@ import re
 import secrets
 import time
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, session
 from pyodide.ffi import run_sync
 from workers import wsgi
 
 from crypto import aes_gcm_decrypt, aes_gcm_encrypt, sha256 as webcrypto_sha256
+from d1_session_interface import D1SessionInterface, SessionStorageUnavailable
 from bot_service_client import (
     CloudflareBotServiceError,
     CloudflareFetchBotService,
@@ -32,6 +33,25 @@ def _db():
 def _await(promise):
     """Bridge a Workers async binding call into a synchronous Flask view."""
     return run_sync(promise)
+
+
+app.config.update(SESSION_COOKIE_NAME="nexus_spike_session", SESSION_COOKIE_SECURE=False)
+app.session_interface = D1SessionInterface(
+    db_getter=_db,
+    awaiter=_await,
+    key_getter=lambda version: _test_encryption_key(version),
+)
+
+
+@app.before_request
+def reject_unavailable_session_storage():
+    if getattr(session, "unavailable", False):
+        return jsonify({"error": "session storage unavailable"}), 503
+
+
+@app.errorhandler(SessionStorageUnavailable)
+def handle_session_storage_unavailable(_error):
+    return jsonify({"error": "session storage unavailable"}), 503
 
 
 def _digest(value: str) -> str:
@@ -284,6 +304,19 @@ def setup_schema():
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS spike_flask_sessions (
+            session_hash TEXT PRIMARY KEY,
+            ciphertext_hex TEXT NOT NULL,
+            nonce_hex TEXT NOT NULL,
+            key_version INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            idle_expires_at INTEGER NOT NULL,
+            revoked_at INTEGER,
+            rotated_to TEXT
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS spike_encrypted_sessions (
             session_hash TEXT PRIMARY KEY,
             ciphertext_hex TEXT NOT NULL,
@@ -303,6 +336,72 @@ def setup_schema():
         print(f"Local D1 schema setup failed: {type(exc).__name__}: {exc}", flush=True)
         return jsonify({"error": "local D1 setup failed", "cause": type(exc).__name__}), 503
     return jsonify({"ready": True})
+
+
+
+@app.post("/__spike/flask-session/login")
+def create_flask_session():
+    """Create a disposable Flask session containing a fake bearer credential."""
+    session["access_token"] = "spike-only-discord-access-token"
+    session["csrf_token"] = "spike-only-csrf-secret"
+    return jsonify({"authenticated": True})
+
+
+@app.get("/__spike/flask-session/me")
+def inspect_flask_session():
+    return jsonify({
+        "authenticated": bool(session.get("access_token")),
+        "access_token": session.get("access_token"),
+        "csrf_token": session.get("csrf_token"),
+    })
+
+
+@app.post("/__spike/flask-session/rotate")
+def rotate_flask_session():
+    app.session_interface.rotate_session(session)
+    session["access_token"] = "spike-rotated-discord-access-token"
+    return jsonify({"rotated": True})
+
+
+
+@app.post("/__spike/flask-session/tamper")
+def tamper_flask_session():
+    sid = request.cookies.get(app.config["SESSION_COOKIE_NAME"], "")
+    if not sid:
+        return jsonify({"tampered": False}), 400
+    try:
+        _await(
+            _db()
+            .prepare(
+                "UPDATE spike_flask_sessions SET ciphertext_hex = '00' WHERE session_hash = ?"
+            )
+            .bind(_digest(sid))
+            .run()
+        )
+    except Exception:
+        return jsonify({"error": "local D1 unavailable"}), 503
+    return jsonify({"tampered": True})
+
+
+
+@app.post("/__spike/flask-session/storage-failure")
+def fail_flask_session_storage():
+    original_getter = app.session_interface._db_getter
+    app.session_interface._db_getter = lambda: (_ for _ in ()).throw(
+        RuntimeError("disposable D1 outage")
+    )
+    try:
+        app.session_interface.revoke_session(session)
+    finally:
+        app.session_interface._db_getter = original_getter
+    return jsonify({"unexpected": True}), 500
+
+
+@app.post("/__spike/flask-session/logout")
+def revoke_flask_session():
+    app.session_interface.revoke_session(session)
+    session.clear()
+    return jsonify({"logged_out": True})
 
 
 @app.post("/__spike/state")

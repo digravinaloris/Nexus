@@ -24,6 +24,26 @@ def call(path: str, method: str = "GET", payload: dict | None = None):
         return error.code, json.loads(error.read().decode("utf-8"))
 
 
+
+def call_with_cookie(path: str, method: str = "GET", cookie: str | None = None):
+    headers = {"Cookie": f"nexus_spike_session={cookie}"} if cookie else {}
+    request = Request(f"{BASE_URL}{path}", headers=headers, method=method)
+    try:
+        with urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read().decode("utf-8")), response.headers.get("Set-Cookie")
+    except HTTPError as error:
+        return error.code, json.loads(error.read().decode("utf-8")), error.headers.get("Set-Cookie")
+
+
+def extract_session_cookie(set_cookie: str | None) -> str:
+    require(isinstance(set_cookie, str), "Flask did not issue an opaque session cookie")
+    require("httponly" in set_cookie.lower(), "Session cookie is not HttpOnly")
+    require("path=/" in set_cookie.lower(), "Session cookie path is not root")
+    value = set_cookie.split(";", 1)[0].split("=", 1)[1]
+    require(bool(value), "Session cookie is empty")
+    return value
+
+
 def require(condition: bool, message: str):
     if not condition:
         raise AssertionError(message)
@@ -43,6 +63,102 @@ def main():
 
     status, setup = call("/__spike/setup", "POST", {})
     require(status == 200 and setup.get("ready"), f"D1 schema setup failed: {setup}")
+
+
+    # Exercise Flask's real SessionInterface, not only the lower-level D1 primitives.
+    status, login, set_cookie = call_with_cookie(
+        "/__spike/flask-session/login", "POST"
+    )
+    require(status == 200 and login.get("authenticated") is True, "Flask D1 login failed")
+    old_cookie = extract_session_cookie(set_cookie)
+    require(len(old_cookie) == 43, "Browser cookie is not a 256-bit opaque session ID")
+    require(
+        "spike-only-discord-access-token" not in set_cookie
+        and "spike-only-csrf-secret" not in set_cookie,
+        "Browser cookie contains server-side session data",
+    )
+
+    status, identity, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=old_cookie
+    )
+    require(
+        status == 200
+        and identity.get("authenticated") is True
+        and identity.get("access_token") == "spike-only-discord-access-token",
+        "D1-backed Flask session could not be restored",
+    )
+
+    status, rotated, set_cookie = call_with_cookie(
+        "/__spike/flask-session/rotate", "POST", old_cookie
+    )
+    require(status == 200 and rotated.get("rotated") is True, "Flask session rotation failed")
+    new_cookie = extract_session_cookie(set_cookie)
+    require(new_cookie != old_cookie, "Flask session ID did not rotate")
+
+    status, old_identity, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=old_cookie
+    )
+    require(
+        status == 200 and old_identity.get("authenticated") is False,
+        "Pre-rotation Flask session remained usable",
+    )
+    status, new_identity, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=new_cookie
+    )
+    require(
+        status == 200
+        and new_identity.get("authenticated") is True
+        and new_identity.get("access_token") == "spike-rotated-discord-access-token",
+        "Rotated Flask session was not persisted",
+    )
+
+    status, tampered, _ = call_with_cookie(
+        "/__spike/flask-session/tamper", "POST", new_cookie
+    )
+    require(status == 200 and tampered.get("tampered") is True, "Flask session tamper setup failed")
+    status, rejected_cookie, delete_cookie = call_with_cookie(
+        "/__spike/flask-session/me", cookie=new_cookie
+    )
+    require(
+        status == 200 and rejected_cookie.get("authenticated") is False,
+        "Flask session accepted tampered ciphertext",
+    )
+    require(
+        isinstance(delete_cookie, str) and "max-age=0" in delete_cookie.lower(),
+        "Tampered session cookie was not cleared",
+    )
+
+    # Recreate a valid session and verify immediate logout revocation.
+    status, login, set_cookie = call_with_cookie(
+        "/__spike/flask-session/login", "POST"
+    )
+    require(status == 200, "Second Flask D1 login failed")
+    logout_cookie = extract_session_cookie(set_cookie)
+    status, logout, delete_cookie = call_with_cookie(
+        "/__spike/flask-session/logout", "POST", logout_cookie
+    )
+    require(status == 200 and logout.get("logged_out") is True, "Flask D1 logout failed")
+    require(
+        isinstance(delete_cookie, str) and "max-age=0" in delete_cookie.lower(),
+        "Logout did not clear the browser cookie",
+    )
+
+    status, storage_failure, _ = call_with_cookie(
+        "/__spike/flask-session/storage-failure", "POST", logout_cookie
+    )
+    require(
+        status == 503
+        and storage_failure.get("error") == "session storage unavailable",
+        "D1 session storage failure did not return a controlled 503",
+    )
+
+    status, after_logout, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=logout_cookie
+    )
+    require(
+        status == 200 and after_logout.get("authenticated") is False,
+        "Logged-out Flask session remained usable",
+    )
 
     status, state = call("/__spike/state", "POST", {})
     require(status == 200 and isinstance(state.get("state"), str), "State creation failed")
