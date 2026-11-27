@@ -397,7 +397,7 @@ def test_sticky_store_lifecycle(mongo_db):
     sticky_store.mark_sticky_message_posted(100, 999, posted_at)
     sticky = sticky_store.get_sticky_message(100)
     assert sticky["last_message_id"] == "999"
-    assert sticky["last_reposted_at"] == posted_at
+    assert sticky["last_reposted_at"] == posted_at.replace(tzinfo=None)
 
     sticky_store.remove_sticky_message(100)
     assert sticky_store.get_sticky_message(100) is None
@@ -421,7 +421,7 @@ def test_tempban_store_lifecycle_and_sanction_history(mongo_db):
     sanctions_store.save_tempban(1, 42, unban_at)
     active = sanctions_store.get_active_tempbans()
     assert len(active) == 1
-    assert active[0]["unban_at"] == unban_at
+    assert active[0]["unban_at"] == unban_at.replace(tzinfo=None)
 
     sanctions_store.remove_tempban(1, 42)
     assert sanctions_store.get_active_tempbans() == []
