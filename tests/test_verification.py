@@ -123,6 +123,22 @@ def test_check_turnstile_success_sends_secret_response_and_ip(keys, monkeypatch)
     assert "remoteip" not in calls[0]["data"]
 
 
+def test_check_turnstile_uses_injected_http_client(keys):
+    calls = []
+
+    class InjectedClient:
+        def post(self, url, data=None, timeout=None):
+            calls.append({"url": url, "data": data, "timeout": timeout})
+            return types.SimpleNamespace(json=lambda: {"success": True})
+
+    assert verification.check_turnstile("worker-token", "1.2.3.4", http_client=InjectedClient()) == (True, None)
+    assert calls == [{
+        "url": "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+        "data": {"secret": SECRET, "response": "worker-token", "remoteip": "1.2.3.4"},
+        "timeout": 10,
+    }]
+
+
 def test_check_turnstile_failure_modes(keys, monkeypatch):
     fake_cloudflare(monkeypatch, {"success": False, "error-codes": ["invalid-input-response", "timeout-or-duplicate"]})
     assert verification.check_turnstile("tok") == (False, "invalid-input-response,timeout-or-duplicate")
