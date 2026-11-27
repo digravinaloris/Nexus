@@ -7,6 +7,7 @@ methods must be added alongside endpoint allowlisting and DTO tests.
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import urlsplit
 
 import requests
@@ -65,11 +66,31 @@ class SignedHttpBotService(BotService):
         self._session = session if session is not None else requests.Session()
         self._timeout = float(timeout)
 
-    def _dispatch_snapshot(self, method: str):
-        if method not in {"health_snapshot", "public_status_snapshot"}:
+    @staticmethod
+    def _valid_guild_id(guild_id):
+        return (
+            isinstance(guild_id, str)
+            and re.fullmatch(r"[0-9]{1,20}", guild_id) is not None
+            and int(guild_id) > 0
+            and int(guild_id) <= (2**64 - 1)
+        )
+
+    def _dispatch_snapshot(self, method: str, args=()):
+        allowed_argument_counts = {
+            "health_snapshot": 0,
+            "public_status_snapshot": 0,
+            "guild_presence": 1,
+            "guild_name": 1,
+        }
+        if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
+        if not isinstance(args, (list, tuple)) or len(args) != allowed_argument_counts[method]:
+            raise ValueError("Invalid internal BotService arguments")
+        if method in {"guild_presence", "guild_name"} and not self._valid_guild_id(args[0]):
+            raise ValueError("Invalid guild ID")
+
         body = json.dumps(
-            {"method": method, "args": [], "kwargs": {}},
+            {"method": method, "args": list(args), "kwargs": {}},
             separators=(",", ":"),
             ensure_ascii=True,
         ).encode("utf-8")
@@ -140,16 +161,36 @@ class SignedHttpBotService(BotService):
         if (
             not isinstance(payload, dict)
             or payload.get("ok") is not True
-            or not isinstance(payload.get("result"), dict)
+            or "result" not in payload
         ):
             raise BotServiceTransportError(
                 "Internal BotService returned an invalid response"
             )
-        return payload["result"]
 
+        result = payload["result"]
+        if method in {"health_snapshot", "public_status_snapshot"}:
+            if not isinstance(result, dict):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "guild_presence":
+            if (
+                not isinstance(result, dict)
+                or set(result) != {"bot_ready", "guild_present"}
+                or any(not isinstance(value, bool) for value in result.values())
+            ):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "guild_name":
+            if not isinstance(result, str) or not result or len(result) > 256:
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+        return result
 
     def health_snapshot(self):
         return self._dispatch_snapshot("health_snapshot")
 
     def public_status_snapshot(self):
         return self._dispatch_snapshot("public_status_snapshot")
+
+    def guild_presence(self, guild_id: str):
+        return self._dispatch_snapshot("guild_presence", (guild_id,))
+
+    def guild_name(self, guild_id: str):
+        return self._dispatch_snapshot("guild_name", (guild_id,))
