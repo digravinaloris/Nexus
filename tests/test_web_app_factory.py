@@ -401,3 +401,75 @@ def test_login_uses_injected_session_backend_without_setting_a_client_cookie():
     assert "oauth_code_verifier" in backend.session
     assert "Set-Cookie" not in response.headers
     assert backend.saved == 1
+
+
+def test_oauth_callback_keeps_discord_credentials_in_injected_session_backend():
+    import time
+    from flask.sessions import SessionInterface, SessionMixin
+
+    class BackendSession(dict, SessionMixin):
+        new = False
+        modified = False
+        accessed = False
+
+    class FakeSessionInterface(SessionInterface):
+        def __init__(self):
+            self.session = BackendSession(
+                oauth_state="server-side-state",
+                oauth_state_created_at=time.time(),
+                oauth_code_verifier="A" * 43,
+            )
+            self.saved = 0
+
+        def open_session(self, app, request):
+            return self.session
+
+        def save_session(self, app, session, response):
+            self.saved += 1
+
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class FakeDiscordHttpClient:
+        def post(self, url, **kwargs):
+            assert url.endswith("/oauth2/token")
+            assert kwargs["data"]["code_verifier"] == "A" * 43
+            return FakeResponse(200, {
+                "access_token": "server-only-access-token",
+                "refresh_token": "unused-refresh-token",
+                "expires_in": 3600,
+            })
+
+        def get(self, url, **kwargs):
+            assert url.endswith("/users/@me")
+            assert kwargs["headers"]["Authorization"] == "Bearer server-only-access-token"
+            return FakeResponse(200, {
+                "id": "123456789012345678",
+                "username": "server-session-user",
+            })
+
+    backend = FakeSessionInterface()
+    app = _create_app(
+        _config(DISCORD_HTTP_CLIENT=FakeDiscordHttpClient()),
+        session_interface=backend,
+    )
+
+    response = app.test_client().get(
+        "/callback?code=valid-authorization-code&state=server-side-state"
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/dashboard")
+    assert "Set-Cookie" not in response.headers
+    assert backend.session["access_token"] == "server-only-access-token"
+    assert backend.session["dash_user"]["username"] == "server-session-user"
+    assert isinstance(backend.session["csrf_token"], str)
+    assert "refresh_token" not in backend.session
+    assert "oauth_state" not in backend.session
+    assert "oauth_code_verifier" not in backend.session
+    assert backend.saved == 1
