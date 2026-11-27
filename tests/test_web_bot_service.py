@@ -1579,3 +1579,15 @@ def test_in_process_adapter_implements_every_bot_service_contract_method():
     }
 
     assert interface_methods <= adapter_methods
+
+
+def test_dashboard_presence_tracks_fresh_viewers_and_expires_them(monkeypatch):
+    service = InProcessBotService()
+    monkeypatch.setattr("web.in_process_bot_service.time.time", lambda: 100)
+
+    service.dashboard_presence_ping("123", "42", "Alice")
+    assert service.dashboard_presence_viewers("123") == ["Alice"]
+    assert service.dashboard_presence_viewers("456") == []
+
+    monkeypatch.setattr("web.in_process_bot_service.time.time", lambda: 126)
+    assert service.dashboard_presence_viewers("123") == []

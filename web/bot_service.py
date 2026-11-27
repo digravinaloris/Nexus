@@ -154,6 +154,14 @@ class BotService:
         """Return non-default role DTOs for one guild, or None when the bot is offline."""
         raise NotImplementedError
 
+    def dashboard_presence_ping(self, guild_id: str, user_id: str, name: str) -> None:
+        """Record a dashboard viewer heartbeat for a guild."""
+        raise NotImplementedError
+
+    def dashboard_presence_viewers(self, guild_id: str) -> List[str]:
+        """Return names of dashboard viewers whose heartbeat is still fresh."""
+        raise NotImplementedError
+
     def dashboard_settings_snapshot(self, guild_id: str) -> Optional[Dict[str, object]]:
         """Return serializable guild, channel, and role data for dashboard settings."""
         raise NotImplementedError
