@@ -23,6 +23,7 @@ from utils import normalize_banned_word, normalize_domain, parse_lines_list
 from dashboard_utils import (
     read_bounded_form_numbers, validate_channel_selection, validate_role_selection,
     is_safe_relative_redirect, build_feature_toggle_updates,
+    build_settings_update_plan,
 )
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
 from web.bot_service import get_bot_service
@@ -92,9 +93,6 @@ SETTINGS_DEFAULTS = {
 
 
 FEATURE_DEFAULT_ENABLED = {"remindme_enabled": True}
-
-# Sentinel for distinguishing absent stored settings from explicit None values.
-_UNSET = object()
 
 
 # (clé de config = nom du champ de formulaire, type, min, max). Les minimums
@@ -168,10 +166,6 @@ def _read_role(key, guild):
         raise ValueError(key) from exc
 
 
-def _describe_change(key, old, new):
-    if isinstance(new, list):
-        return f"{key}: {len(old or [])} -> {len(new)} entries"
-    return f"{key}: {old} -> {new}"
 
 
 @routes.route("/dashboard/<guild_id>/features", methods=["GET", "POST"])
@@ -399,17 +393,9 @@ def dash_settings_save(guild_id, section):
         flash(f"{t('flash_settings_invalid')} ({e})", f"error-{section}")
         return redirect(url_for("dash_settings_page", guild_id=guild_id) + f"#sec-{section}")
 
-    changes = []
-    for key, value in updates.items():
-        stored = cfg.get(key, _UNSET)
-        if stored == value or (stored is _UNSET and value is None):
-            continue
-        # Même principe que les features : on écrit dès que la valeur stockée
-        # diffère ou manque, mais on n'audite que ce qui change réellement.
-        effective_old = SETTINGS_DEFAULTS.get(key) if stored is _UNSET else stored
+    writes, changes = build_settings_update_plan(updates, cfg, SETTINGS_DEFAULTS)
+    for key, value in writes:
         get_bot_service().api_update_config(guild_id, {key: value})
-        if effective_old != value:
-            changes.append(_describe_change(key, effective_old, value))
     if changes:
         dash_log_action(guild_id, f"Updated settings ({section})", "; ".join(changes)[:900])
     flash(t("flash_settings_saved"), section)
