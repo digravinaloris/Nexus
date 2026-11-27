@@ -89,6 +89,7 @@ def mock_internal_bot_service():
             "spike-oversized",
             "spike-channel-malformed",
             "spike-role-malformed",
+            "spike-stats-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -156,6 +157,18 @@ def mock_internal_bot_service():
             {"id": "321", "name": "Moderator"},
             {"id": "654", "name": "Member"},
         ],
+        "api_guild_stats_snapshot": {
+            "guild_id": "123",
+            "name": "Spike Test Server",
+            "member_count": 25,
+            "ban_count": 2,
+            "muted_count": 1,
+            "open_tickets_count": 3,
+            "warned_count": 4,
+            "warns_today": 1,
+            "activity_7d": [0, 1, 2, 3, 4, 5, 6],
+            "locked": False,
+        },
     }
     method = payload.get("method")
     args = payload["args"]
@@ -178,6 +191,12 @@ def mock_internal_bot_service():
     if method == "api_roles_snapshot" and args == ["123"]:
         if key_id == "spike-role-malformed":
             return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "Moderator"}]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "api_guild_stats_snapshot" and args in (["123"], ["123", "456"]):
+        if key_id == "spike-stats-malformed":
+            malformed = dict(results[method])
+            malformed["locked"] = "false"
+            return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if (
         isinstance(method, str)
@@ -240,6 +259,25 @@ def exercise_fetch_bot_service_client(method):
                 allow_local_http=True,
             )
             invalid_client.api_roles_snapshot("123")
+        elif method == "api_guild_stats_snapshot":
+            result = client.api_guild_stats_snapshot("123")
+        elif method == "api_guild_stats_snapshot_with_ticket_category":
+            result = client.api_guild_stats_snapshot("123", 456)
+        elif method == "api_guild_stats_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-stats-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_guild_stats_snapshot("123")
+        elif method == "api_guild_stats_snapshot_invalid_args":
+            try:
+                client.api_guild_stats_snapshot("123", "not-decimal")
+            except ValueError:
+                result = {"rejected": True}
+            else:
+                result = {"rejected": False}
         elif method == "api_text_channels_snapshot_invalid":
             invalid_client = CloudflareFetchBotService(
                 base_url="http://127.0.0.1:8787",

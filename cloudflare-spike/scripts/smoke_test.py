@@ -362,6 +362,49 @@ def main():
         and invalid_roles.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch client accepted malformed role DTOs: {invalid_roles}",
     )
+    status, fetch_stats = call(
+        "/__spike/fetch-client/api_guild_stats_snapshot", "POST", {}
+    )
+    expected_stats = {
+        "guild_id": "123",
+        "name": "Spike Test Server",
+        "member_count": 25,
+        "ban_count": 2,
+        "muted_count": 1,
+        "open_tickets_count": 3,
+        "warned_count": 4,
+        "warns_today": 1,
+        "activity_7d": [0, 1, 2, 3, 4, 5, 6],
+        "locked": False,
+    }
+    require(
+        status == 200 and fetch_stats.get("result") == expected_stats,
+        f"Signed guild stats snapshot failed: {fetch_stats}",
+    )
+    status, fetch_stats_with_category = call(
+        "/__spike/fetch-client/api_guild_stats_snapshot_with_ticket_category",
+        "POST",
+        {},
+    )
+    require(
+        status == 200 and fetch_stats_with_category.get("result") == expected_stats,
+        f"Signed guild stats snapshot with ticket category failed: {fetch_stats_with_category}",
+    )
+    status, invalid_stats = call(
+        "/__spike/fetch-client/api_guild_stats_snapshot_invalid", "POST", {}
+    )
+    require(
+        status == 503
+        and invalid_stats.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted malformed guild stats: {invalid_stats}",
+    )
+    status, invalid_stats_args = call(
+        "/__spike/fetch-client/api_guild_stats_snapshot_invalid_args", "POST", {}
+    )
+    require(
+        status == 200 and invalid_stats_args.get("result") == {"rejected": True},
+        f"Workers Fetch client accepted invalid guild stats arguments: {invalid_stats_args}",
+    )
     status, invalid_channels = call(
         "/__spike/fetch-client/api_text_channels_snapshot_invalid", "POST", {}
     )
