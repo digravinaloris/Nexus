@@ -50,3 +50,21 @@ def test_template_apply_ignores_malformed_sections_and_values(monkeypatch):
     })
 
     assert updates == [("automod_raid_window", 10)]
+
+
+
+def test_template_apply_rejects_out_of_range_automod_numbers(monkeypatch):
+    updates = []
+    monkeypatch.setattr(template_ops, "update_config", lambda guild_id, key, value: updates.append((key, value)))
+
+    template_ops._apply_template_base_config("123", {
+        "automod": {
+            "automod_spam_count": -1,
+            "automod_spam_window": 999999,
+            "automod_caps_ratio": 5,
+            "automod_raid_count": 1,
+            "automod_raid_window": float("inf"),
+        }
+    })
+
+    assert updates == [("warn_escalation_enabled", False)]
