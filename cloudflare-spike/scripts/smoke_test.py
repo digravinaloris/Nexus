@@ -164,6 +164,20 @@ def main():
         f"Workers Fetch public status snapshot failed: {fetch_public}",
     )
 
+    status, fetch_response_validation = call(
+        "/__spike/fetch-client-response-validation", "POST", {}
+    )
+    require(
+        status == 200 and fetch_response_validation.get("all_passed") is True,
+        f"Workers Fetch client accepted an unsafe HTTP response: {fetch_response_validation}",
+    )
+    require(
+        all(fetch_response_validation.get("checks", {}).values())
+        and len(fetch_response_validation.get("checks", {})) == 4,
+        f"Workers Fetch response rejection coverage is incomplete: {fetch_response_validation}",
+    )
+
+
     status, fetch_validation = call(
         "/__spike/fetch-client-validation", "POST", {}
     )
