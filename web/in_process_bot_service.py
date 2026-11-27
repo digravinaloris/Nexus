@@ -39,12 +39,23 @@ class InProcessBotService(BotService):
         self._dashboard_presence = {}
 
     def dashboard_presence_ping(self, guild_id: str, user_id: str, name: str) -> None:
-        self._dashboard_presence.setdefault(str(guild_id), {})[str(user_id)] = (str(name), time.time())
+        now = time.time()
+        entries = self._dashboard_presence.setdefault(str(guild_id), {})
+        expired = [key for key, (_, last_seen) in entries.items() if now - last_seen >= self.PRESENCE_TTL_SECONDS]
+        for key in expired:
+            entries.pop(key, None)
+        entries[str(user_id)] = (str(name), now)
 
     def dashboard_presence_viewers(self, guild_id: str) -> List[str]:
         now = time.time()
-        entries = self._dashboard_presence.get(str(guild_id), {})
-        return [name for name, last_seen in entries.values() if now - last_seen < self.PRESENCE_TTL_SECONDS]
+        guild_id = str(guild_id)
+        entries = self._dashboard_presence.get(guild_id, {})
+        expired = [key for key, (_, last_seen) in entries.items() if now - last_seen >= self.PRESENCE_TTL_SECONDS]
+        for key in expired:
+            entries.pop(key, None)
+        if not entries:
+            self._dashboard_presence.pop(guild_id, None)
+        return [name for name, _ in entries.values()]
 
     def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
         bot = core.bot
