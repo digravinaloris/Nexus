@@ -261,7 +261,7 @@ def dash_calendar_page(guild_id):
             if get_bot_service().dashboard_calendar_has_duplicate_event(guild_id, title, starts_at):
                 flash("Duplicate event." if current_lang() == "en" else "Événement en double.", "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-            event["_id"] = get_bot_service().dashboard_calendar_insert_event(event)
+            event["_id"] = str(get_bot_service().dashboard_calendar_insert_event(event))
             target_id = cfg.get("calendar_channel_id") or event["channel_id"]
             sent = False
             if str(target_id).isdigit():
@@ -304,7 +304,7 @@ def dash_calendar_page(guild_id):
     events = get_bot_service().dashboard_calendar_upcoming_events(guild_id, datetime.datetime.now(datetime.timezone.utc), limit=50)
     for event in events:
         event["display_when"] = local_when(event)
-        event["id_str"] = str(event.get("_id", ""))
+        event["id_str"] = str(event.pop("_id", ""))
     manager_ids = [str(x) for x in cfg.get("calendar_manager_role_ids", [])]
     manager_roles = [r for r in guild["roles"] if str(r["id"]) in manager_ids]
     return render_template("calendar_dashboard.html", guild=guild, events=events, cfg=cfg, timezone_name=timezone_name,
