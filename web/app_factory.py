@@ -37,6 +37,11 @@ def create_web_app(
     """
     runtime_env = os.environ if environ is None else environ
     root_dir = Path(__file__).resolve().parent.parent
+    public_base_url = runtime_env.get("PUBLIC_BASE_URL", "").strip()
+    if not public_base_url:
+        redirect_uri = runtime_env.get("DISCORD_REDIRECT_URI", "").strip()
+        if redirect_uri.endswith("/callback"):
+            public_base_url = redirect_uri[: -len("/callback")]
     app = Flask(
         "",
         template_folder=template_folder or str(root_dir / "templates"),
@@ -51,6 +56,9 @@ def create_web_app(
         DISCORD_REDIRECT_URI=runtime_env.get("DISCORD_REDIRECT_URI", ""),
         API_KEY=runtime_env.get("API_KEY"),
         TOTP_SECRET=runtime_env.get("TOTP_SECRET", ""),
+        TURNSTILE_SITE_KEY=runtime_env.get("TURNSTILE_SITE_KEY", "").strip(),
+        TURNSTILE_SECRET_KEY=runtime_env.get("TURNSTILE_SECRET_KEY", "").strip(),
+        PUBLIC_BASE_URL=public_base_url.rstrip("/"),
     )
     if config:
         app.config.update(config)

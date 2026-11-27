@@ -27,10 +27,15 @@ UTC = datetime.timezone.utc
 
 
 @pytest.fixture
-def keys(monkeypatch):
+def keys(monkeypatch, vguild):
     monkeypatch.setenv("TURNSTILE_SITE_KEY", SITE)
     monkeypatch.setenv("TURNSTILE_SECRET_KEY", SECRET)
     monkeypatch.setenv("PUBLIC_BASE_URL", BASE)
+    vguild.nexus.api.config.update(
+        TURNSTILE_SITE_KEY=SITE,
+        TURNSTILE_SECRET_KEY=SECRET,
+        PUBLIC_BASE_URL=BASE,
+    )
 
 
 def fake_cloudflare(monkeypatch, result=None, exc=None):
@@ -219,6 +224,9 @@ def _link(env):
 def test_page_unavailable_without_configuration(vguild, monkeypatch):
     for var in ("TURNSTILE_SITE_KEY", "TURNSTILE_SECRET_KEY", "PUBLIC_BASE_URL", "DISCORD_REDIRECT_URI"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setitem(vguild.nexus.api.config, "TURNSTILE_SITE_KEY", "")
+    monkeypatch.setitem(vguild.nexus.api.config, "TURNSTILE_SECRET_KEY", "")
+    monkeypatch.setitem(vguild.nexus.api.config, "PUBLIC_BASE_URL", "")
     assert vguild.client.get("/verify/whatever").status_code == 503
     assert vguild.client.post("/verify/whatever", data={"cf-turnstile-response": "x"}).status_code == 503
 
