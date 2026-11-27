@@ -119,6 +119,37 @@ def test_warns_default_zero_and_set():
     sanctions_store.set_warns(1, 42, 0)
     assert sanctions_store.get_warns(1, 42) == 0
 
+def test_dashboard_warning_counts_are_scoped_and_time_bounded():
+    since = datetime.datetime(2026, 11, 27, tzinfo=UTC)
+    sanctions_store.set_warns(1, 42, 2)
+    sanctions_store.set_warns(1, 43, 0)
+    sanctions_store.set_warns(2, 44, 5)
+    core.col.sanctions.insert_one({
+        "guild_id": "1",
+        "type": "warn",
+        "timestamp": since + datetime.timedelta(hours=1),
+    })
+    core.col.sanctions.insert_one({
+        "guild_id": "1",
+        "type": "ban",
+        "timestamp": since + datetime.timedelta(hours=1),
+    })
+    core.col.sanctions.insert_one({
+        "guild_id": "1",
+        "type": "warn",
+        "timestamp": since - datetime.timedelta(seconds=1),
+    })
+    core.col.sanctions.insert_one({
+        "guild_id": "2",
+        "type": "warn",
+        "timestamp": since + datetime.timedelta(hours=1),
+    })
+
+    assert sanctions_store.get_dashboard_warning_counts(1, since) == {
+        "warned_count": 1,
+        "warns_today": 1,
+    }
+
 
 def test_locked_channels_lifecycle():
     sanctions_store.mark_channel_locked(1, 100, "general", 7)
