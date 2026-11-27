@@ -13,6 +13,7 @@ from web.bot_service_signing import (
     BotServiceAuthError,
     CLOCK_SKEW_SECONDS,
     MAX_BODY_BYTES,
+    parse_hmac_keyring,
     verify_internal_request,
 )
 
@@ -149,3 +150,24 @@ def create_internal_bot_service_blueprint(
             return jsonify({"error": "internal service unavailable"}), 503
 
     return blueprint
+
+
+def internal_bot_service_app_options(
+    *,
+    environ: Mapping[str, str],
+    service_factory: Callable[[], Any],
+    nonce_collection_provider: Callable[[], Any],
+) -> dict[str, Any]:
+    """Build opt-in Flask factory kwargs; disabled unless explicitly enabled."""
+    if environ.get("NEXUS_BOT_SERVICE_INTERNAL_ENABLED", "").strip().lower() != "true":
+        return {}
+
+    keyring = parse_hmac_keyring(environ.get("NEXUS_BOT_SERVICE_HMAC_KEYS", ""))
+    service = service_factory()
+    nonce_store = MongoNonceStore(nonce_collection_provider)
+    return {
+        "bot_service": service,
+        "internal_bot_service": service,
+        "internal_bot_service_keyring": keyring,
+        "internal_nonce_store": nonce_store,
+    }

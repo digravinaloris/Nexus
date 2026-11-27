@@ -5220,9 +5220,24 @@ if _SENTRY_DSN:
 # template_folder explicite : avec Flask('') (nom vide), Flask retombe sur le
 # dossier courant (cwd) pour chercher templates/ -- ça marchait sur Render (lancé
 # depuis la racine du repo) mais cassait dès qu'on lance main.py depuis ailleurs.
+def _internal_bot_service_options():
+    if os.environ.get("NEXUS_BOT_SERVICE_INTERNAL_ENABLED", "").strip().lower() != "true":
+        return {}
+
+    from web.bot_service import get_bot_service
+    from web.internal_bot_service import internal_bot_service_app_options
+
+    return internal_bot_service_app_options(
+        environ=os.environ,
+        service_factory=get_bot_service,
+        nonce_collection_provider=lambda: db["bot_service_nonces"] if db is not None else None,
+    )
+
+
 api = create_web_app(
     config={"SECRET_KEY": os.environ["FLASK_SECRET_KEY"]},
     template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"),
+    **_internal_bot_service_options(),
 )
 
 
