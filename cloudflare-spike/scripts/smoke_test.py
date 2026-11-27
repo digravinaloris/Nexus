@@ -164,6 +164,20 @@ def main():
         f"Workers Fetch public status snapshot failed: {fetch_public}",
     )
 
+    status, fetch_validation = call(
+        "/__spike/fetch-client-validation", "POST", {}
+    )
+    require(
+        status == 200 and fetch_validation.get("all_passed") is True,
+        f"Workers Fetch client accepted an unsafe configuration: {fetch_validation}",
+    )
+    require(
+        all(fetch_validation.get("checks", {}).values())
+        and len(fetch_validation.get("checks", {})) == 10,
+        f"Workers Fetch client validation coverage is incomplete: {fetch_validation}",
+    )
+
+
     status, crypto = call("/__spike/crypto", "POST", {})
     require(status == 200, f"Web Crypto request failed: {crypto}")
     require(crypto.get("sha256_matches") is True, "Web Crypto SHA-256 mismatch")
