@@ -54,6 +54,7 @@ Still not implemented: production OAuth server-side sessions, production key pro
 - PR #204 adds an opt-in `POST /internal/v1/dispatch` blueprint factory, verifies signatures before parsing, and consumes the nonce before dispatch. `MongoNonceStore` uses a unique compound `(key_id, nonce)` index and a TTL index on `expires_at`.
 - PR #205 lets the Flask factory register that blueprint only when a service, keyring and nonce store are all explicitly injected; the current production `main.py` supplies none, so the endpoint remains absent.
 - The blueprint currently allows only read-only `health_snapshot`. The factory supports explicit opt-in registration, but the production `main.py` supplies no service/keyring/nonce-store dependencies, so the route remains absent. No HMAC key is configured and no remote Worker client is active.
+- The first signed HTTP client is being added as a deliberately partial adapter for `health_snapshot` only. It requires an HTTPS origin, signs the exact JSON body, disables redirects, applies a bounded timeout, and fails closed on non-200 or malformed responses. It is not yet wired into the production app or Cloudflare Worker.
 
 The signed endpoint must remain disabled until a separately reviewed configuration change supplies the keyring and registers the blueprint. Add methods only with explicit schemas, permission checks and idempotency rules; never dispatch arbitrary BotService method names.
 
