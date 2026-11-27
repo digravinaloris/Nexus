@@ -180,6 +180,7 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     import core
     import i18n
     import sanctions_store
+    from services import server_backups
 
     for mod, names in {
         config_store: ["get_config", "update_config", "add_command_role", "remove_command_role",
@@ -193,6 +194,9 @@ def test_extracted_helpers_are_reexported_by_main(nexus):
     }.items():
         for name in names:
             assert getattr(nexus, name) is getattr(mod, name), f"main.{name} n'est plus {mod.__name__}.{name}"
+
+    assert nexus.create_server_backup is server_backups.create_server_backup
+    assert nexus.restore_server_backup is server_backups.restore_server_backup
 
     # core.bot doit être branché dès l'import (get_audit_log en dépend)
     assert core.bot is nexus.bot
