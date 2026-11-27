@@ -19,7 +19,7 @@ The spike must remain isolated from the existing application. It must not import
 - Flask is supported through `from workers import wsgi` and `Default = wsgi.entrypoint(app)`. Cloudflare's Flask example uses a `pyproject.toml`, `workers-py`, `workers-runtime-sdk`, and `uv run pywrangler dev`.
 - Python Workers can access D1 through `self.env.DB`; prepared statements use `prepare(...).bind(...)`, and D1 operations are awaitable from Python.
 - `D1Database.batch([...])` runs prepared statements sequentially as one SQL transaction. If a statement fails, D1 aborts or rolls back the batch. The Python binding API documents the same interface.
-- Workers Web Crypto supports SHA-256 and AES-GCM. Python Workers expose JavaScript runtime APIs through Pyodide FFI, but the exact synchronous Flask-to-async FFI bridge must be proven in the spike.
+- Workers Web Crypto supports SHA-256 and AES-GCM. Python Workers expose JavaScript runtime APIs, including the Fetch API, through Pyodide FFI. Flask's synchronous handlers can bridge supported async runtime calls with `pyodide.ffi.run_sync`; the Worker-to-BotService Fetch path is now covered by a local runtime smoke test.
 - Local Wrangler bindings use simulated resources by default. The spike must use local D1 only; it must not configure remote bindings or a real database ID.
 
 Official references:
@@ -29,6 +29,7 @@ Official references:
 - Query D1 from Python Workers: https://developers.cloudflare.com/d1/examples/query-d1-from-python-workers/
 - D1 binding API and atomic batches: https://developers.cloudflare.com/d1/worker-api/d1-database/
 - Workers Web Crypto: https://developers.cloudflare.com/workers/runtime-apis/web-crypto/
+- Workers Fetch API: https://developers.cloudflare.com/workers/runtime-apis/fetch/
 
 ## Required isolated layout
 
@@ -77,10 +78,12 @@ If CI cannot execute the actual Python Worker runtime, mark the runtime proof as
 - PR #199 validates version-1 to version-2 key rotation, key-version-bound AAD, sliding idle expiry plus absolute expiry, and immediate revocation in the local Worker/D1 runtime.
 - PR #200 extracts Flask construction into `web.app_factory.create_web_app()` and verifies the factory imports without `main.py`, discord.py, or PyMongo.
 - PR #201 adds app-scoped BotService injection while preserving the existing in-process fallback; a signed remote adapter is still future work.
-- PR #203 adds versioned HMAC request signing; PR #204 adds an opt-in dispatch blueprint with Mongo-backed nonce replay protection, currently unregistered and limited to read-only health. PR #205 adds explicit all-or-nothing registration through the Flask app factory; the production app still does not enable it.
-- Both proofs run in the dedicated local Wrangler GitHub Actions workflow without Cloudflare credentials or remote resources.
+- PRs #203-#205 add versioned HMAC signing, Mongo-backed nonce replay protection and all-or-nothing app-factory registration. PR #207 adds strict environment configuration with a disabled-by-default gate; the endpoint remains inactive unless the operator explicitly supplies the enable flag and a valid keyring.
+- PRs #206 and #208 add a signed `requests`-based client for non-Worker Python runtimes, limited to read-only health and public-status snapshots. That client is not used inside Cloudflare Workers.
+- The current spike adds a separate `CloudflareFetchBotService` adapter that uses the Workers Fetch API through Python FFI, signs the exact request body, requires HTTPS except for an explicit local-only HTTP test option, rejects redirects/non-200 responses, and caps response bodies. Its local smoke test calls a mock internal endpoint running in the same Wrangler process; it does not contact the production bot host.
+- The D1/Web Crypto and Fetch transport proofs run in the dedicated local Wrangler GitHub Actions workflow without Cloudflare credentials or remote resources.
 
 These results validate the runtime primitives only. They do not constitute a production session store: key provisioning and rotation, persistent ciphertext records, cookie integration, operational recovery, and full OAuth lifecycle tests remain separate requirements. No production routes or real Discord tokens have been migrated.
 
 
-The app-factory extraction does not make the production web surface Worker-ready: route handlers still use the in-process BotService adapter for bot operations, and the current `main.py` process still owns the production Waitress server. A remote BotService adapter and the remaining persistence/runtime boundaries are still required.
+The app-factory extraction does not make the production web surface Worker-ready: route handlers still use the in-process BotService adapter for bot operations, and the current `main.py` process still owns the production Waitress server. The Cloudflare Fetch adapter is currently only a local runtime proof and is not wired into the production Worker app. Full BotService method parity, user-context authorization, OAuth server-side sessions, and the remaining persistence/runtime boundaries are still required.
