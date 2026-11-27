@@ -1,0 +1,55 @@
+name: Cloudflare Worker Spike
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "cloudflare-spike/**"
+      - ".github/workflows/cloudflare-spike.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloudflare-spike/**"
+      - ".github/workflows/cloudflare-spike.yml"
+
+jobs:
+  local-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v5
+      - name: Install isolated Worker dependencies
+        working-directory: cloudflare-spike
+        run: uv sync
+      - name: Start local Worker and test D1
+        working-directory: cloudflare-spike
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run pywrangler dev --ip 127.0.0.1 --port 8787 > /tmp/nexus-worker-spike.log 2>&1 &
+          worker_pid=$!
+          cleanup() {
+            kill "$worker_pid" 2>/dev/null || true
+            wait "$worker_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --silent --show-error --fail http://127.0.0.1:8787/health >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/nexus-worker-spike.log
+            exit 1
+          fi
+
+          uv run python scripts/smoke_test.py
