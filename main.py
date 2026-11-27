@@ -2726,7 +2726,7 @@ async def backup_restore(interaction: discord.Interaction, backup_id: str, confi
         )
         return
     try:
-        backup = core.col.server_backups.find_one({"_id": ObjectId(backup_id), "guild_id": str(interaction.guild_id)})
+        backup = get_server_backup(interaction.guild_id, backup_id)
     except Exception:
         backup = None
     if not backup:
