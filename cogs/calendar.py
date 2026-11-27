@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from calendar_utils import UTC, DEFAULT_TZ, REMINDERS, validate_timezone, parse_event_datetime, local_when
+from calendar_helpers.utils import UTC, DEFAULT_TZ, REMINDERS, validate_timezone, parse_event_datetime, local_when
 
 
 def make_embed(event, reminder=None):
