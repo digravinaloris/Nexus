@@ -104,7 +104,7 @@ class CloudflareFetchBotService:
         if method in {"health_snapshot", "public_status_snapshot"}:
             if args != [] or expected_type is not dict:
                 raise ValueError("Invalid snapshot BotService arguments")
-        elif method == "is_guild_owner":
+        elif method in {"is_guild_owner", "is_guild_admin"}:
             if (
                 expected_type is not bool
                 or len(args) != 2
