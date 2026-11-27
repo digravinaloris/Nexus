@@ -87,6 +87,7 @@ def mock_internal_bot_service():
             "spike-unavailable",
             "spike-malformed",
             "spike-oversized",
+            "spike-channel-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -146,6 +147,10 @@ def mock_internal_bot_service():
         "api_health_snapshot": {"online": True, "locked": False, "guild_count": 1},
         "api_guild_list_snapshot": [{"id": "123", "name": "Spike Test Server"}],
         "api_guild_id_candidates": ["123", "456"],
+        "api_text_channels_snapshot": [
+            {"id": "456", "name": "general"},
+            {"id": "789", "name": "staff-chat"},
+        ],
     }
     method = payload.get("method")
     args = payload["args"]
@@ -161,6 +166,10 @@ def mock_internal_bot_service():
         return jsonify({"ok": True, "result": "Spike Test Server"})
     if method == "available_guild_ids" and args == [["123", "456"]]:
         return jsonify({"ok": True, "result": ["123"]})
+    if method == "api_text_channels_snapshot" and args == ["123"]:
+        if key_id == "spike-channel-malformed":
+            return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "general"}]})
+        return jsonify({"ok": True, "result": results[method]})
     if (
         isinstance(method, str)
         and method in {"is_guild_owner", "is_guild_admin"}
@@ -210,6 +219,16 @@ def exercise_fetch_bot_service_client(method):
             result = client.api_guild_id_candidates()
         elif method == "available_guild_ids":
             result = client.available_guild_ids(["123", "456"])
+        elif method == "api_text_channels_snapshot":
+            result = client.api_text_channels_snapshot("123")
+        elif method == "api_text_channels_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-channel-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_text_channels_snapshot("123")
         else:
             return jsonify({"error": "unsupported operation"}), 403
     except Exception as exc:
