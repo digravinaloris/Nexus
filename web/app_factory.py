@@ -50,6 +50,7 @@ def create_web_app(
         DISCORD_CLIENT_SECRET=runtime_env.get("DISCORD_CLIENT_SECRET", ""),
         DISCORD_REDIRECT_URI=runtime_env.get("DISCORD_REDIRECT_URI", ""),
         API_KEY=runtime_env.get("API_KEY"),
+        TOTP_SECRET=runtime_env.get("TOTP_SECRET", ""),
     )
     if config:
         app.config.update(config)
