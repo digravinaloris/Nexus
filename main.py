@@ -41,6 +41,7 @@ from stores.sanctions_store import (
 from stores.sticky_store import set_sticky_message, remove_sticky_message, get_sticky_message, mark_sticky_message_posted
 from stores.reaction_roles_store import save_reaction_role, get_reaction_role, delete_reaction_roles
 from stores.server_backup_store import get_server_backup, list_server_backups
+from stores.guild_cleanup_store import cleanup_guild_data
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
@@ -487,12 +488,7 @@ async def on_guild_remove(guild: discord.Guild):
     """Quand le bot est retiré d'un serveur : nettoie toutes les données stockées pour ce serveur."""
     guild_id = str(guild.id)
     try:
-        config_col.delete_one({"guild_id": guild_id})
-        warns_col.delete_many({"guild_id": guild_id})
-        locked_channels_col.delete_many({"guild_id": guild_id})
-        sanctions_col.delete_many({"guild_id": guild_id})
-        reaction_roles_col.delete_many({"guild_id": guild_id})
-        notes_col.delete_many({"guild_id": guild_id})
+        cleanup_guild_data(guild_id)
         print(f"Cleaned up data for removed guild {guild_id}", flush=True)
     except Exception as e:
         print(f"on_guild_remove cleanup failed: {e}", flush=True)
