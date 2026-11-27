@@ -11,7 +11,6 @@ import asyncio
 import datetime
 import time
 from pymongo import MongoClient, ReturnDocument
-from bson import ObjectId
 from functools import wraps
 import re
 import secrets
@@ -41,6 +40,7 @@ from stores.sanctions_store import (
 )
 from stores.sticky_store import set_sticky_message, remove_sticky_message, get_sticky_message, mark_sticky_message_posted
 from stores.reaction_roles_store import save_reaction_role, get_reaction_role, delete_reaction_roles
+from stores.server_backup_store import get_server_backup, list_server_backups
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
@@ -2671,7 +2671,7 @@ async def backup_create(interaction: discord.Interaction):
 @backup_group.command(name="list", description="List available backups for this server — server owner only")
 @has_owner()
 async def backup_list(interaction: discord.Interaction):
-    backups = list(core.col.server_backups.find({"guild_id": str(interaction.guild_id)}).sort("created_at", -1))
+    backups = list_server_backups(interaction.guild_id)
     if not backups:
         await interaction.response.send_message("No backups yet — create one with `/backup create`.", ephemeral=True)
         return
@@ -2690,7 +2690,7 @@ async def backup_list(interaction: discord.Interaction):
 @has_owner()
 async def backup_preview(interaction: discord.Interaction, backup_id: str):
     try:
-        backup = core.col.server_backups.find_one({"_id": ObjectId(backup_id), "guild_id": str(interaction.guild_id)})
+        backup = get_server_backup(interaction.guild_id, backup_id)
     except Exception:
         backup = None
     if not backup:
@@ -2726,7 +2726,7 @@ async def backup_restore(interaction: discord.Interaction, backup_id: str, confi
         )
         return
     try:
-        backup = core.col.server_backups.find_one({"_id": ObjectId(backup_id), "guild_id": str(interaction.guild_id)})
+        backup = get_server_backup(interaction.guild_id, backup_id)
     except Exception:
         backup = None
     if not backup:
