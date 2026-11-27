@@ -53,7 +53,7 @@ from verification import (turnstile_configured, create_challenge, verification_u
                           account_days_left, kick_pass, SETTINGS_LIMITS)
 from catalogs.commands import MODERATION_COMMANDS, COMMAND_TEMPLATES
 from audit_export import _get_audit_records, _build_audit_csv_bytes
-from template_ops import _apply_template_base_config
+from services.template_ops import _apply_template_base_config
 from nexus_logging.jsonlog import log_json
 from welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
 from utils import (
