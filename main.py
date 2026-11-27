@@ -33,7 +33,7 @@ from stores.sanctions_store import (
     get_warns, set_warns, mark_channel_locked, mark_channel_unlocked,
     get_locked_channels, get_next_case_id, log_sanction, get_case,
     create_sanction_appeal, get_ban_appeal, get_ban_appeal_by_case,
-    get_sanction_history, save_tempban, remove_tempban, get_active_tempbans,
+    get_sanction_stats, get_sanction_history, save_tempban, remove_tempban, get_active_tempbans,
     get_warnlist, update_case_reason, add_case_followup_note, delete_user_moderation_data,
     list_guild_sanctions, list_sanctions_since, submit_ban_appeal,
     resolve_submitted_sanction_appeal,
