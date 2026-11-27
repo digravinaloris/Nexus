@@ -127,13 +127,16 @@ The Worker must never import or instantiate `discord.py`, access `core.bot`, cal
 
 ### Remaining migration work — priority order
 
-1. **Adapter contract completion:** audit every method used by dashboard, public, verification, OAuth, webhook, and REST routes; ensure inputs/outputs are transport-safe DTOs (strings, numbers, booleans, lists, and dictionaries), never Discord or BSON objects.
-2. **In-process adapter hardening:** progressively move direct collection access and Discord-specific operations behind dedicated stores and narrow adapter methods; preserve existing Flask behavior and add contract tests.
-3. **Runtime separation:** make the web app start and test independently of the Discord Gateway process, then replace the in-process adapter with an authenticated remote client without changing production startup prematurely.
-4. **Worker transport:** add a Worker-side signed client only after operation contracts stabilize; test signatures, nonce/replay, timeout, fail-closed behavior, and error mapping.
-5. **Compatibility spike:** build an isolated, CI-checked minimal Worker/Pages scaffold and verify the actual dependency/runtime constraints before attempting a broad Flask/Jinja port. Do not treat Pages as a Flask host.
-6. **Frontend/asset inventory and split:** map every template, route, static asset, cache rule, and redirect; choose Pages for static assets and Worker for dynamic routes, retaining private/no-cache behavior for dashboard, appeals, and verification.
-7. **Parity and release readiness:** OAuth/session/CSRF/CSP, mobile API compatibility, config/bindings matrix, preview and rollback docs, and end-to-end coverage.
+The detailed current-state findings and implementation gates are recorded in [`CLOUDFLARE_CURRENT_STATE_AUDIT.md`](CLOUDFLARE_CURRENT_STATE_AUDIT.md). The next steps are:
+
+1. **Complete route-to-service inventory:** enumerate every BotService method used by each route module, classify reads/mutations/authorization/persistence, and map existing adapter and test coverage.
+2. **Complete remote BotService parity:** add narrowly scoped DTO operations to the signed endpoint and Worker Fetch adapter, with contract tests, server-side authorization, idempotency for mutations, audit logging, bounded payloads, and stable errors.
+3. **Implement production server-side OAuth sessions:** the production Flask session still stores the Discord access token in a readable signed cookie. The isolated D1 session spike is proof code only; production cookie/session integration, key provisioning and rotation, schema lifecycle, revocation, expiry, outage behavior, and OAuth regression tests remain a release blocker.
+4. **Separate web and bot runtime configuration:** create a separately testable Worker app entry point and dependency allowlist while keeping the existing Render startup path unchanged.
+5. **Prove route and asset parity:** validate all dashboard, OAuth, public, verification, appeals, webhook, and mobile API routes; inventory templates, static assets, cache rules, redirects, and dependency compatibility.
+6. **Complete operational readiness:** document production bindings and environment variables, secrets rotation, D1 migrations/backups, monitoring, preview, rollback, and cutover checks. Request separate approval before any Cloudflare resource creation or deployment.
+
+The isolated Worker spike has already validated key runtime primitives in CI; do not repeat it as though it were still an unstarted phase. Its validation does not establish production route parity or make the spike itself deployable.
 
 ### Explicitly not done
 
