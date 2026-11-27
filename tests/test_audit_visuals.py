@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from audit_visuals import build_sparkline_svg
+from audit_helpers.visuals import build_sparkline_svg
 
 
 
