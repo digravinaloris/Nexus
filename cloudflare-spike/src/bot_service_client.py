@@ -183,3 +183,6 @@ class CloudflareFetchBotService:
 
     def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
         return self._dispatch("is_guild_owner", [guild_id, user_id], bool)
+
+    def is_guild_admin(self, guild_id: str, user_id: str) -> bool:
+        return self._dispatch("is_guild_admin", [guild_id, user_id], bool)
