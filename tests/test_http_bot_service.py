@@ -480,3 +480,49 @@ def test_remote_guild_list_snapshot_rejects_invalid_optional_guild_id(guild_id):
 def test_remote_guild_list_snapshot_rejects_non_sequence_internal_args():
     with pytest.raises(ValueError, match="internal BotService arguments"):
         _client()._dispatch_snapshot("api_guild_list_snapshot", None)
+
+
+
+def test_remote_api_health_snapshot_supports_global_and_guild_scoped_requests():
+    result_value = {"online": True, "locked": False, "guild_count": 3}
+    for guild_id, args in [(None, []), ("123456789012345678", ["123456789012345678"])]:
+        session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result_value}))
+        assert _client(session).api_health_snapshot(guild_id) == result_value
+        body = session.calls[0][1]["data"]
+        assert json.loads(body) == {
+            "method": "api_health_snapshot",
+            "args": args,
+            "kwargs": {},
+        }
+        verify_internal_request(
+            keyring={"current": SECRET},
+            method="POST",
+            path="/internal/v1/dispatch",
+            body=body,
+            headers=session.calls[0][1]["headers"],
+        )
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        [],
+        {"online": 1, "locked": False, "guild_count": 1},
+        {"online": True, "locked": 0, "guild_count": 1},
+        {"online": True, "locked": False, "guild_count": True},
+        {"online": True, "locked": False, "guild_count": -1},
+        {"online": True, "locked": False, "guild_count": 1, "extra": True},
+    ],
+)
+def test_remote_api_health_snapshot_rejects_malformed_dtos(result):
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(session).api_health_snapshot()
+
+
+@pytest.mark.parametrize("guild_id", ["", "0", "-1", "abc", "1" * 21, 123])
+def test_remote_api_health_snapshot_rejects_invalid_optional_guild_id(guild_id):
+    session = FakeSession()
+    with pytest.raises(ValueError, match="guild ID"):
+        _client(session).api_health_snapshot(guild_id)
+    assert session.calls == []
