@@ -383,6 +383,20 @@ def tamper_flask_session():
     return jsonify({"tampered": True})
 
 
+
+@app.post("/__spike/flask-session/storage-failure")
+def fail_flask_session_storage():
+    original_getter = app.session_interface._db_getter
+    app.session_interface._db_getter = lambda: (_ for _ in ()).throw(
+        RuntimeError("disposable D1 outage")
+    )
+    try:
+        app.session_interface.revoke_session(session)
+    finally:
+        app.session_interface._db_getter = original_getter
+    return jsonify({"unexpected": True}), 500
+
+
 @app.post("/__spike/flask-session/logout")
 def revoke_flask_session():
     app.session_interface.revoke_session(session)
