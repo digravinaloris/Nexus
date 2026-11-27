@@ -93,6 +93,9 @@ SETTINGS_DEFAULTS = {
 
 FEATURE_DEFAULT_ENABLED = {"remindme_enabled": True}
 
+# Sentinel for distinguishing absent stored settings from explicit None values.
+_UNSET = object()
+
 
 # (clé de config = nom du champ de formulaire, type, min, max). Les minimums
 # sont ceux des commandes /config ; les maximums sont des garde-fous de bon
