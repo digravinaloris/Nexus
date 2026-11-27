@@ -51,6 +51,7 @@ from stores.scheduled_tasks_store import (
 )
 from stores.quarantine_store import create_quarantine_entry, get_pending_quarantine_reviews, mark_quarantine_reminded
 from stores.role_menu_store import save_role_menu, get_role_menu
+from stores.invite_tracking_store import record_invite_use, get_inviter_leaderboard, get_invite_for_member
 from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
 from localization.i18n import (
     TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
@@ -2739,13 +2740,7 @@ invites_group = app_commands.Group(name="invites", description="Track who invite
 
 @invites_group.command(name="leaderboard", description="Show the top inviters on this server")
 async def invites_leaderboard(interaction: discord.Interaction):
-    pipeline = [
-        {"$match": {"guild_id": str(interaction.guild_id)}},
-        {"$group": {"_id": "$inviter_id", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$limit": 10},
-    ]
-    results = list(invite_uses_col.aggregate(pipeline))
+    results = get_inviter_leaderboard(interaction.guild_id, limit=10)
     if not results:
         await interaction.response.send_message("No tracked invites yet on this server.", ephemeral=True)
         return
@@ -2759,7 +2754,7 @@ async def invites_leaderboard(interaction: discord.Interaction):
 @invites_group.command(name="who", description="Show who invited a specific member")
 @app_commands.describe(member="The member to check")
 async def invites_who(interaction: discord.Interaction, member: discord.Member):
-    record = invite_uses_col.find_one({"guild_id": str(interaction.guild_id), "invited_user_id": str(member.id)})
+    record = get_invite_for_member(interaction.guild_id, member.id)
     if not record:
         await interaction.response.send_message(f"No invite record found for **{member}** (may have joined before tracking was enabled, or via a discoverable/vanity link).", ephemeral=True)
         return
@@ -4583,13 +4578,10 @@ async def on_member_join(member):
                 break
         _invite_cache[member.guild.id] = {inv.code: (inv.uses or 0) for inv in current_invites}
         if inviter_id:
-            invite_uses_col.insert_one({
-                "guild_id": str(member.guild.id),
-                "inviter_id": str(inviter_id),
-                "invited_user_id": str(member.id),
-                "invite_code": invite_code_used,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc),
-            })
+            record_invite_use(
+                member.guild.id, inviter_id, member.id, invite_code_used,
+                datetime.datetime.now(datetime.timezone.utc),
+            )
     except discord.HTTPException:
         pass  # probablement pas la permission Manage Server
 

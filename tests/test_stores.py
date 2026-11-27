@@ -572,3 +572,23 @@ def test_role_menu_store_roundtrip(mongo_db):
     assert menu["channel_id"] == "789"
     assert menu["items"] == items
     assert role_menu_store.get_role_menu(999) is None
+
+
+# ------------------------------------------------ invite tracking persistence
+
+def test_invite_tracking_store_records_queries_and_ranks(mongo_db):
+    from stores import invite_tracking_store
+
+    created_at = datetime.datetime(2026, 11, 27, 12, 0)
+    invite_tracking_store.record_invite_use(1, 10, 100, "alpha", created_at)
+    invite_tracking_store.record_invite_use(1, 10, 101, "alpha", created_at)
+    invite_tracking_store.record_invite_use(1, 20, 102, "beta", created_at)
+    invite_tracking_store.record_invite_use(2, 30, 200, "other-guild", created_at)
+
+    member_invite = invite_tracking_store.get_invite_for_member(1, 100)
+    assert member_invite["inviter_id"] == "10"
+    assert member_invite["invite_code"] == "alpha"
+    assert invite_tracking_store.get_invite_for_member(2, 100) is None
+
+    leaderboard = invite_tracking_store.get_inviter_leaderboard(1, limit=1)
+    assert leaderboard == [{"_id": "10", "count": 2}]
