@@ -476,3 +476,43 @@ def test_guild_cleanup_store_is_scoped_to_one_guild(mongo_db):
     for name in collection_names:
         assert mongo_db[name].count_documents({"guild_id": "1"}) == 0
         assert mongo_db[name].count_documents({"guild_id": "2"}) == 1
+
+
+# ------------------------------------------------ sanction and staff-note stores
+
+def test_sanction_store_case_updates_and_queries(mongo_db):
+    case_id = sanctions_store.log_sanction(1, 42, "warn", "original", 7)
+    edited_at = datetime.datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
+    sanctions_store.update_case_reason(1, case_id, "corrected", 8, "Moderator", edited_at)
+    sanctions_store.add_case_followup_note(1, case_id, "Moderator", "Reviewed", edited_at)
+
+    case = sanctions_store.get_case(1, case_id)
+    assert case["reason"] == "corrected"
+    assert case["edited"] is True
+    assert case["edited_by"] == "8"
+    assert case["followup_notes"][0]["text"] == "Reviewed"
+    assert len(sanctions_store.list_guild_sanctions(1)) == 1
+    assert len(sanctions_store.list_sanctions_since(1, edited_at.replace(tzinfo=None))) == 1
+
+
+def test_sanction_store_deletes_user_moderation_data(mongo_db):
+    sanctions_store.set_warns(1, 42, 3)
+    sanctions_store.log_sanction(1, 42, "ban", "reason", 7)
+    mongo_db["notes"].insert_one({"guild_id": "1", "user_id": "42", "text": "private"})
+    sanctions_store.delete_user_moderation_data(1, 42)
+
+    assert sanctions_store.get_warns(1, 42) == 0
+    assert sanctions_store.get_sanction_history(1, 42) == []
+    assert mongo_db["notes"].count_documents({"guild_id": "1", "user_id": "42"}) == 0
+
+
+def test_notes_store_lifecycle(mongo_db):
+    from stores import notes_store
+
+    created_at = datetime.datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
+    notes_store.add_member_note(1, 42, "Staff-only note", 7, created_at)
+    notes = notes_store.get_member_notes(1, 42)
+    assert len(notes) == 1
+    assert notes[0]["text"] == "Staff-only note"
+    assert notes[0]["moderator_id"] == "7"
+    assert notes_store.get_member_notes(2, 42) == []
