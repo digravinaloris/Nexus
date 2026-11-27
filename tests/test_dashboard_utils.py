@@ -226,7 +226,7 @@ def test_template_role_names_reject_malformed_snapshot_data():
 def test_template_role_mapping_accepts_only_roles_from_current_guild():
     mapping = build_template_command_role_mapping(
         {"ban": ["Mods"], "kick": ["Mods", "Helpers"]},
-        {"map__0": "9", "map__1": ""},
+        {"map__0": "", "map__1": "9"},
         [{"id": "9", "name": "Mods"}],
         {"warn": [10]},
     )
