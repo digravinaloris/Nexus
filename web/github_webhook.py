@@ -2,11 +2,10 @@
 import hashlib
 import hmac
 import json
-import os
 import re
 from urllib.parse import urlsplit
 
-from flask import jsonify, request
+from flask import current_app, jsonify, request
 
 from web.bot_service import get_bot_service
 from web.routing import Routes
@@ -65,7 +64,7 @@ def validate_release(payload):
 
 @routes.route("/webhooks/github/releases", methods=["POST"])
 def github_release_webhook():
-    secret = os.getenv("GITHUB_RELEASE_WEBHOOK_SECRET", "")
+    secret = current_app.config.get("GITHUB_RELEASE_WEBHOOK_SECRET", "")
     if not secret:
         return jsonify({"error": "Webhook is not configured"}), 503
     if request.content_length is not None and request.content_length > MAX_PAYLOAD_BYTES:

@@ -354,3 +354,14 @@ def test_factory_injects_turnstile_settings_and_derives_public_base_url(monkeypa
     assert isolated_app.config["TURNSTILE_SITE_KEY"] == ""
     assert isolated_app.config["TURNSTILE_SECRET_KEY"] == ""
     assert isolated_app.config["PUBLIC_BASE_URL"] == ""
+
+
+
+def test_factory_injects_github_webhook_secret_without_process_fallback(monkeypatch):
+    monkeypatch.setenv("GITHUB_RELEASE_WEBHOOK_SECRET", "process-webhook-secret")
+
+    app = _create_app(_config(), environ={"GITHUB_RELEASE_WEBHOOK_SECRET": "injected-webhook-secret"})
+    isolated_app = _create_app(_config(), environ={})
+
+    assert app.config["GITHUB_RELEASE_WEBHOOK_SECRET"] == "injected-webhook-secret"
+    assert isolated_app.config["GITHUB_RELEASE_WEBHOOK_SECRET"] == ""

@@ -58,6 +58,7 @@ def create_web_app(
         TOTP_SECRET=runtime_env.get("TOTP_SECRET", ""),
         TURNSTILE_SITE_KEY=runtime_env.get("TURNSTILE_SITE_KEY", "").strip(),
         TURNSTILE_SECRET_KEY=runtime_env.get("TURNSTILE_SECRET_KEY", "").strip(),
+        GITHUB_RELEASE_WEBHOOK_SECRET=runtime_env.get("GITHUB_RELEASE_WEBHOOK_SECRET", "").strip(),
         PUBLIC_BASE_URL=public_base_url.rstrip("/"),
     )
     if config:
