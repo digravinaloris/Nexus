@@ -233,13 +233,13 @@ def dash_calendar_page(guild_id):
     if request.method == "POST":
         action = request.form.get("action", "")
         if action == "settings":
-            channel_raw = request.form.get("calendar_channel_id", "").strip()
-            channel_id = None
-            if channel_raw and channel_raw != "none":
-                if not channel_raw.isdigit() or int(channel_raw) not in {int(c["id"]) for c in guild["text_channels"]}:
-                    flash("Invalid announcement channel." if current_lang() == "en" else "Salon d'annonce invalide.", "error-calendar")
-                    return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-                channel_id = int(channel_raw)
+            try:
+                channel_id = validate_channel_selection(
+                    request.form.get("calendar_channel_id", ""), guild["text_channels"]
+                )
+            except ValueError:
+                flash("Invalid announcement channel." if current_lang() == "en" else "Salon d'annonce invalide.", "error-calendar")
+                return redirect(url_for("dash_calendar_page", guild_id=guild_id))
             try:
                 timezone_name = validate_timezone(request.form.get("calendar_timezone", ""))
             except ValueError:
@@ -256,7 +256,11 @@ def dash_calendar_page(guild_id):
             if not title or len(title) > 100 or len(description) > 1000 or not role_raw.isdigit():
                 flash("Invalid event fields." if current_lang() == "en" else "Champs d'événement invalides.", "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
-            role = next((r for r in guild["roles"] if int(r["id"]) == int(role_raw)), None)
+            try:
+                role_id = validate_role_selection(role_raw, guild)
+            except ValueError:
+                role_id = None
+            role = next((r for r in guild["roles"] if int(r["id"]) == role_id), None) if role_id is not None else None
             if role is None:
                 flash("Choose a valid notification role." if current_lang() == "en" else "Choisis un rôle de notification valide.", "error-calendar")
                 return redirect(url_for("dash_calendar_page", guild_id=guild_id))
@@ -295,7 +299,11 @@ def dash_calendar_page(guild_id):
                 flash("Event not found." if current_lang() == "en" else "Événement introuvable.", "error-calendar")
         elif action == "manager":
             role_raw = request.form.get("role_id", "")
-            role = next((r for r in guild["roles"] if int(r["id"]) == int(role_raw)), None) if role_raw.isdigit() else None
+            try:
+                role_id = validate_role_selection(role_raw, guild)
+            except ValueError:
+                role_id = None
+            role = next((r for r in guild["roles"] if int(r["id"]) == role_id), None) if role_id is not None else None
             is_owner = get_bot_service().is_guild_owner(guild_id, (session.get("dash_user") or {}).get("id"))
             if role is None or not is_owner:
                 flash("Only the server owner can manage calendar roles." if current_lang() == "en" else "Seul le propriétaire peut gérer les rôles du calendrier.", "error-calendar")
