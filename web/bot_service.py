@@ -32,6 +32,10 @@ class BotService:
         """Check ownership using the bot's current guild cache."""
         raise NotImplementedError
 
+    def is_guild_admin(self, guild_id: str, user_id: str) -> bool:
+        """Check owner or Administrator access using the current guild cache."""
+        raise NotImplementedError
+
     def public_status_snapshot(self) -> Dict[str, object]:
         """Return minimal public status data without leaking Discord client objects."""
         raise NotImplementedError
