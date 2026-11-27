@@ -66,7 +66,7 @@ def test_web_routes_do_not_import_bot_or_database_runtime(relative_path):
     with open(path, encoding="utf-8") as f:
         tree = ast.parse(f.read())
 
-    forbidden_roots = {"core", "bridge", "discord", "pymongo"}
+    forbidden_roots = {"core", "bridge", "cogs", "discord", "pymongo"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imported = [alias.name.split(".")[0] for alias in node.names]
