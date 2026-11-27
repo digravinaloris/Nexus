@@ -126,7 +126,7 @@ def mock_internal_bot_service():
     }
     method = payload.get("method")
     args = payload["args"]
-    if method in results and args == []:
+    if isinstance(method, str) and method in results and args == []:
         return jsonify({"ok": True, "result": results[method]})
     if (
         method == "is_guild_owner"
