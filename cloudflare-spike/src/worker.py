@@ -129,7 +129,8 @@ def mock_internal_bot_service():
     if isinstance(method, str) and method in results and args == []:
         return jsonify({"ok": True, "result": results[method]})
     if (
-        method in {"is_guild_owner", "is_guild_admin"}
+        isinstance(method, str)
+        and method in {"is_guild_owner", "is_guild_admin"}
         and len(args) == 2
         and all(isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) for value in args)
     ):
