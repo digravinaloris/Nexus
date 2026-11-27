@@ -132,13 +132,13 @@ class CloudflareFetchBotService:
                 or not all(valid_id(value) for value in args[0])
             ):
                 raise ValueError("Invalid available guild ID arguments")
-        elif method == "api_text_channels_snapshot":
+        elif method in {"api_text_channels_snapshot", "api_roles_snapshot"}:
             if (
                 expected_type != (list, type(None))
                 or len(args) != 1
                 or not valid_id(args[0])
             ):
-                raise ValueError("Invalid text channel snapshot arguments")
+                raise ValueError("Invalid guild collection snapshot arguments")
         else:
             raise ValueError("Unsupported internal BotService operation")
 
@@ -215,18 +215,24 @@ class CloudflareFetchBotService:
             len(result) > 500 or not all(isinstance(value, dict) for value in result)
         ):
             raise CloudflareBotServiceError("Internal BotService returned an invalid guild list")
-        if method == "api_text_channels_snapshot" and result is not None and (
-            len(result) > 500
-            or not all(
-                isinstance(channel, dict)
-                and set(channel) == {"id", "name"}
-                and valid_id(channel["id"])
-                and isinstance(channel["name"], str)
-                and 1 <= len(channel["name"]) <= 100
-                for channel in result
+        if (
+            method in {"api_text_channels_snapshot", "api_roles_snapshot"}
+            and result is not None
+            and (
+                len(result) > 500
+                or not all(
+                    isinstance(item, dict)
+                    and set(item) == {"id", "name"}
+                    and valid_id(item["id"])
+                    and isinstance(item["name"], str)
+                    and 1 <= len(item["name"]) <= 100
+                    for item in result
+                )
             )
         ):
-            raise CloudflareBotServiceError("Internal BotService returned invalid text channels")
+            raise CloudflareBotServiceError(
+                "Internal BotService returned invalid guild collection"
+            )
         return result
 
     def _dispatch_snapshot(self, method: str) -> dict:
@@ -266,3 +272,6 @@ class CloudflareFetchBotService:
 
     def api_text_channels_snapshot(self, guild_id: str) -> list | None:
         return self._dispatch("api_text_channels_snapshot", [guild_id], (list, type(None)))
+
+    def api_roles_snapshot(self, guild_id: str) -> list | None:
+        return self._dispatch("api_roles_snapshot", [guild_id], (list, type(None)))

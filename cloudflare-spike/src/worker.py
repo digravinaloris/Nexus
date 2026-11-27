@@ -88,6 +88,7 @@ def mock_internal_bot_service():
             "spike-malformed",
             "spike-oversized",
             "spike-channel-malformed",
+            "spike-role-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -151,6 +152,10 @@ def mock_internal_bot_service():
             {"id": "456", "name": "general"},
             {"id": "789", "name": "staff-chat"},
         ],
+        "api_roles_snapshot": [
+            {"id": "321", "name": "Moderator"},
+            {"id": "654", "name": "Member"},
+        ],
     }
     method = payload.get("method")
     args = payload["args"]
@@ -169,6 +174,10 @@ def mock_internal_bot_service():
     if method == "api_text_channels_snapshot" and args == ["123"]:
         if key_id == "spike-channel-malformed":
             return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "general"}]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "api_roles_snapshot" and args == ["123"]:
+        if key_id == "spike-role-malformed":
+            return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "Moderator"}]})
         return jsonify({"ok": True, "result": results[method]})
     if (
         isinstance(method, str)
@@ -221,6 +230,16 @@ def exercise_fetch_bot_service_client(method):
             result = client.available_guild_ids(["123", "456"])
         elif method == "api_text_channels_snapshot":
             result = client.api_text_channels_snapshot("123")
+        elif method == "api_roles_snapshot":
+            result = client.api_roles_snapshot("123")
+        elif method == "api_roles_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-role-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_roles_snapshot("123")
         elif method == "api_text_channels_snapshot_invalid":
             invalid_client = CloudflareFetchBotService(
                 base_url="http://127.0.0.1:8787",
