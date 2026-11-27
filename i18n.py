@@ -1,4 +1,4 @@
-"""i18n -- traductions du dashboard (fichiers en_us.yml / fr_fr.yml) et helpers de session.
+"""i18n -- traductions du dashboard (fichiers locales/en_us.yml / locales/fr_fr.yml) et helpers de session.
 
 Extrait de main.py (étape 2a). `t()` lit la langue dans la session Flask.
 """
@@ -8,7 +8,7 @@ import yaml
 from flask import session
 
 
-TRANSLATIONS_DIR = os.path.dirname(os.path.abspath(__file__))
+TRANSLATIONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "locales")
 
 
 _FALLBACK_TRANSLATIONS = {
