@@ -6,6 +6,7 @@ vient de `core.bot`). Les routes sont enregistrées sur l'app par main.py via
 `routes.register(api)` en gardant les noms d'endpoints d'origine (cf. web/routing.py).
 """
 from functools import wraps
+import re
 import os
 import secrets
 import time
