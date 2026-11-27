@@ -18,12 +18,13 @@ This is a research-only decision note. **No accounts, services, DNS, secrets, or
 | Railway Free | $1 resource credit each month, no card required; up to 1 vCPU / 0.5 GB per service, one project/three services and 0.5 GB volume. Services sleep after 5–10 minutes idle, but outbound activity can keep a service awake. | Useful for testing small web components; **poor bot candidate** because a Discord Gateway connection can keep it active and burn the tiny allowance. |
 | PythonAnywhere Beginner | One web app, one worker, 512 MiB disk, restricted outbound Internet, 100 CPU seconds/day for consoles/tasks and a one-month expiry on free web apps. | Not a durable free home for Nexus; outbound restrictions may also block required APIs. |
 | Google Cloud Run | Request-based free allowance (monthly) includes 180k vCPU-seconds, 360k GiB-seconds and 2M requests; usage beyond is billed. | Good technical fallback for containerized web/API pieces if billing setup is acceptable and budget alerts/limits are configured. Do not select as a “no-card/no-billing-risk” option. |
+| Oracle Cloud Always Free (A1 Arm) | Official Always Free allowance is currently 2 OCPUs + 12 GB RAM total, plus limited x86 Micro VMs. Free VMs can be reclaimed if idle for 7 days. Account signup generally requires phone and credit-card verification. | **Technically the strongest free process-host candidate** for an always-on bot, but unsuitable for our no-card constraint and reclamation risk. Don't pursue without checking signup/card acceptance first. |
 
 ## Decision
 
 1. **Proceed with the Cloudflare migration in small PRs** for static website assets and isolate API functionality gradually. Keep Workers/D1 experiments local until tests and architecture review are complete.
-2. **Do not move the Discord bot to Cloudflare Workers.** The bot's persistent Discord connection and runtime dependencies need a conventional process host.
-3. **No host is selected for the bot yet.** Research more candidates (including genuinely free or low-cost process/VPS options) and check account/card requirements before proposing any migration.
+2. **Do not move the Discord bot to Cloudflare Workers.** The bot's persistent connection and runtime dependencies need a conventional process host.
+3. **No host is selected for the bot yet.** The currently checked free plans either sleep or are too small for a continuously connected bot; Oracle is a better VM candidate but requires payment-card verification and has idle reclamation rules. Continue researching genuinely no-card, always-on alternatives before proposing a migration.
 4. **No deploy until explicitly approved.** Every migration step remains a PR with tests; preserve a rollback path and do not touch DNS or production secrets.
 
 ## Sources (checked November 27, 2026)
@@ -37,3 +38,5 @@ This is a research-only decision note. **No accounts, services, DNS, secrets, or
 - PythonAnywhere pricing: https://www.pythonanywhere.com/pricing/
 - PythonAnywhere free-account feature limits: https://help.pythonanywhere.com/pages/FreeAccountsFeatures
 - Google Cloud Run pricing: https://cloud.google.com/run/pricing
+- Oracle Cloud Always Free resources: https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
+- Oracle Cloud Free Tier account requirements: https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm
