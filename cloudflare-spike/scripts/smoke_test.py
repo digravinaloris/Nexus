@@ -74,6 +74,17 @@ def main():
     status, rollback = call("/__spike/batch-rollback", "POST", {})
     require(status == 200 and rollback.get("rolled_back") is True, "D1 batch rollback failed")
 
+    status, crypto = call("/__spike/crypto", "POST", {})
+    require(status == 200, f"Web Crypto request failed: {crypto}")
+    require(crypto.get("sha256_matches") is True, "Web Crypto SHA-256 mismatch")
+    require(crypto.get("round_trip") is True, "AES-GCM round trip failed")
+    require(
+        crypto.get("tampered_ciphertext_rejected") is True,
+        "AES-GCM accepted tampered ciphertext",
+    )
+    require(crypto.get("wrong_key_rejected") is True, "AES-GCM accepted the wrong key")
+    require(crypto.get("wrong_aad_rejected") is True, "AES-GCM accepted the wrong AAD")
+
     print("Cloudflare Python Worker smoke tests passed")
 
 

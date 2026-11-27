@@ -10,6 +10,8 @@ from flask import Flask, jsonify, request
 from pyodide.ffi import run_sync
 from workers import wsgi
 
+from crypto import aes_gcm_decrypt, aes_gcm_encrypt, sha256 as webcrypto_sha256
+
 
 app = Flask(__name__)
 
@@ -257,6 +259,56 @@ def batch_rollback():
         except Exception:
             return jsonify({"error": "local D1 unavailable"}), 503
         return jsonify({"rolled_back": count == 0})
+
+
+@app.post("/__spike/crypto")
+def crypto_compatibility():
+    """Exercise Workers Web Crypto through Python FFI with disposable fixtures."""
+    import hashlib
+
+    fixture = b"nexus-cloudflare-spike-non-sensitive-fixture"
+    key = secrets.token_bytes(32)
+    nonce = secrets.token_bytes(12)
+    aad = b"nexus-spike:v1:session-digest-fixture"
+    try:
+        digest_matches = webcrypto_sha256(fixture) == hashlib.sha256(fixture).digest()
+        ciphertext = aes_gcm_encrypt(key, nonce, fixture, aad)
+        round_trip = aes_gcm_decrypt(key, nonce, ciphertext, aad) == fixture
+
+        tampered = bytearray(ciphertext)
+        tampered[-1] ^= 1
+        try:
+            aes_gcm_decrypt(key, nonce, bytes(tampered), aad)
+            tampered_rejected = False
+        except Exception:
+            tampered_rejected = True
+
+        wrong_key = bytearray(key)
+        wrong_key[0] ^= 1
+        try:
+            aes_gcm_decrypt(bytes(wrong_key), nonce, ciphertext, aad)
+            wrong_key_rejected = False
+        except Exception:
+            wrong_key_rejected = True
+
+        try:
+            aes_gcm_decrypt(key, nonce, ciphertext, aad + b"-wrong")
+            wrong_aad_rejected = False
+        except Exception:
+            wrong_aad_rejected = True
+    except Exception as exc:
+        print(f"Local Web Crypto compatibility failed: {type(exc).__name__}: {exc}", flush=True)
+        return jsonify({"error": "local Web Crypto unavailable", "cause": type(exc).__name__}), 503
+
+    return jsonify(
+        {
+            "sha256_matches": digest_matches,
+            "round_trip": round_trip,
+            "tampered_ciphertext_rejected": tampered_rejected,
+            "wrong_key_rejected": wrong_key_rejected,
+            "wrong_aad_rejected": wrong_aad_rejected,
+        }
+    )
 
 
 Default = wsgi.entrypoint(app)
