@@ -68,7 +68,7 @@ If CI cannot execute the actual Python Worker runtime, mark the runtime proof as
 - No production route migration or OAuth session replacement in this spike.
 - No Discord OAuth calls, real tokens, secrets, or credentials.
 - No Cloudflare login, remote D1 binding, resource creation, deployment, DNS change, or production cutover.
-- No change to the existing Flask/Waitress/Render startup path.
+- No change to the existing Flask/Waitress startup path.
 
 ## Validation status
 
@@ -85,5 +85,10 @@ If CI cannot execute the actual Python Worker runtime, mark the runtime proof as
 
 These results validate the runtime primitives only. They do not constitute a production session store: key provisioning and rotation, persistent ciphertext records, cookie integration, operational recovery, and full OAuth lifecycle tests remain separate requirements. No production routes or real Discord tokens have been migrated.
 
-
 The app-factory extraction does not make the production web surface Worker-ready: route handlers still use the in-process BotService adapter for bot operations, and the current `main.py` process still owns the production Waitress server. The Cloudflare Fetch adapter is currently only a local runtime proof and is not wired into the production Worker app. Full BotService method parity, user-context authorization, OAuth server-side sessions, and the remaining persistence/runtime boundaries are still required.
+
+## Runtime configuration boundary
+
+PR #228 added the optional `environ` mapping to `create_web_app()` while preserving process-environment defaults. PR #229 adds a test for configuration precedence: values supplied through `environ` populate Flask defaults, then explicit `config` overrides those values. This makes configuration deterministic in tests and future runtime adapters; it does not prove that the production route surface runs inside Cloudflare Workers.
+
+For a Worker integration, runtime bindings and secrets must be mapped deliberately, and Worker-specific bindings/transport must be passed into adapters rather than relying on process environment or importing bot startup modules. Deployment, Cloudflare account resources, remote D1, DNS, and production cutover remain outside this spike.
