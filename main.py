@@ -55,7 +55,7 @@ from catalogs.commands import MODERATION_COMMANDS, COMMAND_TEMPLATES
 from audit_services.export import _get_audit_records, _build_audit_csv_bytes
 from services.template_ops import _apply_template_base_config
 from nexus_logging.jsonlog import log_json
-from welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
+from services.welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
 from utils import (
     parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
     is_mention_spam, detect_phone_number, detect_address_hint, detect_raid_username_pattern,
