@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dashboard_utils import read_bounded_form_numbers
+from dashboard_utils import (\n    read_bounded_form_numbers, validate_channel_selection, validate_role_selection,\n)
 
 FIELDS = [
     ("count", int, 1, 100),
@@ -36,3 +36,62 @@ def test_invalid_field_identifies_key():
         assert str(exc) == "count"
     else:
         raise AssertionError("Expected invalid numeric input to raise ValueError")
+
+
+
+def test_channel_selection_blank_none_and_valid():
+    channels = [{"id": "101"}, {"id": 202}]
+    assert validate_channel_selection("", channels) is None
+    assert validate_channel_selection(" none ", channels) is None
+    assert validate_channel_selection("202", channels) == 202
+
+
+def test_channel_selection_rejects_unknown_and_non_numeric():
+    channels = [{"id": "101"}]
+    for raw in ("202", "general", "-1"):
+        try:
+            validate_channel_selection(raw, channels)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"Expected invalid channel: {raw}")
+
+
+def test_role_selection_dict_rejects_unknown_and_accepts_real_role():
+    guild = {"roles": [{"id": "10"}, {"id": "20"}]}
+    assert validate_role_selection("20", guild) == 20
+    assert validate_role_selection("", guild) is None
+    try:
+        validate_role_selection("99", guild)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected unknown role to be rejected")
+
+
+class FakeRole:
+    def __init__(self, role_id, is_default=False):
+        self.id = role_id
+        self._default = is_default
+
+    def is_default(self):
+        return self._default
+
+
+class FakeGuild:
+    def __init__(self, roles):
+        self.roles = roles
+
+    def get_role(self, role_id):
+        return next((r for r in self.roles if r.id == role_id), None)
+
+
+def test_role_selection_object_rejects_default_role():
+    guild = FakeGuild([FakeRole(1, is_default=True), FakeRole(2)])
+    assert validate_role_selection("2", guild) == 2
+    try:
+        validate_role_selection("1", guild)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("@everyone/default role must not be selectable")
