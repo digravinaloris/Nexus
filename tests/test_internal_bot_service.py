@@ -58,6 +58,34 @@ class FakeBotService:
         return guild_id == "123" and user_id in {"42", "43"}
 
 
+    def guild_presence(self, guild_id):
+        self.calls.append(("guild_presence", guild_id))
+        return {"bot_ready": True, "guild_present": guild_id == "123"}
+
+    def guild_name(self, guild_id):
+        self.calls.append(("guild_name", guild_id))
+        return "Test Server" if guild_id == "123" else "the server"
+
+    def api_health_snapshot(self, guild_id=None):
+        self.calls.append(("api_health_snapshot", guild_id))
+        return {"online": True, "guild_count": 1 if guild_id else 4}
+
+    def api_guild_list_snapshot(self, guild_id=None):
+        self.calls.append(("api_guild_list_snapshot", guild_id))
+        if guild_id:
+            return [{"id": guild_id, "name": "Test Server"}]
+        return [{"id": "123", "name": "Test Server"}]
+
+    def api_guild_id_candidates(self):
+        self.calls.append("api_guild_id_candidates")
+        return ["123", "456"]
+
+    def available_guild_ids(self, candidate_ids):
+        self.calls.append(("available_guild_ids", candidate_ids))
+        return [guild_id for guild_id in candidate_ids if guild_id == "123"]
+
+
+
 def _request_body(payload=None):
     if payload is None:
         payload = {"method": "health_snapshot", "args": [], "kwargs": {}}
@@ -275,6 +303,94 @@ def test_oversized_body_and_nonce_store_outage_fail_closed():
     response = failing_client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 503
     assert failing_service.calls == []
+
+
+
+def test_signed_dispatch_returns_guild_presence_snapshot():
+    client, service = _client()
+    body = _request_body({"method": "guild_presence", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "ok": True,
+        "result": {"bot_ready": True, "guild_present": True},
+    }
+    assert service.calls == [("guild_presence", "123")]
+
+
+def test_signed_dispatch_returns_guild_name():
+    client, service = _client()
+    body = _request_body({"method": "guild_name", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": "Test Server"}
+    assert service.calls == [("guild_name", "123")]
+
+
+def test_signed_dispatch_returns_api_key_lookup_candidates():
+    client, service = _client()
+    body = _request_body({"method": "api_guild_id_candidates", "args": [], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": ["123", "456"]}
+    assert service.calls == ["api_guild_id_candidates"]
+
+
+def test_signed_dispatch_filters_available_guild_ids():
+    client, service = _client()
+    body = _request_body({
+        "method": "available_guild_ids",
+        "args": [["123", "456"]],
+        "kwargs": {},
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": ["123"]}
+    assert service.calls == [("available_guild_ids", ["123", "456"])]
+
+
+@pytest.mark.parametrize(
+    ("method", "args"),
+    [
+        ("guild_presence", []),
+        ("guild_presence", ["invalid"]),
+        ("guild_name", ["123", "456"]),
+        ("api_guild_id_candidates", ["123"]),
+        ("available_guild_ids", []),
+        ("available_guild_ids", [["123", "invalid"]]),
+        ("available_guild_ids", [["123"] * 501]),
+        ("api_health_snapshot", ["invalid"]),
+        ("api_guild_list_snapshot", ["invalid"]),
+    ],
+)
+def test_signed_dispatch_rejects_invalid_read_operation_arguments(method, args):
+    client, service = _client()
+    body = _request_body({"method": method, "args": args, "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_returns_optional_api_snapshots():
+    client, service = _client()
+    health_body = _request_body({"method": "api_health_snapshot", "args": ["123"], "kwargs": {}})
+    health = client.post(PATH, data=health_body, headers=_signed_headers(health_body))
+    assert health.status_code == 200
+    assert health.get_json() == {"ok": True, "result": {"online": True, "guild_count": 1}}
+
+    guilds_body = _request_body({"method": "api_guild_list_snapshot", "args": ["123"], "kwargs": {}})
+    guilds = client.post(PATH, data=guilds_body, headers=_signed_headers(guilds_body, nonce="g" * 24))
+    assert guilds.status_code == 200
+    assert guilds.get_json() == {"ok": True, "result": [{"id": "123", "name": "Test Server"}]}
+
+
+def test_signed_dispatch_fails_closed_on_malformed_read_operation_results():
+    client, service = _client()
+    service.guild_presence = lambda _guild_id: {"bot_ready": "yes", "guild_present": True}
+    body = _request_body({"method": "guild_presence", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
 
 
 class FakeMongoCollection:
