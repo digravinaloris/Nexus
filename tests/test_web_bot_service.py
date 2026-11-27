@@ -1551,3 +1551,20 @@ def test_get_bot_service_uses_lazy_cached_adapter_factory(monkeypatch):
     assert isinstance(first, FakeService)
     assert first is second
     assert FakeService.instances == 1
+
+
+
+def test_in_process_adapter_implements_every_bot_service_contract_method():
+    from web.bot_service import BotService
+    from web.in_process_bot_service import InProcessBotService
+
+    interface_methods = {
+        name for name, member in BotService.__dict__.items()
+        if callable(member) and not name.startswith("__")
+    }
+    adapter_methods = {
+        name for name, member in InProcessBotService.__dict__.items()
+        if callable(member) and not name.startswith("__")
+    }
+
+    assert interface_methods <= adapter_methods
