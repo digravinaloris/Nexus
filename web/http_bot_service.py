@@ -81,12 +81,14 @@ class SignedHttpBotService(BotService):
             "public_status_snapshot": 0,
             "guild_presence": 1,
             "guild_name": 1,
+            "api_text_channels_snapshot": 1,
+            "api_roles_snapshot": 1,
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
         if not isinstance(args, (list, tuple)) or len(args) != allowed_argument_counts[method]:
             raise ValueError("Invalid internal BotService arguments")
-        if method in {"guild_presence", "guild_name"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
 
         body = json.dumps(
@@ -181,6 +183,22 @@ class SignedHttpBotService(BotService):
         elif method == "guild_name":
             if not isinstance(result, str) or not result or len(result) > 256:
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method in {"api_text_channels_snapshot", "api_roles_snapshot"}:
+            if result is not None and (
+                not isinstance(result, list)
+                or len(result) > 500
+                or not all(
+                    isinstance(item, dict)
+                    and set(item) == {"id", "name"}
+                    and isinstance(item["id"], str)
+                    and re.fullmatch(r"[0-9]{1,20}", item["id"])
+                    and 0 < int(item["id"]) <= (2**64 - 1)
+                    and isinstance(item["name"], str)
+                    and 1 <= len(item["name"]) <= 100
+                    for item in result
+                )
+            ):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
         return result
 
     def health_snapshot(self):
@@ -194,3 +212,9 @@ class SignedHttpBotService(BotService):
 
     def guild_name(self, guild_id: str):
         return self._dispatch_snapshot("guild_name", (guild_id,))
+
+    def api_text_channels_snapshot(self, guild_id: str):
+        return self._dispatch_snapshot("api_text_channels_snapshot", (guild_id,))
+
+    def api_roles_snapshot(self, guild_id: str):
+        return self._dispatch_snapshot("api_roles_snapshot", (guild_id,))
