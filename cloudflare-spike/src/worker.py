@@ -42,25 +42,33 @@ def health():
 @app.post("/__spike/setup")
 def setup_schema():
     """Create disposable local-only tables used by the smoke test."""
-    schema = """
-    CREATE TABLE IF NOT EXISTS spike_oauth_states (
-        state_hash TEXT PRIMARY KEY,
-        expires_at INTEGER NOT NULL,
-        consumed_at INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS spike_sessions (
-        session_hash TEXT PRIMARY KEY,
-        payload TEXT NOT NULL,
-        expires_at INTEGER NOT NULL,
-        revoked_at INTEGER,
-        rotated_to TEXT
-    );
-    CREATE TABLE IF NOT EXISTS spike_batch_probe (
-        probe_key TEXT PRIMARY KEY
-    );
-    """
+    schema = [
+        """
+        CREATE TABLE IF NOT EXISTS spike_oauth_states (
+            state_hash TEXT PRIMARY KEY,
+            expires_at INTEGER NOT NULL,
+            consumed_at INTEGER
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS spike_sessions (
+            session_hash TEXT PRIMARY KEY,
+            payload TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            revoked_at INTEGER,
+            rotated_to TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS spike_batch_probe (
+            probe_key TEXT PRIMARY KEY
+        )
+        """,
+    ]
     try:
-        _await(_db().exec(schema))
+        db = _db()
+        for statement in schema:
+            _await(db.prepare(statement).run())
     except Exception as exc:
         print(f"Local D1 schema setup failed: {type(exc).__name__}: {exc}", flush=True)
         return jsonify({"error": "local D1 setup failed", "cause": type(exc).__name__}), 503
