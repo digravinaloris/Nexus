@@ -20,7 +20,8 @@ from command_catalog import COMMAND_TEMPLATES, MODERATION_COMMANDS
 from calendar_utils import parse_event_datetime, local_when, validate_timezone
 from features import FEATURE_TOGGLES
 from i18n import TRANSLATIONS, current_lang, t
-from utils import normalize_banned_word, normalize_domain, parse_bounded_number, parse_lines_list
+from utils import normalize_banned_word, normalize_domain, parse_lines_list
+from dashboard_utils import read_bounded_form_numbers
 from web.auth import dash_guild_admin_required, dash_login_required, get_user_admin_guilds
 from web.bot_service import get_bot_service
 from web.routing import Routes
@@ -146,18 +147,11 @@ def _t_or(key, default):
 
 
 def _read_numbers(fields):
-    """Champs numériques du formulaire ; un champ vide est ignoré (valeur
-    inchangée). ValueError(<nom du champ>) si une valeur est invalide."""
-    out = {}
-    for key, kind, lo, hi in fields:
-        raw = request.form.get(key, "")
-        if not raw.strip():
-            continue
-        try:
-            out[key] = parse_bounded_number(raw, kind, lo, hi)
-        except ValueError:
-            raise ValueError(key)
-    return out
+    """Read bounded numeric form fields; blank values remain unchanged."""
+    try:
+        return read_bounded_form_numbers(request.form, fields)
+    except ValueError as exc:
+        raise ValueError(str(exc))
 
 
 def _read_channel(key, channels):
