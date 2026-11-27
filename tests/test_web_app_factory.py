@@ -8,13 +8,12 @@ from pathlib import Path
 import pytest
 
 
-
-
 def _create_app(config):
     # Import after test modules have populated their OAuth environment defaults.
     from web.app_factory import create_web_app
 
     return create_web_app(config=config)
+
 
 def _config(**overrides):
     values = {
@@ -52,7 +51,7 @@ def test_factory_registers_existing_routes_and_security_hooks():
 
 
 def test_factory_installs_csrf_protection():
-    app = create_web_app(config=_config())
+    app = _create_app(_config())
     response = app.test_client().post("/dashboard/lang/fr", data={"next": "/dashboard"})
     assert response.status_code == 400
 
