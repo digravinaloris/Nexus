@@ -354,7 +354,27 @@ def rotate_flask_session():
     old_sid = session.sid
     app.session_interface.rotate_session(session)
     session["access_token"] = "spike-rotated-discord-access-token"
-    return jsonify({"rotated": True, "old_session_id": old_sid})
+    return jsonify({"rotated": True})
+
+
+
+@app.post("/__spike/flask-session/tamper")
+def tamper_flask_session():
+    sid = request.cookies.get(app.config["SESSION_COOKIE_NAME"], "")
+    if not sid:
+        return jsonify({"tampered": False}), 400
+    try:
+        _await(
+            _db()
+            .prepare(
+                "UPDATE spike_flask_sessions SET ciphertext_hex = '00' WHERE session_hash = ?"
+            )
+            .bind(_digest(sid))
+            .run()
+        )
+    except Exception:
+        return jsonify({"error": "local D1 unavailable"}), 503
+    return jsonify({"tampered": True})
 
 
 @app.post("/__spike/flask-session/logout")
