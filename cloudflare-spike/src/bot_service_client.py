@@ -219,14 +219,15 @@ class CloudflareFetchBotService:
             method in {"api_text_channels_snapshot", "api_roles_snapshot"}
             and result is not None
             and (
-            len(result) > 500
-            or not all(
-                isinstance(item, dict)
-                and set(item) == {"id", "name"}
-                and valid_id(item["id"])
-                and isinstance(item["name"], str)
-                and 1 <= len(item["name"]) <= 100
-                for item in result
+                len(result) > 500
+                or not all(
+                    isinstance(item, dict)
+                    and set(item) == {"id", "name"}
+                    and valid_id(item["id"])
+                    and isinstance(item["name"], str)
+                    and 1 <= len(item["name"]) <= 100
+                    for item in result
+                )
             )
         ):
             raise CloudflareBotServiceError(
