@@ -151,6 +151,9 @@ class CloudflareFetchBotService:
                 )
             ):
                 raise ValueError("Invalid guild stats snapshot arguments")
+        elif method == "api_faq_snapshot":
+            if expected_type != (dict, type(None)) or len(args) != 1 or not valid_id(args[0]):
+                raise ValueError("Invalid FAQ snapshot arguments")
         else:
             raise ValueError("Unsupported internal BotService operation")
 
@@ -245,6 +248,36 @@ class CloudflareFetchBotService:
             raise CloudflareBotServiceError(
                 "Internal BotService returned invalid guild collection"
             )
+        if method == "api_faq_snapshot" and result is not None:
+            if (
+                not isinstance(result, dict)
+                or set(result) != {"enabled", "entries"}
+                or not isinstance(result.get("enabled"), bool)
+                or not isinstance(result.get("entries"), list)
+                or len(result["entries"]) > 500
+                or not all(
+                    isinstance(entry, dict)
+                    and set(entry) == {"id", "keywords", "response"}
+                    and isinstance(entry["id"], str)
+                    and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", entry["id"])
+                    and isinstance(entry["keywords"], list)
+                    and 1 <= len(entry["keywords"]) <= 25
+                    and all(
+                        isinstance(keyword, str)
+                        and keyword.strip()
+                        and len(keyword) <= 100
+                        for keyword in entry["keywords"]
+                    )
+                    and isinstance(entry["response"], str)
+                    and entry["response"].strip()
+                    and len(entry["response"]) <= 2000
+                    for entry in result["entries"]
+                )
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
+            ):
+                raise CloudflareBotServiceError(
+                    "Internal BotService returned invalid FAQ snapshot"
+                )
         if method == "api_guild_stats_snapshot" and result not in (None, {}):
             count_fields = {
                 "ban_count", "muted_count", "open_tickets_count",
@@ -332,3 +365,6 @@ class CloudflareFetchBotService:
             ticket_category_id = str(ticket_category_id)
         args = [guild_id] if ticket_category_id is None else [guild_id, ticket_category_id]
         return self._dispatch("api_guild_stats_snapshot", args, (dict, type(None)))
+
+    def api_faq_snapshot(self, guild_id: str) -> dict | None:
+        return self._dispatch("api_faq_snapshot", [guild_id], (dict, type(None)))
