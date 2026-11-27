@@ -229,7 +229,9 @@ class CloudflareFetchBotService:
                 for item in result
             )
         ):
-            raise CloudflareBotServiceError("Internal BotService returned invalid guild collection")
+            raise CloudflareBotServiceError(
+                "Internal BotService returned invalid guild collection"
+            )
         return result
 
     def _dispatch_snapshot(self, method: str) -> dict:
