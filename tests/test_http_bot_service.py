@@ -723,6 +723,43 @@ def test_dashboard_submitted_appeals_snapshot_dispatches_and_validates_dto():
 
 
 @pytest.mark.parametrize(("guild_id", "limit"), [("bad", 10), ("123", True), ("123", 101), ("123", 0)])
+def test_signed_appeal_case_actions_dispatch_without_tokens():
+    for method, args in [
+        ("api_claim_appeal_by_case", ["345678901234567890", 12]),
+        ("api_release_appeal_claim_by_case", ["345678901234567890", 12]),
+        ("api_resolve_appeal_by_case", ["345678901234567890", 12, "denied"]),
+    ]:
+        session = FakeSession(response=FakeResponse(payload={"ok": True, "result": True}))
+        client = _client(session)
+        if method == "api_resolve_appeal_by_case":
+            result = client.api_resolve_appeal_by_case(*args)
+        else:
+            result = getattr(client, method)(*args)
+        assert result is True
+        payload = json.loads(session.calls[0][1]["data"])
+        assert payload["method"] == method and payload["args"] == args
+        assert "token" not in json.dumps(payload)
+
+
+@pytest.mark.parametrize(("method", "args"), [
+    ("api_claim_appeal_by_case", ("bad", 1)),
+    ("api_claim_appeal_by_case", ("123", True)),
+    ("api_release_appeal_claim_by_case", ("123", 0)),
+    ("api_resolve_appeal_by_case", ("123", 1, "processing")),
+])
+def test_signed_appeal_case_actions_reject_invalid_arguments(method, args):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        getattr(_client(session), method)(*args)
+    assert session.calls == []
+
+
+def test_signed_appeal_case_actions_reject_non_boolean_remote_result():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": 1}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(session).api_claim_appeal_by_case("123", 1)
+
+
 def test_dashboard_submitted_appeals_snapshot_rejects_invalid_arguments(guild_id, limit):
     session = FakeSession()
     with pytest.raises(ValueError):
