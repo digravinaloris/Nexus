@@ -558,6 +558,22 @@ def main():
         f"Workers Fetch accepted invalid audit arguments: {invalid_audit_args}",
     )
 
+    status, fetch_calendar_duplicate = call("/__spike/fetch-client/dashboard_calendar_has_duplicate_event", "POST", {})
+    require(
+        status == 200 and fetch_calendar_duplicate.get("result") is False,
+        f"Signed dashboard calendar duplicate check failed: {fetch_calendar_duplicate}",
+    )
+    status, invalid_calendar_duplicate = call("/__spike/fetch-client/dashboard_calendar_has_duplicate_event_invalid", "POST", {})
+    require(
+        status == 503 and invalid_calendar_duplicate.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed calendar duplicate result: {invalid_calendar_duplicate}",
+    )
+    status, invalid_calendar_duplicate_args = call("/__spike/fetch-client/dashboard_calendar_has_duplicate_event_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_calendar_duplicate_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid calendar duplicate arguments: {invalid_calendar_duplicate_args}",
+    )
+
     status, fetch_calendar_events = call("/__spike/fetch-client/dashboard_calendar_upcoming_events", "POST", {})
     calendar_result = fetch_calendar_events.get("result")
     require(

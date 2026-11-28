@@ -208,6 +208,23 @@ class CloudflareFetchBotService:
                 or not 1 <= args[1] <= 100
             ):
                 raise ValueError("Invalid audit snapshot arguments")
+        elif method == "dashboard_calendar_has_duplicate_event":
+            if (
+                expected_type is not bool
+                or len(args) != 3
+                or not valid_id(args[0])
+                or not isinstance(args[1], str)
+                or not 1 <= len(args[1]) <= 100
+                or not isinstance(args[2], str)
+                or len(args[2]) > 64
+            ):
+                raise ValueError("Invalid calendar duplicate-check arguments")
+            try:
+                requested_at = datetime.datetime.fromisoformat(args[2].replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("Invalid calendar duplicate-check timestamp") from exc
+            if requested_at.tzinfo is None:
+                raise ValueError("Calendar duplicate-check timestamp must be timezone-aware")
         elif method == "dashboard_calendar_upcoming_events":
             if (
                 expected_type is not list
@@ -909,6 +926,16 @@ class CloudflareFetchBotService:
             dict(item, timestamp=datetime.datetime.fromisoformat(item["timestamp"].replace("Z", "+00:00")))
             for item in result
         ]
+
+    def dashboard_calendar_has_duplicate_event(self, guild_id: str, title: str, starts_at) -> bool:
+        if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
+            raise ValueError("Invalid guild ID")
+        if not isinstance(title, str) or not 1 <= len(title) <= 100:
+            raise ValueError("Invalid calendar event title")
+        if not isinstance(starts_at, datetime.datetime) or starts_at.tzinfo is None:
+            raise ValueError("Calendar event time must be timezone-aware")
+        timestamp = starts_at.astimezone(datetime.timezone.utc).isoformat()
+        return self._dispatch("dashboard_calendar_has_duplicate_event", [guild_id, title, timestamp], bool)
 
     def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> list:
         if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
