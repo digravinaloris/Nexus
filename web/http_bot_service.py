@@ -104,6 +104,7 @@ class SignedHttpBotService(BotService):
             "dashboard_calendar_upcoming_events": 3,
             "is_guild_owner": 2,
             "is_guild_admin": 2,
+            "available_guild_ids": 1,
             "dashboard_submitted_appeals_snapshot": 2,
             "api_claim_appeal_by_case": 2,
             "api_release_appeal_claim_by_case": 2,
@@ -134,6 +135,13 @@ class SignedHttpBotService(BotService):
         ):
             raise ValueError("Invalid ticket category ID")
 
+        if method == "available_guild_ids" and (
+            not isinstance(args[0], list)
+            or len(args[0]) > 500
+            or not all(self._valid_guild_id(value) for value in args[0])
+            or len(set(args[0])) != len(args[0])
+        ):
+            raise ValueError("Invalid candidate guild IDs")
         if method in {"is_guild_owner", "is_guild_admin"} and not self._valid_guild_id(args[1]):
             raise ValueError("Invalid user ID")
         if method == "dashboard_calendar_upcoming_events":
@@ -249,7 +257,16 @@ class SignedHttpBotService(BotService):
             )
 
         result = payload["result"]
-        if method in {"is_guild_owner", "is_guild_admin"}:
+        if method == "available_guild_ids":
+            if (
+                not isinstance(result, list)
+                or len(result) > 500
+                or not all(self._valid_guild_id(value) for value in result)
+                or len(set(result)) != len(result)
+                or not set(result).issubset(set(args[0]))
+            ):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method in {"is_guild_owner", "is_guild_admin"}:
             if not isinstance(result, bool):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
@@ -743,6 +760,9 @@ class SignedHttpBotService(BotService):
 
     def public_status_snapshot(self):
         return self._dispatch_snapshot("public_status_snapshot")
+
+    def available_guild_ids(self, candidate_ids):
+        return self._dispatch_snapshot("available_guild_ids", (candidate_ids,))
 
     def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
         return self._dispatch_snapshot("is_guild_owner", (guild_id, user_id))
