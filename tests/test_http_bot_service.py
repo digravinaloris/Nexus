@@ -1190,3 +1190,40 @@ def test_dashboard_calendar_has_duplicate_event_rejects_non_boolean_result():
             "Community event",
             datetime.datetime(2026, 11, 28, tzinfo=datetime.timezone.utc),
         )
+
+
+
+def test_dashboard_presence_viewers_sends_signed_guild_scoped_request():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": ["Loris", "Alex"]}))
+
+    assert _client(session).dashboard_presence_viewers("123") == ["Loris", "Alex"]
+
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {
+        "method": "dashboard_presence_viewers",
+        "args": ["123"],
+        "kwargs": {},
+    }
+    verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+
+
+@pytest.mark.parametrize("guild_id", ["0", "not-a-guild", 123])
+def test_dashboard_presence_viewers_rejects_invalid_guild_id(guild_id):
+    session = FakeSession()
+    with pytest.raises(ValueError, match="Invalid guild ID"):
+        _client(session).dashboard_presence_viewers(guild_id)
+    assert session.calls == []
+
+
+@pytest.mark.parametrize("result", ["Loris", [""], ["x" * 101], ["Loris"] * 51])
+def test_dashboard_presence_viewers_rejects_malformed_response(result):
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result}))
+
+    with pytest.raises(BotServiceTransportError, match="invalid dashboard presence snapshot"):
+        _client(session).dashboard_presence_viewers("123")

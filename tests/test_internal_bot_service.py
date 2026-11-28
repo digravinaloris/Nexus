@@ -70,6 +70,10 @@ class FakeBotService:
         self.calls.append(("dashboard_config_snapshot", guild_id))
         return {"guild_id": guild_id, "welcome_channel_id": "456", "warn_mute_threshold": 3}
 
+    def dashboard_presence_viewers(self, guild_id):
+        self.calls.append(("dashboard_presence_viewers", guild_id))
+        return ["Loris", "Alex"]
+
     def dashboard_calendar_has_duplicate_event(self, guild_id, title, starts_at):
         self.calls.append(("dashboard_calendar_has_duplicate_event", guild_id, title, starts_at))
         return title == "Community event" and guild_id == "123"
@@ -240,6 +244,52 @@ def test_signed_dispatch_rejects_invalid_calendar_duplicate_arguments(args):
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 403
     assert service.calls == []
+
+
+def test_signed_dispatch_returns_dashboard_presence_viewers():
+    client, service = _client()
+    body = _request_body({
+        "method": "dashboard_presence_viewers",
+        "args": ["123"],
+        "kwargs": {},
+    })
+
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": ["Loris", "Alex"]}
+    assert service.calls == [("dashboard_presence_viewers", "123")]
+
+
+@pytest.mark.parametrize("args", [[], ["123", "extra"], ["bad-guild"], [123]])
+def test_signed_dispatch_rejects_invalid_dashboard_presence_viewer_arguments(args):
+    client, service = _client()
+    body = _request_body({
+        "method": "dashboard_presence_viewers",
+        "args": args,
+        "kwargs": {},
+    })
+
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+@pytest.mark.parametrize("result", ["Loris", [""], ["x" * 101], ["Loris"] * 51])
+def test_signed_dispatch_rejects_invalid_dashboard_presence_viewer_result(result):
+    client, service = _client()
+    service.dashboard_presence_viewers = lambda guild_id: result
+    body = _request_body({
+        "method": "dashboard_presence_viewers",
+        "args": ["123"],
+        "kwargs": {},
+    })
+
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
 
 
 def test_signed_dispatch_checks_calendar_duplicate_event():

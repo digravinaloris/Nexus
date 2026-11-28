@@ -177,6 +177,10 @@ def create_internal_bot_service_blueprint(
                 getattr(service, method_name, None),
                 [args[0], args[1], requested_at.astimezone(timezone.utc)],
             )
+        elif method_name == "dashboard_presence_viewers":
+            if len(args) != 1 or not valid_guild_id(args[0]):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_calendar_upcoming_events":
             if (
                 len(args) != 3
@@ -339,6 +343,14 @@ def create_internal_bot_service_blueprint(
             result = operation(*operation_args)
             if method_name in {"dashboard_calendar_has_duplicate_event", "public_global_lock_state"} and type(result) is not bool:
                 return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "dashboard_presence_viewers":
+                if (
+                    not isinstance(result, list)
+                    or len(result) > 50
+                    or any(not isinstance(name, str) or not 1 <= len(name) <= 100 for name in result)
+                    or len(json.dumps(result, ensure_ascii=True).encode("utf-8")) > 8192
+                ):
+                    return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "dashboard_public_templates_snapshot":
                 required = {"code", "name", "created_guild_name", "created_at", "feature_toggle_count", "command_role_count"}
                 if not isinstance(result, list) or len(result) > 50:
