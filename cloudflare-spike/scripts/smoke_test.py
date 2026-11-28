@@ -172,6 +172,52 @@ def main():
         "Logged-out Flask session remained usable",
     )
 
+    # Exercise idle and absolute expiry through Flask's real D1 SessionInterface.
+    status, _, set_cookie = call_with_cookie(
+        "/__spike/flask-session/login", "POST"
+    )
+    require(status == 200, "Idle-expiry Flask session setup failed")
+    idle_cookie = extract_session_cookie(set_cookie)
+    status, expired_idle, _ = call_with_cookie(
+        "/__spike/flask-session/expire-idle", "POST", idle_cookie
+    )
+    require(status == 200 and expired_idle.get("expired") is True, "Flask idle-expiry setup failed")
+    status, idle_identity, delete_cookie = call_with_cookie(
+        "/__spike/flask-session/me", cookie=idle_cookie
+    )
+    require(
+        status == 200 and idle_identity.get("authenticated") is False,
+        "Idle-expired Flask session remained authenticated",
+    )
+    require(
+        isinstance(delete_cookie, str) and "max-age=0" in delete_cookie.lower(),
+        "Idle-expired Flask session cookie was not cleared",
+    )
+
+    status, _, set_cookie = call_with_cookie(
+        "/__spike/flask-session/login", "POST"
+    )
+    require(status == 200, "Absolute-expiry Flask session setup failed")
+    absolute_cookie = extract_session_cookie(set_cookie)
+    status, expired_absolute, _ = call_with_cookie(
+        "/__spike/flask-session/expire-absolute", "POST", absolute_cookie
+    )
+    require(
+        status == 200 and expired_absolute.get("expired") is True,
+        "Flask absolute-expiry setup failed",
+    )
+    status, absolute_identity, delete_cookie = call_with_cookie(
+        "/__spike/flask-session/me", cookie=absolute_cookie
+    )
+    require(
+        status == 200 and absolute_identity.get("authenticated") is False,
+        "Absolute-expired Flask session remained authenticated",
+    )
+    require(
+        isinstance(delete_cookie, str) and "max-age=0" in delete_cookie.lower(),
+        "Absolute-expired Flask session cookie was not cleared",
+    )
+
     # Two concurrent requests sharing the same pre-auth cookie must not
     # both consume the same OAuth state/PKCE verifier.
     status, oauth_setup, set_cookie = call_with_cookie(
