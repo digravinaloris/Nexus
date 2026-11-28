@@ -23,7 +23,7 @@ from audit_services.audit import get_audit_log, record_audit
 from audit_services.export import _get_audit_records
 from services.bridge import run_coroutine
 from services.discord_logging import log_ban, log_dashboard_action, log_kick, log_mute, log_unmute, log_unwarn, log_warn
-from stores.sanctions_store import claim_sanction_appeal, get_ban_appeal, get_dashboard_warning_counts, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, resolve_sanction_appeal, set_warns, submit_ban_appeal
+from stores.sanctions_store import claim_sanction_appeal, claim_sanction_appeal_by_case, get_ban_appeal, get_dashboard_warning_counts, get_sanction_cases, get_sanction_stats, get_sanction_types, get_submitted_appeals, get_warnlist, get_warns, log_sanction, release_sanction_appeal_claim, release_sanction_appeal_claim_by_case, resolve_sanction_appeal, resolve_sanction_appeal_by_case, set_warns, submit_ban_appeal
 from helpers import utils
 from services.moderation_actions import _dm_user_appeal_result, post_appeal_for_review, reverse_sanction
 from services.owner_notify import notify_owner_bruteforce, notify_owner_killswitch
@@ -318,7 +318,12 @@ class InProcessBotService(BotService):
         return get_submitted_appeals(guild_id)
 
     def dashboard_submitted_appeals_snapshot(self, guild_id: str, limit: int = 100) -> List[Dict[str, object]]:
-        return get_submitted_appeals(guild_id, limit)
+        fields = ("case_id", "sanction_type", "user_name", "user_id", "ban_reason", "appeal_text", "submitted_at")
+        return [
+            {key: appeal[key] for key in fields}
+            for appeal in get_submitted_appeals(guild_id, limit)
+            if all(key in appeal for key in fields)
+        ]
 
     def api_get_appeal(self, token: str) -> Optional[Dict[str, object]]:
         return get_ban_appeal(token)
@@ -331,6 +336,15 @@ class InProcessBotService(BotService):
 
     def api_resolve_appeal(self, guild_id: str, token: str, status: str) -> bool:
         return resolve_sanction_appeal(guild_id, token, status)
+
+    def api_claim_appeal_by_case(self, guild_id: str, case_id: int) -> bool:
+        return claim_sanction_appeal_by_case(guild_id, case_id)
+
+    def api_release_appeal_claim_by_case(self, guild_id: str, case_id: int) -> bool:
+        return release_sanction_appeal_claim_by_case(guild_id, case_id)
+
+    def api_resolve_appeal_by_case(self, guild_id: str, case_id: int, status: str) -> bool:
+        return resolve_sanction_appeal_by_case(guild_id, case_id, status)
 
     def dashboard_add_command_role(self, guild_id: str, command: str, role_id: int) -> None:
         add_command_role(guild_id, command, role_id)

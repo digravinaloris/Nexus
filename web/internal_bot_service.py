@@ -143,6 +143,15 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case"}:
+            if len(args) != 2 or not valid_guild_id(args[0]) or type(args[1]) is not int or not 1 <= args[1] <= (2**63 - 1):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "api_resolve_appeal_by_case":
+            if (len(args) != 3 or not valid_guild_id(args[0]) or type(args[1]) is not int
+                or not 1 <= args[1] <= (2**63 - 1) or not isinstance(args[2], str) or args[2] not in {"accepted", "denied"}):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_submitted_appeals_snapshot":
             if len(args) != 2 or not valid_guild_id(args[0]) or type(args[1]) is not int or not 1 <= args[1] <= 100:
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -257,6 +266,9 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
+                if not isinstance(result, bool):
+                    return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "dashboard_submitted_appeals_snapshot":
                 required = {"guild_id", "case_id", "sanction_type", "user_name", "user_id", "ban_reason", "appeal_text", "submitted_at", "status"}
                 def appeal_dto(item):

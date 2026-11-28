@@ -202,6 +202,22 @@ def test_sanction_appeals_roundtrip():
     assert sanctions_store.get_ban_appeal("nope") is None
 
 
+def test_appeal_case_id_actions_are_guild_scoped_and_atomic(mongo_db):
+    sanctions_store.create_sanction_appeal(1, 7, "ban", 42, "Bob", "reason", "secret-token")
+    mongo_db["ban_appeals"].update_one({"token": "secret-token"}, {"$set": {
+        "status": "submitted", "appeal_text": "Please review", "submitted_at": datetime.datetime.now(UTC),
+    }})
+    assert sanctions_store.claim_sanction_appeal_by_case(1, 7) is True
+    assert sanctions_store.claim_sanction_appeal_by_case(1, 7) is False
+    assert sanctions_store.resolve_sanction_appeal_by_case(2, 7, "denied") is False
+    assert sanctions_store.release_sanction_appeal_claim_by_case(1, 7) is True
+    assert sanctions_store.claim_sanction_appeal_by_case(1, 7) is True
+    assert sanctions_store.resolve_sanction_appeal_by_case(1, 7, "accepted") is True
+    assert mongo_db["ban_appeals"].find_one({"token": "secret-token"})["status"] == "accepted"
+    with pytest.raises(ValueError):
+        sanctions_store.resolve_sanction_appeal_by_case(1, 7, "processing")
+
+
 def test_sanction_stats_are_zero_filled():
     sanctions_store.log_sanction(1, 42, "warn", "a", 7)
     sanctions_store.log_sanction(1, 43, "ban", "b", 7)

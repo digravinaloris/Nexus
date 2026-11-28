@@ -134,6 +134,34 @@ def get_ban_appeal_by_case(guild_id, case_id):
     return col.ban_appeals.find_one({"guild_id": str(guild_id), "case_id": case_id})
 
 
+def claim_sanction_appeal_by_case(guild_id, case_id):
+    """Atomically claim a submitted appeal using its guild-scoped case ID."""
+    result = col.ban_appeals.update_one(
+        {"guild_id": str(guild_id), "case_id": case_id, "status": "submitted"},
+        {"$set": {"status": "processing", "processing_at": datetime.datetime.now(datetime.timezone.utc)}},
+    )
+    return result.modified_count == 1
+
+
+def resolve_sanction_appeal_by_case(guild_id, case_id, status):
+    if status not in ("accepted", "denied"):
+        raise ValueError("Invalid appeal resolution status")
+    result = col.ban_appeals.update_one(
+        {"guild_id": str(guild_id), "case_id": case_id, "status": "processing"},
+        {"$set": {"status": status, "resolved_at": datetime.datetime.now(datetime.timezone.utc)},
+         "$unset": {"processing_at": ""}},
+    )
+    return result.modified_count == 1
+
+
+def release_sanction_appeal_claim_by_case(guild_id, case_id):
+    result = col.ban_appeals.update_one(
+        {"guild_id": str(guild_id), "case_id": case_id, "status": "processing"},
+        {"$set": {"status": "submitted"}, "$unset": {"processing_at": ""}},
+    )
+    return result.modified_count == 1
+
+
 def get_sanction_stats(guild_id, days=30):
     """Agrège le nombre de sanctions par jour sur les N derniers jours, pour
     le graphe du dashboard. Retourne une liste de (label_jour, nombre),

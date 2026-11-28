@@ -152,6 +152,18 @@ class BotService:
         """Resolve a claimed appeal to an accepted or denied state."""
         raise NotImplementedError
 
+    def api_claim_appeal_by_case(self, guild_id: str, case_id: int) -> bool:
+        """Atomically claim a submitted appeal by its guild-scoped case ID."""
+        raise NotImplementedError
+
+    def api_release_appeal_claim_by_case(self, guild_id: str, case_id: int) -> bool:
+        """Release a case-ID appeal claim after a failed resolution action."""
+        raise NotImplementedError
+
+    def api_resolve_appeal_by_case(self, guild_id: str, case_id: int, status: str) -> bool:
+        """Resolve a claimed appeal by its guild-scoped case ID."""
+        raise NotImplementedError
+
     def api_guild_list_snapshot(self, guild_id: str = None) -> Optional[List[Dict[str, object]]]:
         """Return serializable guild list DTOs, or None when the bot is offline."""
         raise NotImplementedError
