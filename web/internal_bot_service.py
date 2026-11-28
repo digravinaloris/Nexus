@@ -133,7 +133,11 @@ def create_internal_bot_service_blueprint(
         }
 
         def valid_guild_id(value):
-            return isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) is not None
+            return (
+                isinstance(value, str)
+                and re.fullmatch(r"[0-9]{1,20}", value) is not None
+                and 0 < int(value) <= (2**64 - 1)
+            )
 
         if method_name in {"is_guild_owner", "is_guild_admin"}:
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
