@@ -297,6 +297,73 @@ class InProcessBotService(BotService):
     def api_config_snapshot(self, guild_id: str) -> Dict[str, object]:
         return get_config(guild_id)
 
+
+    def dashboard_config_snapshot(self, guild_id: str) -> Dict[str, object]:
+        """Project dashboard settings onto an explicit, bounded, secret-free DTO."""
+        allowed = {
+            "guild_id", "logs_channel", "autorole", "language", "tickets_enabled",
+            "ticket_category_id", "appeal_channel_id", "boost_channel_id",
+            "member_count_channel_id", "welcome_channel_id", "welcome_banner_enabled",
+            "verification_enabled", "verified_role_id", "unverified_role_id",
+            "quarantine_enabled", "quarantine_role_id", "quarantine_channel_id",
+            "trap_channel_enabled", "trap_channel_id", "jtc_channel_id",
+            "detailed_logs_enabled", "antinuke_enabled", "weekly_digest_enabled",
+            "log_dashboard_actions", "anti_link_global_enabled",
+            "anti_mention_spam_enabled", "anti_media_flood_enabled",
+            "auto_slowmode_enabled", "anti_doxx_enabled", "raid_pattern_alert_enabled",
+            "auto_translate_enabled", "remindme_enabled", "serverinfo_visual_enabled",
+            "automod_spam_count", "automod_spam_window", "automod_caps_ratio",
+            "automod_raid_count", "automod_raid_window", "mention_spam_threshold",
+            "media_flood_count", "media_flood_window", "auto_slowmode_threshold",
+            "auto_slowmode_window", "auto_slowmode_seconds",
+            "auto_slowmode_duration_minutes", "warn_escalation_enabled",
+            "warn_mute_threshold", "warn_mute_minutes", "warn_kick_threshold",
+            "min_account_age_days", "antinuke_threshold",
+            "quarantine_suspicion_days", "quarantine_hold_minutes",
+            "banned_words", "banned_domains", "calendar_timezone",
+            "calendar_channel_id", "calendar_manager_role_ids",
+            "command_roles", "command_templates",
+        }
+        source = get_config(guild_id)
+        result = {key: source[key] for key in allowed if key in source}
+        for key in ("banned_words", "banned_domains", "calendar_manager_role_ids"):
+            if key in result:
+                value = result[key]
+                if (not isinstance(value, list) or len(value) > 1000
+                    or any(not isinstance(item, str) or len(item) > 253 for item in value)):
+                    result.pop(key)
+        for key in ("command_roles", "command_templates"):
+            if key in result:
+                value = result[key]
+                valid = (
+                    isinstance(value, dict) and len(value) <= 100
+                    and all(
+                        isinstance(name, str) and 0 < len(name) <= 100
+                        and isinstance(items, list) and len(items) <= 100
+                        and all(
+                            (isinstance(item, str) and len(item) <= 100)
+                            or (key == "command_roles" and type(item) is int and 0 < item < 2**64)
+                            for item in items
+                        )
+                        for name, items in value.items()
+                    )
+                )
+                if not valid:
+                    result.pop(key)
+        for key, value in list(result.items()):
+            if key in {
+                "guild_id", "banned_words", "banned_domains",
+                "calendar_manager_role_ids", "command_roles", "command_templates",
+            }:
+                continue
+            if value is not None and type(value) not in {bool, int, float, str}:
+                result.pop(key)
+            elif isinstance(value, str) and len(value) > 4096:
+                result.pop(key)
+        if result.get("guild_id") != str(guild_id):
+            result["guild_id"] = str(guild_id)
+        return result
+
     def api_rest_config_snapshot(self, guild_id: str) -> Dict[str, object]:
         """Project the legacy config document onto the reviewed mobile API schema."""
         allowed_fields = {
