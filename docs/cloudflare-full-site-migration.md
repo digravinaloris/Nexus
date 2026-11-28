@@ -193,3 +193,8 @@ No Cloudflare resources, secrets, DNS, production settings, or deployment were c
 4. Full template/static asset parity, Worker dependency compatibility, environment/binding matrix, monitoring, rollback and end-to-end route tests remain outstanding.
 
 No Cloudflare account resources, secrets, DNS, OAuth redirect settings, production hosting configuration, or deployment were changed. The existing Render path remains untouched. Cloudflare migration should begin only after the blockers above pass their tests and a separate explicit deployment/cutover approval is received.
+
+
+### Deployment-safety note: current Worker spike is intentionally non-deployable
+
+The checked-in `cloudflare-spike/wrangler.jsonc` still uses the all-zero placeholder D1 database ID, and the spike Worker sets its test session cookie with `SESSION_COOKIE_SECURE=False`. It also exposes local-only smoke-test routes and test fixtures. These are deliberate local-development settings, not production defaults. Do not publish this Worker or reuse its config for production. A production Worker needs a real provisioned D1 binding, secure opaque-cookie settings, production-only routes/fixtures, secret bindings, and an independent security review. This reinforces that the spike is not the site migration itself.
