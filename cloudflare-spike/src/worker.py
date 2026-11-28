@@ -90,6 +90,7 @@ def mock_internal_bot_service():
             "spike-channel-malformed",
             "spike-guild-list-malformed",
             "spike-guild-list-oversized",
+            "spike-guild-presence-malformed",
             "spike-role-malformed",
             "spike-stats-malformed",
             "spike-stats-out-of-range",
@@ -347,6 +348,8 @@ def mock_internal_bot_service():
             return jsonify({"ok": True, "result": oversized})
         return jsonify({"ok": True, "result": results[method]})
     if method == "guild_presence" and args == ["123"]:
+        if key_id == "spike-guild-presence-malformed":
+            return jsonify({"ok": True, "result": {"bot_ready": 1, "guild_present": True}})
         return jsonify({"ok": True, "result": {"bot_ready": True, "guild_present": True}})
     if method == "guild_name" and args == ["123"]:
         return jsonify({"ok": True, "result": "Spike Test Server"})
