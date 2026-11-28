@@ -120,6 +120,7 @@ def mock_internal_bot_service():
             "spike-dashboard-calendar-duplicate",
             "spike-dashboard-roles-duplicate",
             "spike-dashboard-settings-duplicate",
+            "spike-config-nonfinite",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -911,8 +912,10 @@ def exercise_fetch_bot_service_client(method):
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "dashboard_config_snapshot_invalid":
-            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-config-malformed",
-            "spike-config-nonfinite", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-config-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_config_snapshot("123")
+        elif method == "dashboard_config_snapshot_nonfinite":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-config-nonfinite", secret=_test_bot_service_secret(), allow_local_http=True)
             invalid_client.dashboard_config_snapshot("123")
         elif method == "dashboard_config_snapshot_invalid_args":
             try: client.dashboard_config_snapshot("not-decimal")
@@ -924,6 +927,14 @@ def exercise_fetch_bot_service_client(method):
             invalid_client = CloudflareFetchBotService(
                 base_url="http://127.0.0.1:8787",
                 key_id="spike-config-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_rest_config_snapshot("123")
+        elif method == "api_rest_config_snapshot_nonfinite":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-config-nonfinite",
                 secret=_test_bot_service_secret(),
                 allow_local_http=True,
             )
