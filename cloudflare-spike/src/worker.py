@@ -102,6 +102,7 @@ def mock_internal_bot_service():
             "spike-members-duplicate",
             "spike-dashboard-sanction-stats-malformed",
             "spike-dashboard-overview-malformed",
+            "spike-dashboard-overview-role-name-mismatch",
             "spike-dashboard-overview-oversized",
             "spike-public-templates-malformed",
             "spike-public-templates-duplicate",
@@ -449,6 +450,10 @@ def mock_internal_bot_service():
                 "name": "Moderator",
                 "permissions": {"administrator": "yes"},
             }]
+            return jsonify({"ok": True, "result": malformed})
+        if key_id == "spike-dashboard-overview-role-name-mismatch":
+            malformed = dict(results[method])
+            malformed["role_names"] = dict(malformed["role_names"], **{"321": "Forged role name"})
             return jsonify({"ok": True, "result": malformed})
         if key_id == "spike-dashboard-overview-oversized":
             oversized = dict(results[method])
