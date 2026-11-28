@@ -348,7 +348,11 @@ class SignedHttpBotService(BotService):
             raise ValueError("Invalid guild ID")
         return self._dispatch_snapshot("api_guild_list_snapshot", args)
 
-    def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None):\n        args = (guild_id,) if ticket_category_id is None else (guild_id, ticket_category_id)\n        return self._dispatch_snapshot("api_guild_stats_snapshot", args)\n\n    def api_health_snapshot(self, guild_id: str = None):
+    def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None):
+        args = (guild_id,) if ticket_category_id is None else (guild_id, ticket_category_id)
+        return self._dispatch_snapshot("api_guild_stats_snapshot", args)
+
+    def api_health_snapshot(self, guild_id: str = None):
         args = () if guild_id is None else (guild_id,)
         if guild_id is not None and not self._valid_guild_id(guild_id):
             raise ValueError("Invalid guild ID")
