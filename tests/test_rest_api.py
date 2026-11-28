@@ -410,12 +410,16 @@ def test_stats(env):
 
 # -------------------------------------------------------------------- config
 
-def test_config_get_hides_secrets(env):
+def test_config_get_hides_secrets_and_unreviewed_fields(env):
     from config_store import get_config, update_config
     get_config(GUILD)  # crée le doc avec ses valeurs par défaut (un upsert seul ne le fait pas)
     update_config(GUILD, "api_key", "secret")
+    update_config(GUILD, "log_webhook_url", "https://hooks.example/secret")
+    update_config(GUILD, "future_unreviewed_secret", "must-not-leak")
     body = env.client.get(url("/config"), headers=MASTER).get_json()
     assert "api_key" not in body and "_id" not in body
+    assert "log_webhook_url" not in body
+    assert "future_unreviewed_secret" not in body
     assert body["guild_id"] == str(GUILD) and body["logs_channel"] == "logs"
 
 
