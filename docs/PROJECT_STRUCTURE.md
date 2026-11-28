@@ -25,14 +25,14 @@ Nexus keeps its Discord bot entrypoint at the repository root while implementati
 | `assets/` | Static images and other application assets |
 | `tests/` | Automated tests and architecture guards |
 
-## Root-level compatibility modules
+## Legacy compatibility modules
 
-Small root-level modules such as `audit.py`, `core.py`, `utils.py`, and the former store modules are compatibility aliases. Production packages import canonical paths directly; these root modules remain only for older integrations and legacy callers.
+The `compat/` package contains small re-export modules for integrations that still use the former module interfaces. Production code must import canonical modules directly from their owning packages; `compat/` is reserved for migration and legacy callers.
 
 **New code should import from the owning package**, for example:
 
 ```python
-from nexus_runtime from nexus_runtime import core
+from nexus_runtime import core
 from services.discord_logging import log_dashboard_action
 from stores.config_store import get_config
 from security.verification import create_challenge

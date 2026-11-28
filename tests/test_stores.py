@@ -50,7 +50,7 @@ MODULES = ["core", "config_store", "sanctions_store", "killswitch_store", "faq_s
 def test_extracted_modules_never_import_main(module):
     """Sous `python main.py`, le module s'appelle __main__ : un `import main`
     le rechargerait une 2e fois (2e bot, commandes en double)."""
-    with open(os.path.join(ROOT, f"{module}.py"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "compat", f"{module}.py"), encoding="utf-8") as f:
         tree = ast.parse(f.read())
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):

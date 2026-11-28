@@ -115,7 +115,7 @@ def test_core_stays_in_sync_with_main_collections(nexus, monkeypatch):
     pointer vers les MÊMES collections. Si quelqu'un ajoute une collection dans
     init_mongo() sans la déclarer dans core.COLLECTION_NAMES (ou l'inverse),
     ce test échoue."""
-    import core
+    from compat import core
 
     class FakeCollection:
         def __init__(self, name):
@@ -175,11 +175,11 @@ def test_core_stays_in_sync_with_main_collections(nexus, monkeypatch):
 def test_extracted_helpers_are_reexported_by_main(nexus):
     """Étape 2a : les fonctions déplacées hors de main.py doivent rester
     accessibles sous les MÊMES noms (tout le code de main.py les appelle ainsi)."""
-    import audit
-    import config_store
-    import core
-    import i18n
-    import sanctions_store
+    from compat import audit
+    from compat import config_store
+    from compat import core
+    from compat import i18n
+    from compat import sanctions_store
     from stores import reaction_roles_store, sticky_store
     from stores import role_menu_store
     from stores import invite_tracking_store
@@ -273,10 +273,10 @@ def test_rest_api_blueprint_is_registered_on_the_app(nexus):
     for name in ("health", "list_guilds", "guild_stats", "ban_member_route", "guild_faq_toggle_route"):
         assert not hasattr(nexus, name), f"main.{name} aurait dû partir dans web/rest_api.py"
     # Les helpers déplacés restent accessibles sous le même nom dans main.py
-    import bridge
-    import discord_logging
-    import features
-    import moderation_actions
+    from compat import bridge
+    from compat import discord_logging
+    from compat import features
+    from compat import moderation_actions
     assert nexus.run_coroutine is bridge.run_coroutine
     assert nexus.FEATURE_TOGGLES is features.FEATURE_TOGGLES
     assert nexus._send_log_embed is discord_logging._send_log_embed
@@ -297,8 +297,8 @@ def test_public_and_auth_routes_live_in_web_modules(nexus):
     assert nexus.api.view_functions["dash_login"] is auth.dash_login
     assert nexus.api.view_functions["home"] is public.home
     # Helpers déplacés, toujours accessibles sous le même nom
-    import moderation_actions
-    import owner_notify
+    from compat import moderation_actions
+    from compat import owner_notify
     assert nexus.SANCTION_ICONS is moderation_actions.SANCTION_ICONS
     assert nexus.post_appeal_for_review is moderation_actions.post_appeal_for_review
     assert nexus.get_owner_user is owner_notify.get_owner_user
@@ -320,9 +320,9 @@ def test_dashboard_pages_live_in_web_dashboard(nexus):
     for name in DASHBOARD_ENDPOINTS:
         assert nexus.api.view_functions[name] is getattr(dashboard, name), name
         assert not hasattr(nexus, name), f"main.{name} aurait dû partir dans web/dashboard.py"
-    import audit_export
-    import command_catalog
-    import template_ops
+    from compat import audit_export
+    from compat import command_catalog
+    from compat import template_ops
     # Données / helpers partagés avec les slash commands, ré-importés sous le même nom
     assert nexus.MODERATION_COMMANDS is command_catalog.MODERATION_COMMANDS
     assert nexus.COMMAND_TEMPLATES is command_catalog.COMMAND_TEMPLATES
@@ -470,3 +470,24 @@ def test_ticket_modal_supports_five_custom_questions(nexus):
     assert len(text_inputs) == 5
     assert [item.label for item in text_inputs] == questions
     assert all(item.required for item in text_inputs)
+
+
+def test_root_python_files_are_limited_to_the_entrypoint():
+    from pathlib import Path
+
+    assert {path.name for path in Path(ROOT).glob("*.py")} == {"main.py"}
+
+
+def test_legacy_modules_are_available_from_compat_package():
+    from importlib import import_module
+
+    modules = (
+        "audit", "audit_export", "bridge", "calendar_store", "calendar_utils",
+        "command_catalog", "config_store", "core", "dashboard_utils",
+        "discord_logging", "faq_store", "features", "i18n", "jsonlog",
+        "killswitch_store", "moderation_actions", "owner_notify",
+        "sanctions_store", "template_ops", "template_store", "turnstile",
+        "utils", "verification", "welcome",
+    )
+    for module in modules:
+        assert import_module(f"compat.{module}") is not None
