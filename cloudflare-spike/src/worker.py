@@ -904,6 +904,18 @@ def setup_schema():
 
 
 
+@app.post("/__spike/flask-session/invalid-payload/<kind>")
+def create_invalid_flask_session_payload(kind):
+    """Exercise fail-closed serialization and payload-size limits."""
+    if kind == "unserializable":
+        session["unsupported_value"] = object()
+    elif kind == "oversized":
+        session["oversized_value"] = "x" * 16_385
+    else:
+        return jsonify({"error": "unknown test payload"}), 400
+    return jsonify({"prepared": True})
+
+
 @app.post("/__spike/flask-session/login")
 def create_flask_session():
     """Create a disposable Flask session containing a fake bearer credential."""
