@@ -406,7 +406,9 @@ class CloudflareFetchBotService:
             not isinstance(result, dict)
             or set(result) != {"status", "discord_gateway", "mongodb", "guild_count"}
             or result["status"] != "alive"
+            or not isinstance(result["discord_gateway"], str)
             or result["discord_gateway"] not in {"connected", "disconnected"}
+            or not isinstance(result["mongodb"], str)
             or result["mongodb"] not in {"connected", "unreachable"}
             or type(result["guild_count"]) is not int
             or not 0 <= result["guild_count"] <= 10_000_000
