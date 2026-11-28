@@ -60,6 +60,10 @@ class BotService:
         """Return an allowlisted mobile REST config DTO without secrets or unknown fields."""
         raise NotImplementedError
 
+    def dashboard_config_snapshot(self, guild_id: str) -> Dict[str, object]:
+        """Return an allowlisted dashboard configuration read model."""
+        raise NotImplementedError
+
     def api_update_config(self, guild_id: str, updates: Dict[str, object]) -> None:
         """Persist validated API config updates inside the bot service."""
         raise NotImplementedError
