@@ -762,6 +762,18 @@ def main():
         and invalid_stats.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch client accepted malformed guild stats: {invalid_stats}",
     )
+    for invalid_stats_route in (
+        "api_guild_stats_snapshot_out_of_range",
+        "api_guild_stats_snapshot_wrong_guild",
+    ):
+        status, invalid_stats_dto = call(
+            f"/__spike/fetch-client/{invalid_stats_route}", "POST", {}
+        )
+        require(
+            status == 503
+            and invalid_stats_dto.get("error") == "local Worker Fetch transport unavailable",
+            f"Workers Fetch client accepted invalid guild stats DTO ({invalid_stats_route}): {invalid_stats_dto}",
+        )
     status, invalid_stats_args = call(
         "/__spike/fetch-client/api_guild_stats_snapshot_invalid_args", "POST", {}
     )
