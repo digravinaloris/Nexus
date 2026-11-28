@@ -995,3 +995,41 @@ def test_factory_rejects_server_side_backend_without_secure_cookie_capability(ca
             session_interface=IncompleteSecurityBackend(),
             require_server_side_sessions=True,
         )
+
+
+def test_factory_requires_secure_session_backend_when_runtime_gate_is_enabled():
+    with pytest.raises(RuntimeError, match="opaque cookies, encrypted server-side payloads"):
+        _create_app(
+            _config(),
+            environ={
+                "FLASK_SECRET_KEY": "web-factory-test-secret",
+                "NEXUS_REQUIRE_SERVER_SIDE_SESSIONS": "true",
+            },
+        )
+
+
+def test_factory_runtime_session_gate_accepts_complete_secure_backend():
+    class CompleteSecureSessionInterface:
+        nexus_server_side_sessions = True
+        nexus_opaque_cookie_sessions = True
+        nexus_encrypted_session_payloads = True
+
+        def consume_oauth_state(self, session, expected_state):
+            return True
+
+        def rotate_session(self, session):
+            return None
+
+        def revoke_session(self, session):
+            return None
+
+    backend = CompleteSecureSessionInterface()
+    app = _create_app(
+        _config(),
+        environ={
+            "FLASK_SECRET_KEY": "web-factory-test-secret",
+            "NEXUS_REQUIRE_SERVER_SIDE_SESSIONS": "true",
+        },
+        session_interface=backend,
+    )
+    assert app.session_interface is backend
