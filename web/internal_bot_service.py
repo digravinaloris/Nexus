@@ -175,6 +175,14 @@ def create_internal_bot_service_blueprint(
             if len(args) > 1 or (args and not valid_guild_id(args[0])):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "api_guild_stats_snapshot":
+            if (
+                len(args) not in {1, 2}
+                or not valid_guild_id(args[0])
+                or (len(args) == 2 and args[1] is not None and not valid_guild_id(args[1]))
+            ):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_guild_id_candidates":
             if args != []:
                 return jsonify({"error": "unsupported internal operation"}), 403
