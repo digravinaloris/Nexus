@@ -28,6 +28,10 @@ class BotService:
         """Return the connected guild IDs as strings for API-key lookup."""
         raise NotImplementedError
 
+    def api_authenticate_key(self, provided_key: str, guild_id: str = None) -> Optional[str]:
+        """Verify a per-guild API key server-side and return its authorized guild ID."""
+        raise NotImplementedError
+
     def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
         """Check ownership using the bot's current guild cache."""
         raise NotImplementedError
