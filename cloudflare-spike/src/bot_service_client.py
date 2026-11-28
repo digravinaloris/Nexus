@@ -778,6 +778,11 @@ class CloudflareFetchBotService:
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
 
+    def api_warnlist_snapshot(self, guild_id: str) -> list:
+        if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
+            raise ValueError("Invalid guild ID")
+        return self._dispatch("api_warnlist_snapshot", [guild_id], list)
+
     def api_sanction_cases_snapshot(self, guild_id: str, filter_type: str = "", limit: int = 50) -> list:
         if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
             raise ValueError("Invalid guild ID")
