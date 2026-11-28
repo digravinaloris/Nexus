@@ -214,6 +214,7 @@ from web.app_factory import create_web_app
 from nexus_runtime.web_server import run_web_server
 from nexus_runtime.signals import handle_sigterm
 from nexus_runtime.shutdown import close_mongo_connection
+from nexus_runtime.entrypoint import start_runtime_services
 from nexus_runtime.web_server import start_web_server_thread
 
 # MongoDB setup
@@ -4575,8 +4576,7 @@ def main():
     """Point d'entrée : le serveur Flask, le handler SIGTERM et bot.run() ne
     démarrent QUE si on lance `python main.py`. Importer main.py (tests,
     futurs modules) n'a donc plus d'effet de bord."""
-    keep_alive()
-    signal.signal(signal.SIGTERM, _handle_sigterm)
+    start_runtime_services(keep_alive, signal, _handle_sigterm)
 
     try:
         bot.run(os.getenv("TOKEN"))
