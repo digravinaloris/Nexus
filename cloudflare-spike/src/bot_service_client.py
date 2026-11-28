@@ -333,7 +333,7 @@ class CloudflareFetchBotService:
                 if not isinstance(label, str) or re.fullmatch(r"[0-3][0-9]/[0-1][0-9]", label) is None:
                     return False
                 try:
-                    time.strptime(label, "%d/%m")
+                    time.strptime(label + "/2000", "%d/%m/%Y")
                     return True
                 except ValueError:
                     return False
