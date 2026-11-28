@@ -39,6 +39,10 @@ def extract_session_cookie(set_cookie: str | None) -> str:
     require(isinstance(set_cookie, str), "Flask did not issue an opaque session cookie")
     require("httponly" in set_cookie.lower(), "Session cookie is not HttpOnly")
     require("path=/" in set_cookie.lower(), "Session cookie path is not root")
+    require("samesite=lax" in set_cookie.lower(), "Session cookie SameSite policy is not Lax")
+    require("secure" not in set_cookie.lower(), "Local HTTP spike unexpectedly marked cookie Secure; local test transport is plain HTTP")
+    require("domain=" not in set_cookie.lower(), "Session cookie is not host-only")
+    require(set_cookie.split(";", 1)[0].startswith("nexus_spike_session="), "Unexpected session cookie name")
     value = set_cookie.split(";", 1)[0].split("=", 1)[1]
     require(bool(value), "Session cookie is empty")
     return value
