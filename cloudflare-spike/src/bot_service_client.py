@@ -692,6 +692,7 @@ class CloudflareFetchBotService:
                 or len(result) > args[1]
                 or not all(valid_audit_entry(item) for item in result)
                 or any(result[i]["timestamp"] < result[i + 1]["timestamp"] for i in range(len(result) - 1))
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 64 * 1024
             ):
                 raise CloudflareBotServiceError("Internal BotService returned invalid audit snapshot")
         if method == "dashboard_calendar_upcoming_events":
