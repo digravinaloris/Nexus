@@ -91,6 +91,12 @@ def test_factory_injects_flask_session_interface():
 
 def test_factory_can_require_a_complete_server_side_session_backend():
     class CompleteServerSessionInterface:
+        def open_session(self, app, request):
+            return {}
+
+        def save_session(self, app, session, response):
+            return None
+
         nexus_server_side_sessions = True
         nexus_opaque_cookie_sessions = True
         nexus_encrypted_session_payloads = True
@@ -128,6 +134,38 @@ def test_factory_can_require_a_complete_server_side_session_backend():
         })(),
     ],
 )
+@pytest.mark.parametrize("missing_method", ["open_session", "save_session"])
+def test_factory_rejects_backend_without_flask_session_interface_methods(missing_method):
+    class IncompleteFlaskSessionInterface:
+        nexus_server_side_sessions = True
+        nexus_opaque_cookie_sessions = True
+        nexus_encrypted_session_payloads = True
+
+        def open_session(self, app, request):
+            return {}
+
+        def save_session(self, app, session, response):
+            return None
+
+        def consume_oauth_state(self, session, expected_state):
+            return True
+
+        def rotate_session(self, session):
+            return None
+
+        def revoke_session(self, session):
+            return None
+
+    backend = IncompleteFlaskSessionInterface()
+    delattr(backend, missing_method)
+    with pytest.raises(RuntimeError, match="opaque cookies, encrypted"):
+        _create_app(
+            _config(),
+            session_interface=backend,
+            require_server_side_sessions=True,
+        )
+
+
 def test_factory_rejects_missing_or_incomplete_server_side_session_backend(backend):
     with pytest.raises(RuntimeError, match="server-side payloads"):
         _create_app(
@@ -1010,6 +1048,12 @@ def test_factory_requires_secure_session_backend_when_runtime_gate_is_enabled():
 
 def test_factory_runtime_session_gate_accepts_complete_secure_backend():
     class CompleteSecureSessionInterface:
+        def open_session(self, app, request):
+            return {}
+
+        def save_session(self, app, session, response):
+            return None
+
         nexus_server_side_sessions = True
         nexus_opaque_cookie_sessions = True
         nexus_encrypted_session_payloads = True
