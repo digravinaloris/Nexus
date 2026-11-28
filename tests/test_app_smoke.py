@@ -470,3 +470,24 @@ def test_ticket_modal_supports_five_custom_questions(nexus):
     assert len(text_inputs) == 5
     assert [item.label for item in text_inputs] == questions
     assert all(item.required for item in text_inputs)
+
+
+def test_root_python_files_are_limited_to_the_entrypoint():
+    from pathlib import Path
+
+    assert {path.name for path in Path(ROOT).glob("*.py")} == {"main.py"}
+
+
+def test_legacy_modules_are_available_from_compat_package():
+    from importlib import import_module
+
+    modules = (
+        "audit", "audit_export", "bridge", "calendar_store", "calendar_utils",
+        "command_catalog", "config_store", "core", "dashboard_utils",
+        "discord_logging", "faq_store", "features", "i18n", "jsonlog",
+        "killswitch_store", "moderation_actions", "owner_notify",
+        "sanctions_store", "template_ops", "template_store", "turnstile",
+        "utils", "verification", "welcome",
+    )
+    for module in modules:
+        assert import_module(f"compat.{module}") is not None
