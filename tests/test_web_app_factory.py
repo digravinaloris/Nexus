@@ -749,3 +749,71 @@ def test_oauth_callback_fails_closed_when_session_rotation_fails():
     assert "csrf_token" not in backend.session
     assert "dash_user" not in backend.session
     assert "Set-Cookie" not in response.headers
+
+
+
+def test_oauth_callback_fails_closed_when_session_save_fails():
+    import time
+    from flask.sessions import SessionInterface, SessionMixin
+
+
+    class BackendSession(dict, SessionMixin):
+        new = False
+        modified = False
+        accessed = False
+
+    class FakeSessionInterface(SessionInterface):
+        def __init__(self):
+            self.session = BackendSession(
+                oauth_state="save-failure-state",
+                oauth_state_created_at=time.time(),
+                oauth_code_verifier="C" * 43,
+            )
+            self.persisted = {}
+            self.rotations = 0
+            self.save_attempts = 0
+
+        def open_session(self, app, request):
+            return self.session
+
+        def save_session(self, app, session, response):
+            self.save_attempts += 1
+            raise RuntimeError("session backend write unavailable")
+
+        def rotate_session(self, session):
+            self.rotations += 1
+
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class FakeDiscordHttpClient:
+        def post(self, url, **kwargs):
+            return FakeResponse(200, {"access_token": "write-failure-token", "expires_in": 3600})
+
+        def get(self, url, **kwargs):
+            return FakeResponse(200, {"id": "123456789012345678", "username": "write-failure-user"})
+
+
+
+    backend = FakeSessionInterface()
+    app = _create_app(
+        _config(DISCORD_HTTP_CLIENT=FakeDiscordHttpClient()),
+        session_interface=backend,
+    )
+
+    response = app.test_client().get(
+        "/callback?code=valid-authorization-code&state=save-failure-state"
+    )
+
+
+
+    assert response.status_code == 500
+    assert backend.rotations == 1
+    assert backend.save_attempts == 2  # Flask attempts to save both the original and error response
+    assert backend.persisted == {}
+    assert "Set-Cookie" not in response.headers
