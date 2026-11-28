@@ -247,8 +247,7 @@ class SignedHttpBotService(BotService):
                 or set(result) != {"bot_ready", "guild_present"}
                 or any(not isinstance(value, bool) for value in result.values())
             ):
-                raise BotServiceTransportError("Internal BotService returned an invalid response")
-        elif method == "guild_name":
+                raise BotServiceTransportError("Internal BotService returned an invalid response")        elif method == "guild_name":
             if not isinstance(result, str) or not result or len(result) > 256:
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method in {"api_text_channels_snapshot", "api_roles_snapshot"}:
@@ -497,8 +496,7 @@ class SignedHttpBotService(BotService):
                 )
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
-        elif method == "dashboard_settings_snapshot":
-            if result is not None:
+        elif method == "dashboard_settings_snapshot":            if result is not None:
                 def valid_item(item):
                     return (
                         isinstance(item, dict)
@@ -624,6 +622,7 @@ class SignedHttpBotService(BotService):
                 "command_roles", "command_templates",
             }
             forbidden_fragments = ("secret", "token", "webhook", "api_key", "password", "cookie", "credential")
+
             def safe_dashboard_value(value, depth=0):
                 if depth > 6:
                     return False
@@ -639,11 +638,47 @@ class SignedHttpBotService(BotService):
                         for key, item in value.items()
                     )
                 return False
-            if (not isinstance(result, dict)
+
+            def valid_string_list(value):
+                return (
+                    isinstance(value, list)
+                    and len(value) <= 1000
+                    and all(isinstance(item, str) and len(item) <= 253 for item in value)
+                )
+
+            def valid_command_mapping(value, *, allow_role_ids=False):
+                return (
+                    isinstance(value, dict)
+                    and len(value) <= 100
+                    and all(
+                        isinstance(name, str) and 0 < len(name) <= 100
+                        and isinstance(items, list) and len(items) <= 100
+                        and all(
+                            (isinstance(item, str) and len(item) <= 100)
+                            or (allow_role_ids and type(item) is int and 0 < item < 2**64)
+                            for item in items
+                        )
+                        for name, items in value.items()
+                    )
+                )
+
+            list_fields = ("banned_words", "banned_domains", "calendar_manager_role_ids")
+            scalar_fields = allowed_fields - set(list_fields) - {"command_roles", "command_templates", "guild_id"}
+            if (
+                not isinstance(result, dict)
                 or not set(result).issubset(allowed_fields)
                 or result.get("guild_id") != args[0]
+                or any(not valid_string_list(result[key]) for key in list_fields if key in result)
+                or ("command_roles" in result and not valid_command_mapping(result["command_roles"], allow_role_ids=True))
+                or ("command_templates" in result and not valid_command_mapping(result["command_templates"]))
+                or any(
+                    value is not None
+                    and type(value) not in {bool, int, float, str}
+                    for key, value in result.items() if key in scalar_fields
+                )
                 or not safe_dashboard_value(result)
-                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True)) > 65536):
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True)) > 65536
+            ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
         return result
 
@@ -747,8 +782,7 @@ class SignedHttpBotService(BotService):
         return self._dispatch_snapshot(method, (guild_id, case_id, *extra))
 
     def api_sanction_cases_snapshot(self, guild_id: str, filter_type: str = "", limit: int = 50):
-        if not self._valid_guild_id(guild_id):
-            raise ValueError("Invalid guild ID")
+        if not self._valid_guild_id(guild_id):            raise ValueError("Invalid guild ID")
         if (not isinstance(filter_type, str)
             or (filter_type and re.fullmatch(r"[a-z][a-z0-9_]{0,31}", filter_type) is None)
             or type(limit) is not int or not 1 <= limit <= 200):
