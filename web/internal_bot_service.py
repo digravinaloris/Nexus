@@ -180,6 +180,10 @@ def create_internal_bot_service_blueprint(
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_public_templates_snapshot":
+            if args != []:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_authenticate_key":
             if (len(args) not in {1, 2} or not isinstance(args[0], str)
                 or not args[0].isascii() or not 1 <= len(args[0]) <= 512
@@ -312,6 +316,42 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name == "dashboard_public_templates_snapshot":
+                required = {"code", "name", "created_guild_name", "created_at", "feature_toggle_count", "command_role_count"}
+                if not isinstance(result, list) or len(result) > 50:
+                    return jsonify({"error": "internal service unavailable"}), 503
+                projected = []
+                for item in result:
+                    stamp = item.get("created_at") if isinstance(item, dict) else None
+                    if isinstance(stamp, datetime):
+                        if stamp.tzinfo is None:
+                            stamp = stamp.replace(tzinfo=timezone.utc)
+                        stamp = stamp.astimezone(timezone.utc)
+                    if (
+                        not isinstance(item, dict)
+                        or not required.issubset(item)
+                        or not isinstance(item["code"], str)
+                        or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", item["code"]) is None
+                        or not isinstance(item["name"], str) or not 1 <= len(item["name"]) <= 100
+                        or not isinstance(item["created_guild_name"], str) or not 1 <= len(item["created_guild_name"]) <= 100
+                        or not isinstance(stamp, datetime)
+                        or type(item["feature_toggle_count"]) is not int or not 0 <= item["feature_toggle_count"] <= 500
+                        or type(item["command_role_count"]) is not int or not 0 <= item["command_role_count"] <= 500
+                    ):
+                        return jsonify({"error": "internal service unavailable"}), 503
+                    projected.append({
+                        "code": item["code"],
+                        "name": item["name"],
+                        "created_guild_name": item["created_guild_name"],
+                        "created_at": stamp.isoformat().replace("+00:00", "Z"),
+                        "feature_toggle_count": item["feature_toggle_count"],
+                        "command_role_count": item["command_role_count"],
+                    })
+                if len({item["code"] for item in projected}) != len(projected):
+                    return jsonify({"error": "internal service unavailable"}), 503
+                if len(json.dumps(projected, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024:
+                    return jsonify({"error": "internal service unavailable"}), 503
+                result = projected
             if method_name == "dashboard_calendar_upcoming_events":
                 if result is not None:
                     if not isinstance(result, list) or len(result) > operation_args[2]:

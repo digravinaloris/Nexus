@@ -649,6 +649,35 @@ def main():
     status, invalid_dashboard_roles_args = call("/__spike/fetch-client/dashboard_roles_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_roles_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard roles arguments: {invalid_dashboard_roles_args}")
 
+    status, fetch_public_templates = call("/__spike/fetch-client/dashboard_public_templates_snapshot", "POST", {})
+    expected_public_templates = [{
+        "code": "AbC_123-x",
+        "name": "Welcome Pack",
+        "created_guild_name": "Spike Test Server",
+        "created_at": "Sat, 28 Nov 2026 09:30:00 GMT",
+        "feature_toggle_count": 4,
+        "command_role_count": 2,
+    }]
+    require(
+        status == 200 and fetch_public_templates.get("result") == expected_public_templates,
+        f"Signed public template snapshot failed: {fetch_public_templates}",
+    )
+    status, invalid_public_templates = call("/__spike/fetch-client/dashboard_public_templates_snapshot_invalid", "POST", {})
+    require(
+        status == 503 and invalid_public_templates.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted unsafe public template fields: {invalid_public_templates}",
+    )
+    status, duplicate_public_templates = call("/__spike/fetch-client/dashboard_public_templates_snapshot_duplicate", "POST", {})
+    require(
+        status == 503 and duplicate_public_templates.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted duplicate public template codes: {duplicate_public_templates}",
+    )
+    status, invalid_public_template_args = call("/__spike/fetch-client/dashboard_public_templates_snapshot_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_public_template_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid public template arguments: {invalid_public_template_args}",
+    )
+
     status, fetch_dashboard_settings = call("/__spike/fetch-client/dashboard_settings_snapshot", "POST", {})
     expected_dashboard_settings = {
         "id": "123", "name": "Spike Test Server", "owner_id": "42",
