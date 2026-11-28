@@ -182,6 +182,7 @@ def mock_internal_bot_service():
             ],
         },
         "dashboard_config_snapshot": {"guild_id": "123", "language": "en", "tickets_enabled": True, "banned_words": ["spam"], "command_roles": {"ban": [321]}},
+        "dashboard_sanction_types_snapshot": ["ban", "kick", "mute", "warn"],
         "dashboard_roles_snapshot": [
             {"id": "321", "name": "Moderator"},
             {"id": "654", "name": "Member"},
@@ -232,6 +233,12 @@ def mock_internal_bot_service():
     if method == "api_roles_snapshot" and args == ["123"]:
         if key_id == "spike-role-malformed":
             return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "Moderator"}]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_sanction_types_snapshot" and args == ["123"]:
+        if key_id == "spike-dashboard-sanction-types-malformed":
+            return jsonify({"ok": True, "result": ["ban", "not valid!"]})
+        if key_id == "spike-dashboard-sanction-types-duplicate":
+            return jsonify({"ok": True, "result": ["ban", "ban"]})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_roles_snapshot" and args == ["123"]:
         if key_id == "spike-dashboard-roles-malformed":
@@ -371,6 +378,18 @@ def exercise_fetch_bot_service_client(method):
                 result = {"rejected": False}
         elif method == "dashboard_config_snapshot":
             result = client.dashboard_config_snapshot("123")
+        elif method == "dashboard_sanction_types_snapshot":
+            result = client.dashboard_sanction_types_snapshot("123")
+        elif method == "dashboard_sanction_types_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-sanction-types-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_sanction_types_snapshot("123")
+        elif method == "dashboard_sanction_types_snapshot_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-sanction-types-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_sanction_types_snapshot("123")
+        elif method == "dashboard_sanction_types_snapshot_invalid_args":
+            try: client.dashboard_sanction_types_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
         elif method == "dashboard_roles_snapshot":
             result = client.dashboard_roles_snapshot("123")
         elif method == "dashboard_roles_snapshot_invalid":
