@@ -502,6 +502,7 @@ class CloudflareFetchBotService:
                 or len(valid_guilds) != len(result)
                 or not all(valid_guilds)
                 or len({item.get("id") for item in result if isinstance(item, dict)}) != len(result)
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
             ):
                 raise CloudflareBotServiceError("Internal BotService returned an invalid guild list")
         if method in {"api_text_channels_snapshot", "api_roles_snapshot"} and result is not None:
