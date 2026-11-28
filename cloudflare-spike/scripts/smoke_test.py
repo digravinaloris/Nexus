@@ -445,6 +445,32 @@ def main():
     status, invalid_dashboard_args = call("/__spike/fetch-client/dashboard_config_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard config arguments: {invalid_dashboard_args}")
 
+    status, submitted_appeals = call("/__spike/fetch-client/dashboard_submitted_appeals_snapshot", "POST", {})
+    require(
+        status == 200
+        and submitted_appeals.get("result") == [{
+            "case_id": 12,
+            "sanction_type": "ban",
+            "user_name": "ExampleUser",
+            "user_id": "123456789012345678",
+            "ban_reason": "spam",
+            "appeal_text": "Please review this ban.",
+            "submitted_at": "2026-11-28T09:30:00 GMT",
+        }],
+        f"Signed submitted appeals snapshot failed: {submitted_appeals}",
+    )
+    for suffix in ("invalid", "duplicate", "order"):
+        status, rejected_appeals = call(f"/__spike/fetch-client/dashboard_submitted_appeals_snapshot_{suffix}", "POST", {})
+        require(
+            status == 503 and rejected_appeals.get("error") == "local Worker Fetch transport unavailable",
+            f"Workers Fetch accepted invalid submitted appeals ({suffix}): {rejected_appeals}",
+        )
+    status, invalid_appeal_args = call("/__spike/fetch-client/dashboard_submitted_appeals_snapshot_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_appeal_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid submitted appeals arguments: {invalid_appeal_args}",
+    )
+
     status, member_warnings = call("/__spike/fetch-client/api_member_warnings", "POST", {})
     require(
         status == 200 and member_warnings.get("result") == 2,
