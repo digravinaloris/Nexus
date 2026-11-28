@@ -98,6 +98,7 @@ def mock_internal_bot_service():
             "spike-members-duplicate",
             "spike-dashboard-sanction-stats-malformed",
             "spike-dashboard-overview-malformed",
+            "spike-dashboard-overview-oversized",
             "spike-public-templates-malformed",
             "spike-public-templates-duplicate",
             "spike-audit-malformed",
@@ -428,6 +429,13 @@ def mock_internal_bot_service():
                 "permissions": {"administrator": "yes"},
             }]
             return jsonify({"ok": True, "result": malformed})
+        if key_id == "spike-dashboard-overview-oversized":
+            oversized = dict(results[method])
+            oversized["text_channels"] = [
+                {"id": str(1000000000000000000 + index), "name": "x" * 100}
+                for index in range(500)
+            ]
+            return jsonify({"ok": True, "result": oversized})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_presence_ping" and args == ["123", "42", "Loris"]:
         if key_id == "spike-presence-ping-malformed":
@@ -766,6 +774,9 @@ def exercise_fetch_bot_service_client(method):
             result = client.dashboard_overview_snapshot("123", "789")
         elif method == "dashboard_overview_snapshot_invalid":
             invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-overview-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_overview_snapshot("123", "789")
+        elif method == "dashboard_overview_snapshot_oversized":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-overview-oversized", secret=_test_bot_service_secret(), allow_local_http=True)
             invalid_client.dashboard_overview_snapshot("123", "789")
         elif method == "dashboard_overview_snapshot_invalid_args":
             try: client.dashboard_overview_snapshot("not-decimal")

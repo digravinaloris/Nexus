@@ -1042,6 +1042,11 @@ def main():
         status == 503 and invalid_dashboard_overview.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch accepted malformed dashboard overview: {invalid_dashboard_overview}",
     )
+    status, oversized_dashboard_overview = call("/__spike/fetch-client/dashboard_overview_snapshot_oversized", "POST", {})
+    require(
+        status == 503 and oversized_dashboard_overview.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted oversized dashboard overview: {oversized_dashboard_overview}",
+    )
     status, invalid_dashboard_overview_args = call("/__spike/fetch-client/dashboard_overview_snapshot_invalid_args", "POST", {})
     require(
         status == 200 and invalid_dashboard_overview_args.get("result") == {"rejected": True},
