@@ -556,6 +556,14 @@ def exercise_fetch_bot_service_client(method):
             result = client.available_guild_ids(["123", "456"])
         elif method == "api_text_channels_snapshot":
             result = client.api_text_channels_snapshot("123")
+        elif method == "api_text_channels_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-channels-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_text_channels_snapshot("123")
         elif method == "api_roles_snapshot":
             result = client.api_roles_snapshot("123")
         elif method == "api_roles_snapshot_invalid":
