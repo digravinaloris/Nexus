@@ -702,6 +702,31 @@ def test_api_sanction_cases_snapshot_rejects_invalid_arguments(guild_id, filter_
     assert session.calls == []
 
 
+def test_api_audit_snapshot_dispatches_and_validates_dto():
+    dto = [{
+        "actor_name": "Moderator", "action": "Banned member", "details": "spam",
+        "timestamp": "2026-11-28T09:30:00Z",
+    }]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    result = _client(session).api_audit_snapshot("345678901234567890", 10)
+    assert result[0]["timestamp"].isoformat() == "2026-11-28T09:30:00+00:00"
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload == {"method": "api_audit_snapshot", "args": ["345678901234567890", 10], "kwargs": {}}
+
+    malformed = [dict(dto[0], actor_name="x" * 129)]
+    bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": malformed}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad).api_audit_snapshot("345678901234567890", 10)
+
+
+@pytest.mark.parametrize(("guild_id", "limit"), [("bad", 10), ("123", True), ("123", 101), ("123", 0)])
+def test_api_audit_snapshot_rejects_invalid_arguments(guild_id, limit):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).api_audit_snapshot(guild_id, limit)
+    assert session.calls == []
+
+
 def test_dashboard_submitted_appeals_snapshot_dispatches_and_validates_dto():
     dto = [{
         "case_id": 12, "sanction_type": "ban", "user_name": "ExampleUser",
