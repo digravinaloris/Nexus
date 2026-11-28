@@ -92,6 +92,8 @@ def test_factory_injects_flask_session_interface():
 def test_factory_can_require_a_complete_server_side_session_backend():
     class CompleteServerSessionInterface:
         nexus_server_side_sessions = True
+        nexus_opaque_cookie_sessions = True
+        nexus_encrypted_session_payloads = True
 
         def consume_oauth_state(self, session, expected_state):
             return True
@@ -119,13 +121,15 @@ def test_factory_can_require_a_complete_server_side_session_backend():
         object(),
         type("PartialBackend", (), {
             "nexus_server_side_sessions": True,
+            "nexus_opaque_cookie_sessions": True,
+            "nexus_encrypted_session_payloads": True,
             "consume_oauth_state": lambda self, session, state: True,
             "rotate_session": lambda self, session: None,
         })(),
     ],
 )
 def test_factory_rejects_missing_or_incomplete_server_side_session_backend(backend):
-    with pytest.raises(RuntimeError, match="server-side session interface"):
+    with pytest.raises(RuntimeError, match="server-side payloads"):
         _create_app(
             _config(),
             session_interface=backend,
@@ -963,3 +967,31 @@ def test_oauth_callback_rejects_state_already_consumed_by_another_request():
     assert backend.consume_calls == 1
     assert backend.session["oauth_state"] == "already-consumed-state"
     assert "Set-Cookie" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "capability",
+    ["nexus_opaque_cookie_sessions", "nexus_encrypted_session_payloads"],
+)
+def test_factory_rejects_server_side_backend_without_secure_cookie_capability(capability):
+    class IncompleteSecurityBackend:
+        nexus_server_side_sessions = True
+        nexus_opaque_cookie_sessions = True
+        nexus_encrypted_session_payloads = True
+
+        def consume_oauth_state(self, session, expected_state):
+            return True
+
+        def rotate_session(self, session):
+            return None
+
+        def revoke_session(self, session):
+            return None
+
+    setattr(IncompleteSecurityBackend, capability, False)
+    with pytest.raises(RuntimeError, match="opaque cookies, encrypted"):
+        _create_app(
+            _config(),
+            session_interface=IncompleteSecurityBackend(),
+            require_server_side_sessions=True,
+        )
