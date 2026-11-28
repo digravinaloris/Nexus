@@ -755,6 +755,34 @@ def main():
         f"Workers Fetch accepted invalid public template arguments: {invalid_public_template_args}",
     )
 
+    status, template_detail = call("/__spike/fetch-client/dashboard_template_snapshot", "POST", {})
+    expected_template_detail = {
+        "code": "AbC_123-x",
+        "name": "Welcome Pack",
+        "created_guild_name": "Spike Test Server",
+        "created_at": "2026-11-28T09:30:00Z",
+        "snapshot": {
+            "feature_toggles": {"tickets_enabled": True},
+            "automod": {"automod_spam_count": 10, "banned_words": ["spam"]},
+            "warn_escalation_enabled": False,
+            "command_roles_by_name": {"ban": ["Moderators"]},
+        },
+    }
+    require(
+        status == 200 and template_detail.get("result") == expected_template_detail,
+        f"Signed public template detail failed: {template_detail}",
+    )
+    status, invalid_template_detail = call("/__spike/fetch-client/dashboard_template_snapshot_invalid", "POST", {})
+    require(
+        status == 503 and invalid_template_detail.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed public template detail: {invalid_template_detail}",
+    )
+    status, invalid_template_detail_args = call("/__spike/fetch-client/dashboard_template_snapshot_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_template_detail_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid public template detail arguments: {invalid_template_detail_args}",
+    )
+
     status, fetch_dashboard_settings = call("/__spike/fetch-client/dashboard_settings_snapshot", "POST", {})
     expected_dashboard_settings = {
         "id": "123", "name": "Spike Test Server", "owner_id": "42",
