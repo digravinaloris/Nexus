@@ -437,6 +437,14 @@ def main():
         status == 200 and invalid_faq_args.get("result") == {"rejected": True},
         f"Workers Fetch client accepted invalid FAQ arguments: {invalid_faq_args}",
     )
+    status, dashboard_config = call("/__spike/fetch-client/dashboard_config_snapshot", "POST", {})
+    expected_dashboard_config = {"guild_id": "123", "language": "en", "tickets_enabled": True, "banned_words": ["spam"], "command_roles": {"ban": [321]}}
+    require(status == 200 and dashboard_config.get("result") == expected_dashboard_config, f"Signed dashboard config snapshot failed: {dashboard_config}")
+    status, invalid_dashboard_config = call("/__spike/fetch-client/dashboard_config_snapshot_invalid", "POST", {})
+    require(status == 503 and invalid_dashboard_config.get("error") == "local Worker Fetch transport unavailable", f"Workers Fetch accepted unsafe dashboard config: {invalid_dashboard_config}")
+    status, invalid_dashboard_args = call("/__spike/fetch-client/dashboard_config_snapshot_invalid_args", "POST", {})
+    require(status == 200 and invalid_dashboard_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard config arguments: {invalid_dashboard_args}")
+
     status, fetch_config = call("/__spike/fetch-client/api_rest_config_snapshot", "POST", {})
     expected_config = {
         "guild_id": "123",
