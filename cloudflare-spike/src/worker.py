@@ -966,6 +966,35 @@ def tamper_flask_session():
 
 
 
+def _expire_flask_session(field):
+    """Expire one D1-backed Flask session without deleting its record."""
+    sid = request.cookies.get(app.config["SESSION_COOKIE_NAME"], "")
+    if not sid or field not in {"idle_expires_at", "expires_at"}:
+        return jsonify({"expired": False}), 400
+    try:
+        _await(
+            _db()
+            .prepare(
+                f"UPDATE spike_flask_sessions SET {field} = ? WHERE session_hash = ?"
+            )
+            .bind(int(time.time()) - 1, _digest(sid))
+            .run()
+        )
+    except Exception:
+        return jsonify({"error": "local D1 unavailable"}), 503
+    return jsonify({"expired": True})
+
+
+@app.post("/__spike/flask-session/expire-idle")
+def expire_flask_session_idle():
+    return _expire_flask_session("idle_expires_at")
+
+
+@app.post("/__spike/flask-session/expire-absolute")
+def expire_flask_session_absolute():
+    return _expire_flask_session("expires_at")
+
+
 @app.post("/__spike/flask-session/storage-failure")
 def fail_flask_session_storage():
     original_getter = app.session_interface._db_getter
