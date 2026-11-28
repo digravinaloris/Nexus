@@ -247,7 +247,8 @@ class SignedHttpBotService(BotService):
                 or set(result) != {"bot_ready", "guild_present"}
                 or any(not isinstance(value, bool) for value in result.values())
             ):
-                raise BotServiceTransportError("Internal BotService returned an invalid response")        elif method == "guild_name":
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "guild_name":
             if not isinstance(result, str) or not result or len(result) > 256:
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method in {"api_text_channels_snapshot", "api_roles_snapshot"}:
@@ -496,7 +497,8 @@ class SignedHttpBotService(BotService):
                 )
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
-        elif method == "dashboard_settings_snapshot":            if result is not None:
+        elif method == "dashboard_settings_snapshot":
+            if result is not None:
                 def valid_item(item):
                     return (
                         isinstance(item, dict)
@@ -781,7 +783,8 @@ class SignedHttpBotService(BotService):
         return self._dispatch_snapshot(method, (guild_id, case_id, *extra))
 
     def api_sanction_cases_snapshot(self, guild_id: str, filter_type: str = "", limit: int = 50):
-        if not self._valid_guild_id(guild_id):            raise ValueError("Invalid guild ID")
+        if not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
         if (not isinstance(filter_type, str)
             or (filter_type and re.fullmatch(r"[a-z][a-z0-9_]{0,31}", filter_type) is None)
             or type(limit) is not int or not 1 <= limit <= 200):
