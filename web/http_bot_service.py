@@ -557,12 +557,12 @@ class SignedHttpBotService(BotService):
             raise ValueError("Invalid appeal resolution status")
         return self._dispatch_appeal_case_action("api_resolve_appeal_by_case", guild_id, case_id, status)
 
-    def _dispatch_appeal_case_action(self, method: str, guild_id: str, case_id: int) -> bool:
+    def _dispatch_appeal_case_action(self, method: str, guild_id: str, case_id: int, *extra) -> bool:
         if not self._valid_guild_id(guild_id):
             raise ValueError("Invalid guild ID")
         if type(case_id) is not int or not 1 <= case_id <= (2**63 - 1):
             raise ValueError("Invalid appeal case ID")
-        return self._dispatch_snapshot(method, (guild_id, case_id))
+        return self._dispatch_snapshot(method, (guild_id, case_id, *extra))
 
     def api_sanction_cases_snapshot(self, guild_id: str, filter_type: str = "", limit: int = 50):
         if not self._valid_guild_id(guild_id):
