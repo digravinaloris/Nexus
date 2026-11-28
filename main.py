@@ -213,6 +213,7 @@ from stores.template_store import (
 from web.app_factory import create_web_app
 from nexus_runtime.web_server import run_web_server
 from nexus_runtime.signals import handle_sigterm
+from nexus_runtime.shutdown import close_mongo_connection
 from nexus_runtime.web_server import start_web_server_thread
 
 # MongoDB setup
@@ -4587,12 +4588,7 @@ def main():
     except KeyboardInterrupt:
         pass
 
-    if mongo:
-        try:
-            mongo.close()
-            print("[SHUTDOWN] MongoDB connection closed.", flush=True)
-        except Exception:
-            pass
+    close_mongo_connection(mongo)
 
 
 if __name__ == "__main__":
