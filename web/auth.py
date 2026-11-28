@@ -253,7 +253,8 @@ def dash_callback():
             session.clear()
             return jsonify({"error": "OAuth session storage unavailable"}), 503
         if not consumed:
-            session.clear()
+            # A concurrent callback may have consumed this state already.
+            # Do not revoke the shared session ID used by the winning request.
             return jsonify({"error": "Invalid state"}), 403
     else:
         session.pop("oauth_state", None)
