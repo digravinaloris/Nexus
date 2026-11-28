@@ -782,6 +782,16 @@ class SignedHttpBotService(BotService):
             raise ValueError("Invalid guild ID")
         return self._dispatch_snapshot("dashboard_config_snapshot", (guild_id,))
 
+    def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50):
+        if not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        if not isinstance(now, datetime.datetime) or now.tzinfo is None:
+            raise ValueError("Calendar snapshot time must be timezone-aware")
+        if type(limit) is not int or not 1 <= limit <= 50:
+            raise ValueError("Invalid calendar snapshot limit")
+        timestamp = now.astimezone(datetime.timezone.utc).isoformat()
+        return self._dispatch_snapshot("dashboard_calendar_upcoming_events", (guild_id, timestamp, limit))
+
     def api_authenticate_key(self, provided_key: str, guild_id: str = None):
         if not isinstance(provided_key, str) or not provided_key.isascii() or not 1 <= len(provided_key) <= 512:
             return None
