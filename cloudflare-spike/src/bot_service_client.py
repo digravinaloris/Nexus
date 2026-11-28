@@ -161,6 +161,9 @@ class CloudflareFetchBotService:
             expected = (list, type(None)) if method == "dashboard_roles_snapshot" else (dict, type(None))
             if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid dashboard snapshot arguments")
+        elif method == "dashboard_sanction_types_snapshot":
+            if expected_type is not list or len(args) != 1 or not valid_id(args[0]):
+                raise ValueError("Invalid dashboard sanction types arguments")
         elif method in {"api_members_snapshot", "api_rest_config_snapshot"}:
             expected = (list, type(None)) if method == "api_members_snapshot" else dict
             if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
@@ -316,6 +319,16 @@ class CloudflareFetchBotService:
                 raise CloudflareBotServiceError(
                     "Internal BotService returned invalid FAQ snapshot"
                 )
+        if method == "dashboard_sanction_types_snapshot" and (
+            len(result) > 50
+            or not all(
+                isinstance(value, str)
+                and re.fullmatch(r"[a-z][a-z0-9_]{0,31}", value) is not None
+                for value in result
+            )
+            or len(set(result)) != len(result)
+        ):
+            raise CloudflareBotServiceError("Internal BotService returned invalid dashboard sanction types")
         if method == "dashboard_roles_snapshot" and result is not None:
             if (
                 not isinstance(result, list)
@@ -523,6 +536,9 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def dashboard_sanction_types_snapshot(self, guild_id: str) -> list:
+        return self._dispatch("dashboard_sanction_types_snapshot", [guild_id], list)
 
     def dashboard_roles_snapshot(self, guild_id: str) -> list | None:
         return self._dispatch("dashboard_roles_snapshot", [guild_id], (list, type(None)))
