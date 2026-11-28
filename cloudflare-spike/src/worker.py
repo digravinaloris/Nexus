@@ -182,6 +182,18 @@ def mock_internal_bot_service():
             ],
         },
         "dashboard_config_snapshot": {"guild_id": "123", "language": "en", "tickets_enabled": True, "banned_words": ["spam"], "command_roles": {"ban": [321]}},
+        "dashboard_roles_snapshot": [
+            {"id": "321", "name": "Moderator"},
+            {"id": "654", "name": "Member"},
+        ],
+        "dashboard_settings_snapshot": {
+            "id": "123",
+            "name": "Spike Test Server",
+            "owner_id": "42",
+            "text_channels": [{"id": "456", "name": "general"}],
+            "voice_channels": [{"id": "789", "name": "Lobby"}],
+            "roles": [{"id": "321", "name": "Moderator"}],
+        },
         "api_rest_config_snapshot": {
             "guild_id": "123",
             "language": "en",
@@ -220,6 +232,16 @@ def mock_internal_bot_service():
     if method == "api_roles_snapshot" and args == ["123"]:
         if key_id == "spike-role-malformed":
             return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "Moderator"}]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_roles_snapshot" and args == ["123"]:
+        if key_id == "spike-dashboard-roles-malformed":
+            return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "Moderator"}]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_settings_snapshot" and args == ["123"]:
+        if key_id == "spike-dashboard-settings-malformed":
+            malformed = dict(results[method])
+            malformed["owner_id"] = "not-decimal"
+            return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_config_snapshot" and args == ["123"]:
         if key_id == "spike-config-malformed":
@@ -349,6 +371,24 @@ def exercise_fetch_bot_service_client(method):
                 result = {"rejected": False}
         elif method == "dashboard_config_snapshot":
             result = client.dashboard_config_snapshot("123")
+        elif method == "dashboard_roles_snapshot":
+            result = client.dashboard_roles_snapshot("123")
+        elif method == "dashboard_roles_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-roles-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_roles_snapshot("123")
+        elif method == "dashboard_roles_snapshot_invalid_args":
+            try: client.dashboard_roles_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "dashboard_settings_snapshot":
+            result = client.dashboard_settings_snapshot("123")
+        elif method == "dashboard_settings_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-settings-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_settings_snapshot("123")
+        elif method == "dashboard_settings_snapshot_invalid_args":
+            try: client.dashboard_settings_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
         elif method == "dashboard_config_snapshot_invalid":
             invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-config-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
             invalid_client.dashboard_config_snapshot("123")
