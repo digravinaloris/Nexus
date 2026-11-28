@@ -92,6 +92,7 @@ def mock_internal_bot_service():
             "spike-stats-malformed",
             "spike-faq-malformed",
             "spike-members-malformed",
+            "spike-dashboard-sanction-stats-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -234,6 +235,10 @@ def mock_internal_bot_service():
         if key_id == "spike-role-malformed":
             return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "Moderator"}]})
         return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_sanction_stats_snapshot" and args == ["123", 2]:
+        if key_id == "spike-dashboard-sanction-stats-malformed":
+            return jsonify({"ok": True, "result": [{"label": "27/11", "count": -1}, {"label": "28/11", "count": 3}]})
+        return jsonify({"ok": True, "result": [{"label": "27/11", "count": 0}, {"label": "28/11", "count": 3}]})
     if method == "dashboard_sanction_types_snapshot" and args == ["123"]:
         if key_id == "spike-dashboard-sanction-types-malformed":
             return jsonify({"ok": True, "result": ["ban", "not valid!"]})
@@ -378,6 +383,15 @@ def exercise_fetch_bot_service_client(method):
                 result = {"rejected": False}
         elif method == "dashboard_config_snapshot":
             result = client.dashboard_config_snapshot("123")
+        elif method == "dashboard_sanction_stats_snapshot":
+            result = client.dashboard_sanction_stats_snapshot("123", days=2)
+        elif method == "dashboard_sanction_stats_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-sanction-stats-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_sanction_stats_snapshot("123", days=2)
+        elif method == "dashboard_sanction_stats_snapshot_invalid_args":
+            try: client.dashboard_sanction_stats_snapshot("123", days=True)
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
         elif method == "dashboard_sanction_types_snapshot":
             result = client.dashboard_sanction_types_snapshot("123")
         elif method == "dashboard_sanction_types_snapshot_invalid":
