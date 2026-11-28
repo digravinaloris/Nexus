@@ -57,6 +57,10 @@ class FakeBotService:
         self.calls.append(("is_guild_admin", guild_id, user_id))
         return guild_id == "123" and user_id in {"42", "43"}
 
+    def api_rest_config_snapshot(self, guild_id):
+        self.calls.append(("api_rest_config_snapshot", guild_id))
+        return {"guild_id": guild_id, "logs_channel": "logs", "tickets_enabled": False}
+
 
     def guild_presence(self, guild_id):
         self.calls.append(("guild_presence", guild_id))
@@ -838,3 +842,28 @@ def test_signed_dispatch_fails_closed_for_malformed_sanction_case_documents():
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 503
     assert response.get_json() == {"error": "internal service unavailable"}
+
+
+def test_signed_dispatch_returns_allowlisted_rest_config_snapshot():
+    client, service = _client()
+    body = _request_body({
+        "method": "api_rest_config_snapshot", "args": ["123"], "kwargs": {}
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "ok": True,
+        "result": {"guild_id": "123", "logs_channel": "logs", "tickets_enabled": False},
+    }
+    assert service.calls == [("api_rest_config_snapshot", "123")]
+
+
+@pytest.mark.parametrize("args", [[], [123], ["bad"], ["123", "extra"]])
+def test_signed_dispatch_rejects_invalid_rest_config_snapshot_arguments(args):
+    client, service = _client()
+    body = _request_body({
+        "method": "api_rest_config_snapshot", "args": args, "kwargs": {}
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
