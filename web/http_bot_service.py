@@ -95,6 +95,7 @@ class SignedHttpBotService(BotService):
             "dashboard_sanction_stats_snapshot": 2,
             "dashboard_sanction_types_snapshot": 1,
             "api_sanction_cases_snapshot": 3,
+            "api_audit_snapshot": 2,
             "dashboard_submitted_appeals_snapshot": 2,
             "api_claim_appeal_by_case": 2,
             "api_release_appeal_claim_by_case": 2,
@@ -112,7 +113,7 @@ class SignedHttpBotService(BotService):
         )
         if not valid_count:
             raise ValueError("Invalid internal BotService arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
@@ -121,6 +122,8 @@ class SignedHttpBotService(BotService):
         ):
             raise ValueError("Invalid ticket category ID")
 
+        if method == "api_audit_snapshot" and (type(args[1]) is not int or not 1 <= args[1] <= 100):
+            raise ValueError("Invalid audit limit")
         if method == "dashboard_sanction_stats_snapshot" and (type(args[1]) is not int or not 1 <= args[1] <= 30):
             raise ValueError("Invalid sanction statistics day range")
         if method == "api_sanction_cases_snapshot" and (
@@ -351,6 +354,28 @@ class SignedHttpBotService(BotService):
                 or not isinstance(result["locked"], bool)
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "api_audit_snapshot":
+            required = {"actor_name", "action", "details", "timestamp"}
+            def valid_audit_entry(item):
+                if not isinstance(item, dict) or set(item) != required or not all(isinstance(item[key], str) for key in required - {"timestamp"}):
+                    return False
+                stamp = item["timestamp"]
+                if not isinstance(stamp, str):
+                    return False
+                try:
+                    parsed = datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                except ValueError:
+                    return False
+                return (
+                    1 <= len(item["actor_name"]) <= 128 and 1 <= len(item["action"]) <= 200
+                    and len(item["details"]) <= 1000
+                    and parsed.tzinfo is not None and parsed.utcoffset() == datetime.timedelta(0)
+                )
+            if (not isinstance(result, list) or len(result) > args[1]
+                or not all(valid_audit_entry(item) for item in result)
+                or any(result[i]["timestamp"] < result[i + 1]["timestamp"] for i in range(len(result) - 1))):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+            result = [dict(item, timestamp=datetime.datetime.fromisoformat(item["timestamp"].replace("Z", "+00:00"))) for item in result]
         elif method == "dashboard_sanction_stats_snapshot":
             def valid_label(label):
                 if not isinstance(label, str) or re.fullmatch(r"[0-3][0-9]/[0-1][0-9]", label) is None:
@@ -538,6 +563,13 @@ class SignedHttpBotService(BotService):
 
     def dashboard_sanction_types_snapshot(self, guild_id: str):
         return self._dispatch_snapshot("dashboard_sanction_types_snapshot", (guild_id,))
+
+    def api_audit_snapshot(self, guild_id: str, limit: int = 20):
+        if not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Invalid audit limit")
+        return self._dispatch_snapshot("api_audit_snapshot", (guild_id, limit))
 
     def dashboard_submitted_appeals_snapshot(self, guild_id: str, limit: int = 100):
         if not self._valid_guild_id(guild_id):
