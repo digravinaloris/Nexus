@@ -814,6 +814,6 @@ def test_oauth_callback_fails_closed_when_session_save_fails():
 
     assert response.status_code == 500
     assert backend.rotations == 1
-    assert backend.save_attempts == 1
+    assert backend.save_attempts == 2  # Flask attempts to save both the original and error response
     assert backend.persisted == {}
     assert "Set-Cookie" not in response.headers
