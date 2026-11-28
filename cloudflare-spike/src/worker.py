@@ -526,6 +526,14 @@ def exercise_fetch_bot_service_client(method):
             result = client.guild_name("123")
         elif method == "api_health_snapshot":
             result = client.api_health_snapshot("123")
+        elif method == "api_health_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-api-health-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_health_snapshot("123")
         elif method == "api_guild_list_snapshot":
             result = client.api_guild_list_snapshot("123")
         elif method == "api_guild_list_snapshot_invalid":
