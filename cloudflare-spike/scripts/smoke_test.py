@@ -125,6 +125,12 @@ def main():
     require(status == 200 and rotated.get("rotated") is True, "Flask session rotation failed")
     new_cookie = extract_session_cookie(set_cookie)
     require(new_cookie != old_cookie, "Flask session ID did not rotate")
+    require(len(new_cookie) == 43, "Rotated browser cookie is not a 256-bit opaque session ID")
+    require(
+        "spike-rotated-discord-access-token" not in set_cookie
+        and "spike-only-csrf-secret" not in set_cookie,
+        "Rotated browser cookie contains server-side session data",
+    )
 
     status, old_identity, _ = call_with_cookie(
         "/__spike/flask-session/me", cookie=old_cookie
