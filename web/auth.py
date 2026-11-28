@@ -222,9 +222,9 @@ def dash_callback():
         session.pop("oauth_code_verifier", None)
         return jsonify({"error": "Invalid state"}), 403
     state = states[0]
-    expected_state = session.pop("oauth_state", None)
-    state_created_at = session.pop("oauth_state_created_at", None)
-    code_verifier = session.pop("oauth_code_verifier", None)
+    expected_state = session.get("oauth_state")
+    state_created_at = session.get("oauth_state_created_at")
+    code_verifier = session.get("oauth_code_verifier")
     now = time.time()
     state_is_fresh = is_fresh_state_timestamp(state_created_at, now)
     verifier_is_valid = is_valid_code_verifier(code_verifier)
@@ -237,7 +237,28 @@ def dash_callback():
         or not secrets.compare_digest(state, expected_state)
         or not verifier_is_valid
     ):
+        session.pop("oauth_state", None)
+        session.pop("oauth_state_created_at", None)
+        session.pop("oauth_code_verifier", None)
         return jsonify({"error": "Invalid state"}), 403
+
+    # Server-side stores can consume state with an atomic compare-and-swap.
+    # This prevents two concurrent callbacks from both redeeming the same
+    # state/PKCE verifier. Cookie sessions retain the legacy local fallback.
+    consume_state = getattr(current_app.session_interface, "consume_oauth_state", None)
+    if callable(consume_state):
+        try:
+            consumed = consume_state(session, state)
+        except Exception:
+            session.clear()
+            return jsonify({"error": "OAuth session storage unavailable"}), 503
+        if not consumed:
+            session.clear()
+            return jsonify({"error": "Invalid state"}), 403
+    else:
+        session.pop("oauth_state", None)
+        session.pop("oauth_state_created_at", None)
+        session.pop("oauth_code_verifier", None)
 
     codes = request.args.getlist("code")
     if not codes:
