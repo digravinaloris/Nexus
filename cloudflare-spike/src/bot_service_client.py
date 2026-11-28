@@ -105,8 +105,8 @@ class CloudflareFetchBotService:
         valid_id = lambda value: (
             isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) is not None
         )
-        if method in {"health_snapshot", "public_status_snapshot", "api_guild_id_candidates"}:
-            expected = dict if method != "api_guild_id_candidates" else list
+        if method in {"health_snapshot", "public_status_snapshot", "api_guild_id_candidates", "public_global_lock_state"}:
+            expected = bool if method == "public_global_lock_state" else (list if method == "api_guild_id_candidates" else dict)
             if args != [] or expected_type != expected:
                 raise ValueError("Invalid snapshot BotService arguments")
         elif method in {"is_guild_owner", "is_guild_admin"}:
@@ -830,6 +830,9 @@ class CloudflareFetchBotService:
 
     def public_status_snapshot(self) -> dict:
         return self._dispatch_snapshot("public_status_snapshot")
+
+    def public_global_lock_state(self) -> bool:
+        return self._dispatch("public_global_lock_state", [], bool)
 
     def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
         return self._dispatch("is_guild_owner", [guild_id, user_id], bool)

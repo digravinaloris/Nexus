@@ -50,6 +50,10 @@ class FakeBotService:
         self.calls.append("public_status_snapshot")
         return {"online": True, "guild_count": 4, "latency_ms": 23, "uptime": "1h"}
 
+    def public_global_lock_state(self):
+        self.calls.append("public_global_lock_state")
+        return True
+
     def is_guild_owner(self, guild_id, user_id):
         self.calls.append(("is_guild_owner", guild_id, user_id))
         return guild_id == "123" and user_id == "42"
@@ -264,6 +268,24 @@ def test_signed_dispatch_rejects_non_boolean_calendar_duplicate_result():
         "args": ["123", "Community event", "2026-11-28T12:00:00Z"],
         "kwargs": {},
     })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
+
+
+def test_signed_dispatch_returns_global_lock_state():
+    client, service = _client()
+    body = _request_body({"method": "public_global_lock_state", "args": [], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": True}
+    assert service.calls == ["public_global_lock_state"]
+
+
+def test_signed_dispatch_rejects_non_boolean_global_lock_state():
+    client, service = _client()
+    service.public_global_lock_state = lambda: "false"
+    body = _request_body({"method": "public_global_lock_state", "args": [], "kwargs": {}})
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 503
     assert response.get_json() == {"error": "internal service unavailable"}

@@ -148,6 +148,7 @@ def mock_internal_bot_service():
 
     results = {
         "health_snapshot": {"status": "alive", "guild_count": 12},
+        "public_global_lock_state": False,
         "public_status_snapshot": {
             "online": True,
             "guild_count": 12,
@@ -446,6 +447,8 @@ def exercise_fetch_bot_service_client(method):
             result = client.health_snapshot()
         elif method == "public_status_snapshot":
             result = client.public_status_snapshot()
+        elif method == "public_global_lock_state":
+            result = client.public_global_lock_state()
         elif method == "is_guild_owner":
             result = client.is_guild_owner("123", "42")
         elif method == "is_guild_owner_denied":
