@@ -832,6 +832,14 @@ def main():
         and invalid_faq.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch client accepted malformed FAQ data: {invalid_faq}",
     )
+    status, duplicate_faq_entry_ids = call(
+        "/__spike/fetch-client/api_faq_snapshot_duplicate_entry_ids", "POST", {}
+    )
+    require(
+        status == 503
+        and duplicate_faq_entry_ids.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted duplicate FAQ entry IDs: {duplicate_faq_entry_ids}",
+    )
     status, invalid_faq_args = call(
         "/__spike/fetch-client/api_faq_snapshot_invalid_args", "POST", {}
     )

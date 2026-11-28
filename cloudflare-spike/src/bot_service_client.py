@@ -574,6 +574,7 @@ class CloudflareFetchBotService:
                     and len(entry["response"]) <= 2000
                     for entry in result["entries"]
                 )
+                or len({entry["id"] for entry in result["entries"]}) != len(result["entries"])
                 or len(
                     json.dumps(
                         result, separators=(",", ":"), ensure_ascii=True
