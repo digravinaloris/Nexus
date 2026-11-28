@@ -8,6 +8,7 @@ contract in a later migration step without changing route response shapes.
 from typing import Dict, List, Optional
 import datetime
 import math
+import secrets
 import time
 
 from nexus_runtime import core
@@ -92,6 +93,18 @@ class InProcessBotService(BotService):
         if bot is None or not bot.is_ready():
             return []
         return [str(guild.id) for guild in bot.guilds]
+
+    def api_authenticate_key(self, provided_key: str, guild_id: str = None) -> Optional[str]:
+        if (not isinstance(provided_key, str) or not provided_key.isascii()
+            or not 0 < len(provided_key) <= 512):
+            return None
+        candidates = [str(guild_id)] if guild_id is not None else self.api_guild_id_candidates()
+        for candidate in candidates:
+            expected = get_config(candidate).get("api_key")
+            if (isinstance(expected, str) and expected.isascii() and 0 < len(expected) <= 512
+                and secrets.compare_digest(provided_key, expected)):
+                return candidate
+        return None
 
     def guild_presence(self, guild_id: str) -> Dict[str, bool]:
         bot = core.bot
