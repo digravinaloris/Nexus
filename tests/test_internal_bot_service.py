@@ -954,3 +954,72 @@ def test_signed_dispatch_rejects_invalid_dashboard_config_snapshot_arguments(arg
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 403
     assert service.calls == []
+
+
+def test_signed_dispatch_projects_public_templates_to_metadata_only_dtos():
+    client, service = _client()
+    service.dashboard_public_templates_snapshot = lambda: [{
+        "code": "AbC_123-x",
+        "name": "Welcome Pack",
+        "created_guild_name": "Example Server",
+        "created_at": datetime.datetime(2026, 11, 28, 9, 30),
+        "feature_toggle_count": 4,
+        "command_role_count": 2,
+        "snapshot": {"private_config": "never transport"},
+        "created_by": "private-user-id",
+        "_id": "mongo-secret",
+    }]
+    body = _request_body({
+        "method": "dashboard_public_templates_snapshot", "args": [], "kwargs": {}
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+    assert result == [{
+        "code": "AbC_123-x",
+        "name": "Welcome Pack",
+        "created_guild_name": "Example Server",
+        "created_at": "2026-11-28T09:30:00Z",
+        "feature_toggle_count": 4,
+        "command_role_count": 2,
+    }]
+    assert "snapshot" not in result[0]
+    assert "created_by" not in result[0]
+    assert "_id" not in result[0]
+
+
+@pytest.mark.parametrize("args", [["unexpected"], [123], [None]])
+def test_signed_dispatch_rejects_public_template_snapshot_arguments(args):
+    client, service = _client()
+    body = _request_body({
+        "method": "dashboard_public_templates_snapshot", "args": args, "kwargs": {}
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+@pytest.mark.parametrize("field,value", [
+    ("code", "unsafe/code"),
+    ("feature_toggle_count", True),
+    ("command_role_count", -1),
+    ("created_guild_name", ""),
+])
+def test_signed_dispatch_fails_closed_for_malformed_public_template_dtos(field, value):
+    client, service = _client()
+    item = {
+        "code": "safe-code",
+        "name": "Welcome Pack",
+        "created_guild_name": "Example Server",
+        "created_at": datetime.datetime(2026, 11, 28, 9, 30),
+        "feature_toggle_count": 4,
+        "command_role_count": 2,
+    }
+    item[field] = value
+    service.dashboard_public_templates_snapshot = lambda: [item]
+    body = _request_body({
+        "method": "dashboard_public_templates_snapshot", "args": [], "kwargs": {}
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
