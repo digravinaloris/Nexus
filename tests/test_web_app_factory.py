@@ -120,20 +120,6 @@ def test_factory_can_require_a_complete_server_side_session_backend():
     assert app.session_interface is backend
 
 
-@pytest.mark.parametrize(
-    "backend",
-    [
-        None,
-        object(),
-        type("PartialBackend", (), {
-            "nexus_server_side_sessions": True,
-            "nexus_opaque_cookie_sessions": True,
-            "nexus_encrypted_session_payloads": True,
-            "consume_oauth_state": lambda self, session, state: True,
-            "rotate_session": lambda self, session: None,
-        })(),
-    ],
-)
 @pytest.mark.parametrize("missing_method", ["open_session", "save_session"])
 def test_factory_rejects_backend_without_flask_session_interface_methods(missing_method):
     class IncompleteFlaskSessionInterface:
@@ -166,6 +152,20 @@ def test_factory_rejects_backend_without_flask_session_interface_methods(missing
         )
 
 
+@pytest.mark.parametrize(
+    "backend",
+    [
+        None,
+        object(),
+        type("PartialBackend", (), {
+            "nexus_server_side_sessions": True,
+            "nexus_opaque_cookie_sessions": True,
+            "nexus_encrypted_session_payloads": True,
+            "consume_oauth_state": lambda self, session, state: True,
+            "rotate_session": lambda self, session: None,
+        })(),
+    ],
+)
 def test_factory_rejects_missing_or_incomplete_server_side_session_backend(backend):
     with pytest.raises(RuntimeError, match="server-side payloads"):
         _create_app(
