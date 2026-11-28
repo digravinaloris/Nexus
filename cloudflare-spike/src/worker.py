@@ -595,6 +595,14 @@ def exercise_fetch_bot_service_client(method):
                 allow_local_http=True,
             )
             invalid_client.api_guild_list_snapshot("123")
+        elif method == "api_guild_list_snapshot_oversized":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-guild-list-oversized",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_guild_list_snapshot("123")
         elif method == "api_guild_id_candidates":
             result = client.api_guild_id_candidates()
         elif method == "available_guild_ids":
