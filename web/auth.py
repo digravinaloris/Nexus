@@ -275,7 +275,7 @@ def dash_callback():
         session.clear()
         return jsonify({"error": "Discord OAuth is not configured"}), 503
 
-    # Consume the one-time state and discard any pre-authentication session data.
+    # Discard any remaining pre-authentication data before the token exchange.
     # A fresh session is created only after Discord has authenticated the user.
     session.clear()
 
