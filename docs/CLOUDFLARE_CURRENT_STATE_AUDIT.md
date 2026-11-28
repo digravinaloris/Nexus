@@ -1,7 +1,7 @@
 # Cloudflare migration: current-state audit
 
 Audit date: 2026-11-28  
-Audited baseline: `main` immediately after PR #343 (`da5726419b8a8a7aa5ced8369cf373b56b62f915`)
+Audited baseline: `main` after PR #365 (`16f2b3a6269358558bfa7780c2dec60d6345dcbc`)
 
 ## Executive summary
 
@@ -106,3 +106,10 @@ The following changes are present on the audited `main` baseline:
 
 The main remaining blockers are unchanged: production OAuth still stores the Discord access token in Flask's readable signed cookie; production web routes still use the in-process adapter; the Cloudflare Fetch adapter is not wired into the production app; and complete route/template/static-asset parity is not proven.
 - `docs/cloudflare-full-site-migration.md`, `docs/CLOUDFLARE_COMPATIBILITY_INVENTORY.md`, `docs/CLOUDFLARE_WORKER_SPIKE.md`, `docs/CLOUDFLARE_BOT_SERVICE_CONTRACT.md`
+
+
+## Latest inventory checkpoint (2026-11-28)
+
+The refreshed route-to-service inventory is maintained in `docs/CLOUDFLARE_ROUTE_SERVICE_INVENTORY_2026-11-28.md` and was updated after PR #364 and merged in PR #365. Its source scan currently reports 81 declared BotService operations, 78 route-used operations, 31 Worker Fetch operations, 29 directly route-used overlaps, and 49 route-used operations still absent from Worker Fetch. These are method-name counts, not functional parity. PR #364 adds the read-only global-lock-state operation to Worker Fetch; security-sensitive lock mutations remain unported.
+
+
