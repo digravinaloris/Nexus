@@ -775,6 +775,9 @@ def exercise_fetch_bot_service_client(method):
         elif method == "dashboard_overview_snapshot_invalid":
             invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-overview-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
             invalid_client.dashboard_overview_snapshot("123", "789")
+        elif method == "dashboard_overview_snapshot_oversized":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-overview-oversized", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_overview_snapshot("123", "789")
         elif method == "dashboard_overview_snapshot_invalid_args":
             try: client.dashboard_overview_snapshot("not-decimal")
             except ValueError: result = {"rejected": True}
