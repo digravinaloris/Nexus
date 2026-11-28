@@ -88,6 +88,7 @@ class SignedHttpBotService(BotService):
             "api_guild_list_snapshot": (0, 1),
             "api_health_snapshot": (0, 1),
             "api_guild_stats_snapshot": (1, 2),
+            "dashboard_overview_snapshot": (1, 2),
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
@@ -101,9 +102,9 @@ class SignedHttpBotService(BotService):
         )
         if not valid_count:
             raise ValueError("Invalid internal BotService arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
-        if method == "api_guild_stats_snapshot" and len(args) == 2 and args[1] is not None and not (
+        if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
             and re.fullmatch(r"[0-9]{1,20}", args[1]) is not None
             and 0 < int(args[1]) <= (2**64 - 1)
@@ -322,6 +323,33 @@ class SignedHttpBotService(BotService):
                 or not isinstance(result["locked"], bool)
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "dashboard_overview_snapshot":
+            if result is not None:
+                permission_keys = {"administrator", "manage_guild", "ban_members", "kick_members", "manage_roles"}
+                def valid_item(item):
+                    return (isinstance(item, dict) and set(item) == {"id", "name"}
+                        and self._valid_guild_id(item["id"])
+                        and isinstance(item["name"], str) and 1 <= len(item["name"]) <= 100)
+                if (not isinstance(result, dict)
+                    or set(result) != {"id", "name", "owner_id", "text_channels", "roles", "role_names", "open_tickets"}
+                    or not self._valid_guild_id(result["id"])
+                    or not self._valid_guild_id(result["owner_id"])
+                    or not isinstance(result["name"], str) or not 1 <= len(result["name"]) <= 256
+                    or not isinstance(result["text_channels"], list) or len(result["text_channels"]) > 500
+                    or not all(valid_item(item) for item in result["text_channels"])
+                    or not isinstance(result["open_tickets"], list) or len(result["open_tickets"]) > 500
+                    or not all(valid_item(item) for item in result["open_tickets"])
+                    or not isinstance(result["roles"], list) or len(result["roles"]) > 500
+                    or not all(isinstance(role, dict) and set(role) == {"id", "name", "permissions"}
+                        and self._valid_guild_id(role["id"])
+                        and isinstance(role["name"], str) and 1 <= len(role["name"]) <= 100
+                        and isinstance(role["permissions"], dict) and set(role["permissions"]) == permission_keys
+                        and all(type(value) is bool for value in role["permissions"].values())
+                        for role in result["roles"])
+                    or not isinstance(result["role_names"], dict) or len(result["role_names"]) > 500
+                    or not all(self._valid_guild_id(key) and isinstance(value, str) and 1 <= len(value) <= 100
+                        for key, value in result["role_names"].items())):
+                    raise BotServiceTransportError("Internal BotService returned an invalid response")
         return result
 
     def health_snapshot(self):
@@ -353,6 +381,10 @@ class SignedHttpBotService(BotService):
         if guild_id is not None and not self._valid_guild_id(guild_id):
             raise ValueError("Invalid guild ID")
         return self._dispatch_snapshot("api_guild_list_snapshot", args)
+
+    def dashboard_overview_snapshot(self, guild_id: str, ticket_category_id: str = None):
+        args = (guild_id,) if ticket_category_id is None else (guild_id, ticket_category_id)
+        return self._dispatch_snapshot("dashboard_overview_snapshot", args)
 
     def api_guild_stats_snapshot(self, guild_id: str, ticket_category_id: str = None):
         args = (guild_id,) if ticket_category_id is None else (guild_id, ticket_category_id)
