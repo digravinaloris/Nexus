@@ -1,11 +1,13 @@
 # Cloudflare migration: route-to-service contract inventory
 
-Audit date: 2026-11-27  
-Baseline: `main` at `6877836060cc57f27e63a41c7b72861e1911615f`
+Historical audit date: 2026-11-27  
+Historical baseline: `main` at `6877836060cc57f27e63a41c7b72861e1911615f`
+
+> **Superseded snapshot:** the method counts and adapter-coverage figures below describe the historical baseline only. They are not current as of 2026-11-28. Subsequent PRs added signed snapshots, appeal actions, API-key authentication, and the safe REST configuration DTO. Recalculate the route-to-service inventory from the current `main` before using any coverage number for migration or cutover decisions.
 
 ## Executive summary
 
-The Flask route layer currently calls **72 distinct BotService methods** across 6 route modules. The service interface declares **73 methods**. The in-process adapter implements the full route-facing surface, while the remote transport is materially incomplete: only **2 of 72 route-used methods** have matching methods in the current internal/HTTP adapter code.
+The historical audit counted 72 distinct route-facing BotService methods and 73 interface methods. Those figures must not be treated as current: the service surface and remote allowlists have since changed. A fresh route-level audit is required before planning migration parity.
 
 This is an inventory of method names and call sites, not proof that each method's DTO, authorization, error semantics, or side effects are safe for remote execution. The next implementation step should be a read-only contract slice, not a bulk remote adapter port.
 
