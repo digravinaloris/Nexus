@@ -317,6 +317,9 @@ class InProcessBotService(BotService):
     def api_submitted_appeals(self, guild_id: str) -> List[Dict[str, object]]:
         return get_submitted_appeals(guild_id)
 
+    def dashboard_submitted_appeals_snapshot(self, guild_id: str, limit: int = 100) -> List[Dict[str, object]]:
+        return get_submitted_appeals(guild_id, limit)
+
     def api_get_appeal(self, token: str) -> Optional[Dict[str, object]]:
         return get_ban_appeal(token)
 
