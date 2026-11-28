@@ -148,6 +148,7 @@ def mock_internal_bot_service():
 
     results = {
         "health_snapshot": {"status": "alive", "guild_count": 12},
+        "public_global_lock_state": False,
         "public_status_snapshot": {
             "online": True,
             "guild_count": 12,
