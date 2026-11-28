@@ -156,6 +156,26 @@ def create_internal_bot_service_blueprint(
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_calendar_has_duplicate_event":
+            if (
+                len(args) != 3
+                or not valid_guild_id(args[0])
+                or not isinstance(args[1], str)
+                or not 1 <= len(args[1]) <= 100
+                or not isinstance(args[2], str)
+                or len(args[2]) > 64
+            ):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            try:
+                requested_at = datetime.fromisoformat(args[2].replace("Z", "+00:00"))
+            except ValueError:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            if requested_at.tzinfo is None:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (
+                getattr(service, method_name, None),
+                [args[0], args[1], requested_at.astimezone(timezone.utc)],
+            )
         elif method_name == "dashboard_calendar_upcoming_events":
             if (
                 len(args) != 3
@@ -316,6 +336,8 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name == "dashboard_calendar_has_duplicate_event" and type(result) is not bool:
+                return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "dashboard_public_templates_snapshot":
                 required = {"code", "name", "created_guild_name", "created_at", "feature_toggle_count", "command_role_count"}
                 if not isinstance(result, list) or len(result) > 50:
