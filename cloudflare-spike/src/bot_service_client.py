@@ -161,6 +161,15 @@ class CloudflareFetchBotService:
             expected = (list, type(None)) if method == "dashboard_roles_snapshot" else (dict, type(None))
             if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid dashboard snapshot arguments")
+        elif method == "dashboard_sanction_stats_snapshot":
+            if (
+                expected_type is not list
+                or len(args) != 2
+                or not valid_id(args[0])
+                or type(args[1]) is not int
+                or not 1 <= args[1] <= 30
+            ):
+                raise ValueError("Invalid dashboard sanction stats arguments")
         elif method == "dashboard_sanction_types_snapshot":
             if expected_type is not list or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid dashboard sanction types arguments")
@@ -319,6 +328,29 @@ class CloudflareFetchBotService:
                 raise CloudflareBotServiceError(
                     "Internal BotService returned invalid FAQ snapshot"
                 )
+        if method == "dashboard_sanction_stats_snapshot":
+            def valid_sanction_stats_label(label):
+                if not isinstance(label, str) or re.fullmatch(r"[0-3][0-9]/[0-1][0-9]", label) is None:
+                    return False
+                try:
+                    time.strptime(label, "%d/%m")
+                    return True
+                except ValueError:
+                    return False
+            if (
+                not isinstance(result, list)
+                or len(result) != args[1]
+                or not all(
+                    isinstance(item, dict)
+                    and set(item) == {"label", "count"}
+                    and valid_sanction_stats_label(item["label"])
+                    and type(item["count"]) is int
+                    and 0 <= item["count"] <= 100000
+                    for item in result
+                )
+                or len({item["label"] for item in result}) != len(result)
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid dashboard sanction stats")
         if method == "dashboard_sanction_types_snapshot" and (
             len(result) > 50
             or not all(
@@ -536,6 +568,10 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def dashboard_sanction_stats_snapshot(self, guild_id: str, days: int = 30) -> list:
+        result = self._dispatch("dashboard_sanction_stats_snapshot", [guild_id, days], list)
+        return [(item["label"], item["count"]) for item in result]
 
     def dashboard_sanction_types_snapshot(self, guild_id: str) -> list:
         return self._dispatch("dashboard_sanction_types_snapshot", [guild_id], list)
