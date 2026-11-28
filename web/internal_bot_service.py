@@ -152,6 +152,12 @@ def create_internal_bot_service_blueprint(
                 or not 1 <= args[1] <= (2**63 - 1) or not isinstance(args[2], str) or args[2] not in {"accepted", "denied"}):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "api_authenticate_key":
+            if (len(args) not in {1, 2} or not isinstance(args[0], str)
+                or not args[0].isascii() or not 1 <= len(args[0]) <= 512
+                or (len(args) == 2 and not valid_guild_id(args[1]))):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_member_warnings":
             if len(args) != 2 or not valid_guild_id(args[0]) or not valid_guild_id(args[1]):
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -280,6 +286,12 @@ def create_internal_bot_service_blueprint(
             result = operation(*operation_args)
             if method_name in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
                 if not isinstance(result, bool):
+                    return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_authenticate_key":
+                if result is not None and (
+                    not valid_guild_id(result)
+                    or (len(operation_args) == 2 and result != operation_args[1])
+                ):
                     return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "api_member_warnings":
                 if type(result) is not int or not 0 <= result <= 100000:
