@@ -737,7 +737,6 @@ def test_oauth_callback_fails_closed_when_session_rotation_fails():
         _config(DISCORD_HTTP_CLIENT=FakeDiscordHttpClient()),
         session_interface=backend,
     )
-    app.config["TESTING"] = True
 
 
     response = app.test_client().get(
