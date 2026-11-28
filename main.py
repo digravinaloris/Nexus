@@ -1,99 +1,215 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import os
-from flask import Flask, request, jsonify, g, session, redirect, url_for, render_template, flash, get_flashed_messages, send_from_directory
-import requests
-import yaml
-import pyotp
-from threading import Thread
+"""Nexus bot and web application entrypoint."""
+
+# Standard library
 import asyncio
+import csv
 import datetime
-import time
-from pymongo import MongoClient, ReturnDocument
-from functools import wraps
+import io
+import json as _json
+import os
 import re
 import secrets
-import subprocess
 import signal
-import io
-from PIL import Image, ImageDraw, ImageFont
-from deep_translator import GoogleTranslator
-import sentry_sdk
-from sentry_sdk.integrations.flask import FlaskIntegration
-import json as _json
-import zipfile
-from helpers import utils
-from nexus_runtime import core
-from stores.config_store import (
-    get_config, update_config, add_command_role, remove_command_role,
-    set_command_template, get_global_lock, set_global_lock,
-)
-from stores.sanctions_store import (
-    get_warns, set_warns, mark_channel_locked, mark_channel_unlocked,
-    get_locked_channels, get_next_case_id, log_sanction, get_case,
-    create_sanction_appeal, get_ban_appeal, get_ban_appeal_by_case,
-    get_sanction_stats, get_sanction_history, save_tempban, remove_tempban, get_active_tempbans,
-    get_warnlist, update_case_reason, add_case_followup_note, delete_user_moderation_data,
-    list_guild_sanctions, list_sanctions_since, submit_ban_appeal,
-    resolve_submitted_sanction_appeal,
-)
-from stores.sticky_store import set_sticky_message, remove_sticky_message, get_sticky_message, mark_sticky_message_posted
-from stores.reaction_roles_store import save_reaction_role, get_reaction_role, delete_reaction_roles
-from stores.server_backup_store import get_server_backup, list_server_backups
-from stores.guild_cleanup_store import cleanup_guild_data
-from stores.notes_store import add_member_note, get_member_notes
-from stores.scheduled_tasks_store import (
-    create_announcement, get_due_announcements, mark_announcement_sent,
-    create_reminder, get_due_reminders, mark_reminder_sent,
-)
-from stores.quarantine_store import create_quarantine_entry, get_pending_quarantine_reviews, mark_quarantine_reminded
-from stores.role_menu_store import save_role_menu, get_role_menu
-from stores.invite_tracking_store import record_invite_use, get_inviter_leaderboard, get_invite_for_member
-from stores.template_store import template_code_exists, create_template, get_template_by_code
-from stores.killswitch_store import create_killswitch_token
-from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
-from localization.i18n import (
-    TRANSLATIONS_DIR, TRANSLATIONS, t, current_lang, current_theme,
-)
-from catalogs.features import FEATURE_TOGGLES
-from services.bridge import run_coroutine
-from services.discord_logging import get_or_create_log_webhook, _send_log_embed, log_dashboard_action
-from services.moderation_actions import reverse_sanction, _dm_user_appeal_result, SANCTION_ICONS, post_appeal_for_review
-from services.owner_notify import get_owner_user, notify_owner_killswitch, notify_owner_bruteforce
-from web.app_factory import create_web_app
-from security.verification import (turnstile_configured, create_challenge, verification_url, get_verification_settings,
-                          account_days_left, kick_pass, SETTINGS_LIMITS)
-from catalogs.commands import MODERATION_COMMANDS, COMMAND_TEMPLATES
-from audit_services.export import _get_audit_records, _build_audit_csv_bytes
-from services.template_ops import _apply_template_base_config, _build_template_snapshot
-from nexus_logging.jsonlog import log_json
-from services.welcome import send_welcome, DEFAULT_WELCOME_MESSAGE, MAX_WELCOME_MESSAGE_LENGTH
-from services.server_backups import create_server_backup, restore_server_backup
-from services.activity_charts import _generate_activity_chart
-from services.owner_email import send_email, send_daily_killswitch_email
-from services.role_menus import RoleMenuSelect, RoleMenuView
-from services.setup_wizard import SetupWizardView
-from services.pagination import PaginatedEmbedView
-from services.ticket_survey import SatisfactionSurveyView
-from services.ticket_transcripts import _render_ticket_transcript, _generate_ticket_transcript
-from services.ticket_helpers import (
-    _ticket_topic_parts, _ticket_topic_value, _find_ticket_panel,
-    _ticket_topic_update, TICKET_PRIORITIES,
-)
-from services.automod_checks import (
-    is_automod_exempt, check_spam, check_raid, record_join_name_and_check_pattern,
-    check_media_flood, check_channel_burst, check_invite_link,
-    SPAM_MESSAGE_COUNT, SPAM_WINDOW_SECONDS, RAID_JOIN_COUNT, RAID_WINDOW_SECONDS,
-)
-from helpers.utils import (
-    parse_duration, check_caps, check_banned_words, check_banned_domains, check_any_link,
-    is_mention_spam, detect_phone_number, detect_address_hint,
-    parse_bounded_number, normalize_banned_word, normalize_domain, parse_lines_list,
-)
-import csv
-import io
+import subprocess
 import sys
+import time
+import zipfile
+from functools import wraps
+from threading import Thread
+
+# Third-party packages
+import discord
+import pyotp
+import requests
+import sentry_sdk
+import yaml
+from deep_translator import GoogleTranslator
+from discord import app_commands
+from discord.ext import commands
+from flask import (
+    Flask,
+    flash,
+    g,
+    get_flashed_messages,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    session,
+    url_for,
+)
+from PIL import Image, ImageDraw, ImageFont
+from pymongo import MongoClient, ReturnDocument
+from sentry_sdk.integrations.flask import FlaskIntegration
+
+# Nexus runtime, persistence, and application services
+from audit_services.audit import record_audit, build_sparkline_svg, get_audit_log
+from audit_services.export import _get_audit_records, _build_audit_csv_bytes
+from catalogs.commands import MODERATION_COMMANDS, COMMAND_TEMPLATES
+from catalogs.features import FEATURE_TOGGLES
+from helpers import utils
+from helpers.utils import (
+    check_any_link,
+    check_banned_domains,
+    check_banned_words,
+    check_caps,
+    detect_address_hint,
+    detect_phone_number,
+    is_mention_spam,
+    normalize_banned_word,
+    normalize_domain,
+    parse_bounded_number,
+    parse_duration,
+    parse_lines_list,
+)
+from localization.i18n import (
+    TRANSLATIONS,
+    TRANSLATIONS_DIR,
+    current_lang,
+    current_theme,
+    t,
+)
+from nexus_logging.jsonlog import log_json
+from nexus_runtime import core
+from security.verification import (
+    SETTINGS_LIMITS,
+    account_days_left,
+    create_challenge,
+    get_verification_settings,
+    kick_pass,
+    turnstile_configured,
+    verification_url,
+)
+from services.activity_charts import _generate_activity_chart
+from services.automod_checks import (
+    RAID_JOIN_COUNT,
+    RAID_WINDOW_SECONDS,
+    SPAM_MESSAGE_COUNT,
+    SPAM_WINDOW_SECONDS,
+    check_channel_burst,
+    check_invite_link,
+    check_media_flood,
+    check_raid,
+    check_spam,
+    is_automod_exempt,
+    record_join_name_and_check_pattern,
+)
+from services.bridge import run_coroutine
+from services.discord_logging import (
+    _send_log_embed,
+    get_or_create_log_webhook,
+    log_dashboard_action,
+)
+from services.moderation_actions import (
+    SANCTION_ICONS,
+    _dm_user_appeal_result,
+    post_appeal_for_review,
+    reverse_sanction,
+)
+from services.owner_email import send_daily_killswitch_email, send_email
+from services.owner_notify import (
+    get_owner_user,
+    notify_owner_bruteforce,
+    notify_owner_killswitch,
+)
+from services.pagination import PaginatedEmbedView
+from services.role_menus import RoleMenuSelect, RoleMenuView
+from services.server_backups import create_server_backup, restore_server_backup
+from services.setup_wizard import SetupWizardView
+from services.template_ops import _apply_template_base_config, _build_template_snapshot
+from services.ticket_helpers import (
+    TICKET_PRIORITIES,
+    _find_ticket_panel,
+    _ticket_topic_parts,
+    _ticket_topic_update,
+    _ticket_topic_value,
+)
+from services.ticket_survey import SatisfactionSurveyView
+from services.ticket_transcripts import (
+    _generate_ticket_transcript,
+    _render_ticket_transcript,
+)
+from services.welcome import (
+    DEFAULT_WELCOME_MESSAGE,
+    MAX_WELCOME_MESSAGE_LENGTH,
+    send_welcome,
+)
+from stores.config_store import (
+    add_command_role,
+    get_config,
+    get_global_lock,
+    remove_command_role,
+    set_command_template,
+    set_global_lock,
+    update_config,
+)
+from stores.guild_cleanup_store import cleanup_guild_data
+from stores.invite_tracking_store import (
+    get_invite_for_member,
+    get_inviter_leaderboard,
+    record_invite_use,
+)
+from stores.killswitch_store import create_killswitch_token
+from stores.notes_store import add_member_note, get_member_notes
+from stores.quarantine_store import (
+    create_quarantine_entry,
+    get_pending_quarantine_reviews,
+    mark_quarantine_reminded,
+)
+from stores.reaction_roles_store import (
+    delete_reaction_roles,
+    get_reaction_role,
+    save_reaction_role,
+)
+from stores.role_menu_store import get_role_menu, save_role_menu
+from stores.sanctions_store import (
+    add_case_followup_note,
+    create_sanction_appeal,
+    delete_user_moderation_data,
+    get_ban_appeal,
+    get_ban_appeal_by_case,
+    get_case,
+    get_locked_channels,
+    get_next_case_id,
+    get_sanction_history,
+    get_sanction_stats,
+    get_warnlist,
+    get_warns,
+    list_guild_sanctions,
+    list_sanctions_since,
+    log_sanction,
+    mark_channel_locked,
+    mark_channel_unlocked,
+    remove_tempban,
+    resolve_submitted_sanction_appeal,
+    save_tempban,
+    set_warns,
+    submit_ban_appeal,
+    update_case_reason,
+    get_active_tempbans,
+)
+from stores.scheduled_tasks_store import (
+    create_announcement,
+    create_reminder,
+    get_due_announcements,
+    get_due_reminders,
+    mark_announcement_sent,
+    mark_reminder_sent,
+)
+from stores.server_backup_store import get_server_backup, list_server_backups
+from stores.sticky_store import (
+    get_sticky_message,
+    mark_sticky_message_posted,
+    remove_sticky_message,
+    set_sticky_message,
+)
+from stores.template_store import (
+    create_template,
+    get_template_by_code,
+    template_code_exists,
+)
+from web.app_factory import create_web_app
 
 # MongoDB setup
 mongo = None
