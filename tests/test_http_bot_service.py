@@ -702,6 +702,29 @@ def test_api_sanction_cases_snapshot_rejects_invalid_arguments(guild_id, filter_
     assert session.calls == []
 
 
+def test_api_authenticate_key_dispatches_without_returning_the_secret():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": "345678901234567890"}))
+    result = _client(session).api_authenticate_key("guild-secret", "345678901234567890")
+    assert result == "345678901234567890"
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload == {"method": "api_authenticate_key", "args": ["guild-secret", "345678901234567890"], "kwargs": {}}
+    assert "guild-secret" not in json.dumps(session.calls[0][1]["headers"])
+
+    bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": "456789012345678901"}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad).api_authenticate_key("guild-secret", "345678901234567890")
+
+
+def test_api_authenticate_key_supports_global_guild_lookup_and_rejects_bad_keys():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": "345678901234567890"}))
+    assert _client(session).api_authenticate_key("guild-secret") == "345678901234567890"
+    assert json.loads(session.calls[0][1]["data"])["args"] == ["guild-secret"]
+    bad = FakeSession()
+    assert _client(bad).api_authenticate_key("clé") is None
+    assert _client(bad).api_authenticate_key("x" * 513) is None
+    assert bad.calls == []
+
+
 def test_api_member_warnings_dispatches_and_validates_result():
     session = FakeSession(response=FakeResponse(payload={"ok": True, "result": 3}))
     assert _client(session).api_member_warnings("345678901234567890", "456789012345678901") == 3
