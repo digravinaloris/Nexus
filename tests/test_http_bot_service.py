@@ -722,7 +722,6 @@ def test_dashboard_submitted_appeals_snapshot_dispatches_and_validates_dto():
         _client(bad).dashboard_submitted_appeals_snapshot("345678901234567890", 10)
 
 
-@pytest.mark.parametrize(("guild_id", "limit"), [("bad", 10), ("123", True), ("123", 101), ("123", 0)])
 def test_signed_appeal_case_actions_dispatch_without_tokens():
     for method, args in [
         ("api_claim_appeal_by_case", ["345678901234567890", 12]),
@@ -760,6 +759,7 @@ def test_signed_appeal_case_actions_reject_non_boolean_remote_result():
         _client(session).api_claim_appeal_by_case("123", 1)
 
 
+@pytest.mark.parametrize(("guild_id", "limit"), [("bad", 10), ("123", True), ("123", 101), ("123", 0)])
 def test_dashboard_submitted_appeals_snapshot_rejects_invalid_arguments(guild_id, limit):
     session = FakeSession()
     with pytest.raises(ValueError):
