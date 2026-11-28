@@ -871,3 +871,33 @@ def test_dashboard_roles_snapshot_rejects_invalid_guild_ids(guild_id):
     with pytest.raises(ValueError):
         _client(session).dashboard_roles_snapshot(guild_id)
     assert session.calls == []
+
+
+def test_api_rest_config_snapshot_dispatches_and_rejects_unreviewed_or_secret_fields():
+    dto = {"guild_id": "345678901234567890", "logs_channel": "logs", "tickets_enabled": True}
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    client = _client(session)
+    assert client.api_rest_config_snapshot("345678901234567890") == dto
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload == {
+        "method": "api_rest_config_snapshot",
+        "args": ["345678901234567890"],
+        "kwargs": {},
+    }
+
+    for invalid in (
+        {**dto, "log_webhook_url": "https://hooks.example/secret"},
+        {**dto, "future_unreviewed_secret": "nope"},
+        {**dto, "guild_id": "456789012345678901"},
+        {**dto, "command_templates": {"access_token": "secret"}},
+    ):
+        bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": invalid}))
+        with pytest.raises(BotServiceTransportError, match="invalid response"):
+            _client(bad).api_rest_config_snapshot("345678901234567890")
+
+
+def test_api_rest_config_snapshot_rejects_invalid_guild_before_transport():
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).api_rest_config_snapshot("bad")
+    assert session.calls == []
