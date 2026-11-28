@@ -94,6 +94,7 @@ def mock_internal_bot_service():
             "spike-members-malformed",
             "spike-dashboard-sanction-stats-malformed",
             "spike-dashboard-overview-malformed",
+            "spike-audit-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -184,6 +185,12 @@ def mock_internal_bot_service():
             ],
         },
         "dashboard_config_snapshot": {"guild_id": "123", "language": "en", "tickets_enabled": True, "banned_words": ["spam"], "command_roles": {"ban": [321]}},
+        "api_audit_snapshot": [{
+            "actor_name": "Moderator",
+            "action": "Banned member",
+            "details": "spam",
+            "timestamp": "2026-11-28T09:30:00Z",
+        }],
         "dashboard_calendar_upcoming_events": [{
             "_id": "0123456789abcdef01234567",
             "guild_id": "123",
@@ -274,6 +281,12 @@ def mock_internal_bot_service():
             return jsonify({"ok": True, "result": ["ban", "not valid!"]})
         if key_id == "spike-dashboard-sanction-types-duplicate":
             return jsonify({"ok": True, "result": ["ban", "ban"]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "api_audit_snapshot" and args == ["123", 10]:
+        if key_id == "spike-audit-malformed":
+            malformed = dict(results[method][0])
+            malformed["actor_name"] = "x" * 129
+            return jsonify({"ok": True, "result": [malformed]})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_calendar_upcoming_events" and args == ["123", "2026-11-28T12:00:00+00:00", 10]:
         if key_id == "spike-dashboard-calendar-malformed":
@@ -448,6 +461,15 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.dashboard_sanction_types_snapshot("123")
         elif method == "dashboard_sanction_types_snapshot_invalid_args":
             try: client.dashboard_sanction_types_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "api_audit_snapshot":
+            result = client.api_audit_snapshot("123", limit=10)
+        elif method == "api_audit_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-audit-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.api_audit_snapshot("123", limit=10)
+        elif method == "api_audit_snapshot_invalid_args":
+            try: client.api_audit_snapshot("not-decimal", limit=10)
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "dashboard_calendar_upcoming_events":

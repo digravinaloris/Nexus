@@ -170,6 +170,15 @@ class CloudflareFetchBotService:
                 or (len(args) == 2 and not valid_id(args[1]))
             ):
                 raise ValueError("Invalid dashboard overview arguments")
+        elif method == "api_audit_snapshot":
+            if (
+                expected_type is not list
+                or len(args) != 2
+                or not valid_id(args[0])
+                or type(args[1]) is not int
+                or not 1 <= args[1] <= 100
+            ):
+                raise ValueError("Invalid audit snapshot arguments")
         elif method == "dashboard_calendar_upcoming_events":
             if (
                 expected_type is not list
@@ -387,6 +396,33 @@ class CloudflareFetchBotService:
             or len(set(result)) != len(result)
         ):
             raise CloudflareBotServiceError("Internal BotService returned invalid dashboard sanction types")
+        if method == "api_audit_snapshot":
+            required = {"actor_name", "action", "details", "timestamp"}
+            def valid_audit_entry(item):
+                if (
+                    not isinstance(item, dict)
+                    or set(item) != required
+                    or not isinstance(item["actor_name"], str)
+                    or not 1 <= len(item["actor_name"]) <= 128
+                    or not isinstance(item["action"], str)
+                    or not 1 <= len(item["action"]) <= 200
+                    or not isinstance(item["details"], str)
+                    or len(item["details"]) > 1000
+                    or not isinstance(item["timestamp"], str)
+                ):
+                    return False
+                try:
+                    stamp = datetime.datetime.fromisoformat(item["timestamp"].replace("Z", "+00:00"))
+                except ValueError:
+                    return False
+                return stamp.tzinfo is not None and stamp.utcoffset() == datetime.timedelta(0)
+            if (
+                not isinstance(result, list)
+                or len(result) > args[1]
+                or not all(valid_audit_entry(item) for item in result)
+                or any(result[i]["timestamp"] < result[i + 1]["timestamp"] for i in range(len(result) - 1))
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid audit snapshot")
         if method == "dashboard_calendar_upcoming_events":
             def valid_calendar_event(item):
                 if (
@@ -676,6 +712,17 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def api_audit_snapshot(self, guild_id: str, limit: int = 20) -> list:
+        if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
+            raise ValueError("Invalid guild ID")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Invalid audit snapshot limit")
+        result = self._dispatch("api_audit_snapshot", [guild_id, limit], list)
+        return [
+            dict(item, timestamp=datetime.datetime.fromisoformat(item["timestamp"].replace("Z", "+00:00")))
+            for item in result
+        ]
 
     def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> list:
         if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
