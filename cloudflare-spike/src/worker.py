@@ -105,6 +105,8 @@ def mock_internal_bot_service():
             "spike-health-malformed",
             "spike-public-status-malformed",
             "spike-api-health-malformed",
+            "spike-channels-malformed",
+            "spike-roles-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -315,6 +317,10 @@ def mock_internal_bot_service():
             malformed = dict(results[method])
             malformed["guild_count"] = True
             return jsonify({"ok": True, "result": malformed})
+        return jsonify({"ok": True, "result": results[method]})
+    if method in {"api_text_channels_snapshot", "api_roles_snapshot"} and args == ["123"]:
+        if key_id in {"spike-channels-malformed", "spike-roles-malformed"}:
+            return jsonify({"ok": True, "result": {"unexpected": "not-a-list"}})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_guild_list_snapshot" and args == ["123"]:
         if key_id == "spike-guild-list-malformed":
