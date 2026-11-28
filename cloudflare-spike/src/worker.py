@@ -184,6 +184,16 @@ def mock_internal_bot_service():
             ],
         },
         "dashboard_config_snapshot": {"guild_id": "123", "language": "en", "tickets_enabled": True, "banned_words": ["spam"], "command_roles": {"ban": [321]}},
+        "dashboard_calendar_upcoming_events": [{
+            "_id": "0123456789abcdef01234567",
+            "guild_id": "123",
+            "title": "Community event",
+            "description": "A safe event",
+            "role_id": "456",
+            "starts_at": "2026-12-01T18:00:00Z",
+            "timezone": "Europe/Paris",
+            "time_set": True,
+        }],
         "dashboard_sanction_types_snapshot": ["ban", "kick", "mute", "warn"],
         "dashboard_overview_snapshot": {
             "id": "123",
@@ -264,6 +274,12 @@ def mock_internal_bot_service():
             return jsonify({"ok": True, "result": ["ban", "not valid!"]})
         if key_id == "spike-dashboard-sanction-types-duplicate":
             return jsonify({"ok": True, "result": ["ban", "ban"]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_calendar_upcoming_events" and args == ["123", "2026-11-28T12:00:00+00:00", 10]:
+        if key_id == "spike-dashboard-calendar-malformed":
+            malformed = dict(results[method][0])
+            malformed["role_id"] = "not-decimal"
+            return jsonify({"ok": True, "result": [malformed]})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_overview_snapshot" and args in (["123"], ["123", "789"]):
         if key_id == "spike-dashboard-overview-malformed":
@@ -432,6 +448,18 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.dashboard_sanction_types_snapshot("123")
         elif method == "dashboard_sanction_types_snapshot_invalid_args":
             try: client.dashboard_sanction_types_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "dashboard_calendar_upcoming_events":
+            from datetime import datetime, timezone
+            result = client.dashboard_calendar_upcoming_events("123", datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc), limit=10)
+        elif method == "dashboard_calendar_upcoming_events_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-calendar-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            from datetime import datetime, timezone
+            invalid_client.dashboard_calendar_upcoming_events("123", datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc), limit=10)
+        elif method == "dashboard_calendar_upcoming_events_invalid_args":
+            from datetime import datetime
+            try: client.dashboard_calendar_upcoming_events("not-decimal", datetime(2026, 11, 28))
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "dashboard_overview_snapshot":
