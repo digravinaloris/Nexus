@@ -186,6 +186,7 @@ def mock_internal_bot_service():
             ],
         },
         "dashboard_config_snapshot": {"guild_id": "123", "language": "en", "tickets_enabled": True, "banned_words": ["spam"], "command_roles": {"ban": [321]}},
+        "api_warnlist_snapshot": [{"user_id": "123456789012345678", "count": 2}],
         "api_audit_snapshot": [{
             "actor_name": "Moderator",
             "action": "Banned member",
@@ -282,6 +283,15 @@ def mock_internal_bot_service():
             return jsonify({"ok": True, "result": ["ban", "not valid!"]})
         if key_id == "spike-dashboard-sanction-types-duplicate":
             return jsonify({"ok": True, "result": ["ban", "ban"]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "api_warnlist_snapshot" and args == ["123"]:
+        if key_id == "spike-warnlist-malformed":
+            return jsonify({"ok": True, "result": [{"user_id": "not-decimal", "count": 2}]})
+        if key_id == "spike-warnlist-duplicate":
+            return jsonify({"ok": True, "result": [
+                {"user_id": "123456789012345678", "count": 2},
+                {"user_id": "123456789012345678", "count": 3},
+            ]})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_sanction_cases_snapshot" and args == ["123", "ban", 10]:
         cases = [{
@@ -475,6 +485,18 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.dashboard_sanction_types_snapshot("123")
         elif method == "dashboard_sanction_types_snapshot_invalid_args":
             try: client.dashboard_sanction_types_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "api_warnlist_snapshot":
+            result = client.api_warnlist_snapshot("123")
+        elif method == "api_warnlist_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-warnlist-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.api_warnlist_snapshot("123")
+        elif method == "api_warnlist_snapshot_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-warnlist-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.api_warnlist_snapshot("123")
+        elif method == "api_warnlist_snapshot_invalid_args":
+            try: client.api_warnlist_snapshot("not-decimal")
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "api_sanction_cases_snapshot":
