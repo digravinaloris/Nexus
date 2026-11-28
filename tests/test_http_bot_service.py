@@ -901,3 +901,43 @@ def test_api_rest_config_snapshot_rejects_invalid_guild_before_transport():
     with pytest.raises(ValueError):
         _client(session).api_rest_config_snapshot("bad")
     assert session.calls == []
+
+
+def test_dashboard_config_snapshot_dispatches_and_rejects_unsafe_dto_fields():
+    dto = {
+        "guild_id": "345678901234567890",
+        "welcome_channel_id": "456789012345678901",
+        "warn_mute_threshold": 3,
+        "command_templates": {"moderation": ["ban", "kick"]},
+    }
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    client = _client(session)
+    assert client.dashboard_config_snapshot("345678901234567890") == dto
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload == {
+        "method": "dashboard_config_snapshot",
+        "args": ["345678901234567890"],
+        "kwargs": {},
+    }
+
+    invalid_results = (
+        {**dto, "log_webhook_url": "https://hooks.example/secret"},
+        {**dto, "api_key": "secret"},
+        {**dto, "future_unreviewed_field": "nope"},
+        {**dto, "guild_id": "456789012345678901"},
+        {**dto, "command_templates": {"access_token": ["secret"]}},
+        {**dto, "command_roles": {"ban": {"role": 123}}},
+        {**dto, "welcome_channel_id": {"unexpected": "object"}},
+    )
+    for invalid in invalid_results:
+        bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": invalid}))
+        with pytest.raises(BotServiceTransportError, match="invalid response"):
+            _client(bad).dashboard_config_snapshot("345678901234567890")
+
+
+@pytest.mark.parametrize("guild_id", ["bad", "0", "1" * 21])
+def test_dashboard_config_snapshot_rejects_invalid_guild_ids(guild_id):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).dashboard_config_snapshot(guild_id)
+    assert session.calls == []

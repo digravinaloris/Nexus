@@ -100,6 +100,7 @@ class SignedHttpBotService(BotService):
             "api_warnlist_snapshot": 1,
             "api_authenticate_key": (1, 2),
             "api_rest_config_snapshot": 1,
+            "dashboard_config_snapshot": 1,
             "dashboard_submitted_appeals_snapshot": 2,
             "api_claim_appeal_by_case": 2,
             "api_release_appeal_claim_by_case": 2,
@@ -121,7 +122,7 @@ class SignedHttpBotService(BotService):
             if (not isinstance(args[0], str) or not args[0].isascii() or not 1 <= len(args[0]) <= 512
                 or (len(args) == 2 and not self._valid_guild_id(args[1]))):
                 raise ValueError("Invalid API key authentication arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot", "api_rest_config_snapshot"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot", "api_rest_config_snapshot", "dashboard_config_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
@@ -596,6 +597,90 @@ class SignedHttpBotService(BotService):
                 or not safe_json_value(result)
                 or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True)) > 65536):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+
+        elif method == "dashboard_config_snapshot":
+            allowed_fields = {
+                "guild_id", "logs_channel", "autorole", "language", "tickets_enabled",
+                "ticket_category_id", "appeal_channel_id", "boost_channel_id",
+                "member_count_channel_id", "welcome_channel_id", "welcome_banner_enabled",
+                "verification_enabled", "verified_role_id", "unverified_role_id",
+                "quarantine_enabled", "quarantine_role_id", "quarantine_channel_id",
+                "trap_channel_enabled", "trap_channel_id", "jtc_channel_id",
+                "detailed_logs_enabled", "antinuke_enabled", "weekly_digest_enabled",
+                "log_dashboard_actions", "anti_link_global_enabled",
+                "anti_mention_spam_enabled", "anti_media_flood_enabled",
+                "auto_slowmode_enabled", "anti_doxx_enabled", "raid_pattern_alert_enabled",
+                "auto_translate_enabled", "remindme_enabled", "serverinfo_visual_enabled",
+                "automod_spam_count", "automod_spam_window", "automod_caps_ratio",
+                "automod_raid_count", "automod_raid_window", "mention_spam_threshold",
+                "media_flood_count", "media_flood_window", "auto_slowmode_threshold",
+                "auto_slowmode_window", "auto_slowmode_seconds",
+                "auto_slowmode_duration_minutes", "warn_escalation_enabled",
+                "warn_mute_threshold", "warn_mute_minutes", "warn_kick_threshold",
+                "min_account_age_days", "antinuke_threshold",
+                "quarantine_suspicion_days", "quarantine_hold_minutes",
+                "banned_words", "banned_domains", "calendar_timezone",
+                "calendar_channel_id", "calendar_manager_role_ids",
+                "command_roles", "command_templates",
+            }
+            forbidden_fragments = ("secret", "token", "webhook", "api_key", "password", "cookie", "credential")
+
+            def safe_dashboard_value(value, depth=0):
+                if depth > 6:
+                    return False
+                if value is None or type(value) in {bool, int, float, str}:
+                    return not (isinstance(value, str) and len(value) > 4096)
+                if isinstance(value, list):
+                    return len(value) <= 1000 and all(safe_dashboard_value(item, depth + 1) for item in value)
+                if isinstance(value, dict):
+                    return len(value) <= 100 and all(
+                        isinstance(key, str) and len(key) <= 100
+                        and not any(fragment in key.lower() for fragment in forbidden_fragments)
+                        and safe_dashboard_value(item, depth + 1)
+                        for key, item in value.items()
+                    )
+                return False
+
+            def valid_string_list(value):
+                return (
+                    isinstance(value, list)
+                    and len(value) <= 1000
+                    and all(isinstance(item, str) and len(item) <= 253 for item in value)
+                )
+
+            def valid_command_mapping(value, *, allow_role_ids=False):
+                return (
+                    isinstance(value, dict)
+                    and len(value) <= 100
+                    and all(
+                        isinstance(name, str) and 0 < len(name) <= 100
+                        and isinstance(items, list) and len(items) <= 100
+                        and all(
+                            (isinstance(item, str) and len(item) <= 100)
+                            or (allow_role_ids and type(item) is int and 0 < item < 2**64)
+                            for item in items
+                        )
+                        for name, items in value.items()
+                    )
+                )
+
+            list_fields = ("banned_words", "banned_domains", "calendar_manager_role_ids")
+            scalar_fields = allowed_fields - set(list_fields) - {"command_roles", "command_templates", "guild_id"}
+            if (
+                not isinstance(result, dict)
+                or not set(result).issubset(allowed_fields)
+                or result.get("guild_id") != args[0]
+                or any(not valid_string_list(result[key]) for key in list_fields if key in result)
+                or ("command_roles" in result and not valid_command_mapping(result["command_roles"], allow_role_ids=True))
+                or ("command_templates" in result and not valid_command_mapping(result["command_templates"]))
+                or any(
+                    value is not None and type(value) not in {bool, int, float, str}
+                    for key, value in result.items() if key in scalar_fields
+                )
+                or not safe_dashboard_value(result)
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True)) > 65536
+            ):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
         return result
 
     def health_snapshot(self):
@@ -643,6 +728,11 @@ class SignedHttpBotService(BotService):
         if not self._valid_guild_id(guild_id):
             raise ValueError("Invalid guild ID")
         return self._dispatch_snapshot("api_rest_config_snapshot", (guild_id,))
+
+    def dashboard_config_snapshot(self, guild_id: str):
+        if not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        return self._dispatch_snapshot("dashboard_config_snapshot", (guild_id,))
 
     def api_authenticate_key(self, provided_key: str, guild_id: str = None):
         if not isinstance(provided_key, str) or not provided_key.isascii() or not 1 <= len(provided_key) <= 512:
