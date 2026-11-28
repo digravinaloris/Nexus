@@ -15,10 +15,10 @@
     <p class="lead" style="margin-top:10px;"><strong>{{ t('appeals_original_reason') }}:</strong> {{ a.ban_reason }}</p>
     <p class="lead"><strong>{{ t('appeals_appeal_text') }}:</strong> {{ a.appeal_text }}</p>
     <div class="row" style="margin-top:16px;">
-      <form method="POST" action="{{ url_for('dash_appeal_accept', guild_id=guild_id, token=a.token) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <form method="POST" action="{{ url_for('dash_appeal_accept', guild_id=guild_id, case_id=a.case_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit">{{ t('btn_accept') }}</button>
       </form>
-      <form method="POST" action="{{ url_for('dash_appeal_deny', guild_id=guild_id, token=a.token) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <form method="POST" action="{{ url_for('dash_appeal_deny', guild_id=guild_id, case_id=a.case_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="stop">{{ t('btn_deny') }}</button>
       </form>
     </div>
