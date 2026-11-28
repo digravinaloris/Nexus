@@ -177,6 +177,16 @@ def create_internal_bot_service_blueprint(
                 getattr(service, method_name, None),
                 [args[0], args[1], requested_at.astimezone(timezone.utc)],
             )
+        elif method_name == "dashboard_presence_ping":
+            if (
+                len(args) != 3
+                or not valid_guild_id(args[0])
+                or not valid_guild_id(args[1])
+                or not isinstance(args[2], str)
+                or not 1 <= len(args[2].strip()) <= 100
+            ):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_presence_viewers":
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -342,6 +352,8 @@ def create_internal_bot_service_blueprint(
         try:
             result = operation(*operation_args)
             if method_name in {"dashboard_calendar_has_duplicate_event", "public_global_lock_state"} and type(result) is not bool:
+                return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "dashboard_presence_ping" and result is not None:
                 return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "dashboard_presence_viewers":
                 if (
