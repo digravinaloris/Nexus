@@ -337,7 +337,11 @@ def main():
     status, stale_write, stale_delete = call_with_cookie(
         "/__spike/flask-session/stale-write", "POST", stale_cookie
     )
-    require(status == 200 and stale_write.get("stale") is True, "Stale-write conflict setup failed")
+    require(
+        status == 503
+        and stale_write.get("error") == "session storage unavailable",
+        "Revision-conflicted session write did not fail closed with HTTP 503",
+    )
     require(
         isinstance(stale_delete, str) and "max-age=0" in stale_delete.lower(),
         "Revision-conflicted response did not clear its stale browser cookie",
