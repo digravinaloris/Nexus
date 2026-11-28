@@ -642,7 +642,6 @@ def test_dashboard_appeal_claim_prevents_concurrent_resolution(dash, monkeypatch
 
     token = f"race-{action}"
     _submitted(dash, token)
-    stale_appeal = dict(dash.col.ban_appeals.find_one({"token": token}))
     dash.col.ban_appeals.update_one(
         {"token": token}, {"$set": {"status": "processing"}}
     )
