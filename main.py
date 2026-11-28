@@ -72,6 +72,7 @@ from localization.i18n import (
 )
 from nexus_logging.jsonlog import log_json
 from nexus_runtime import core
+from nexus_runtime.mongo import initialize_mongo
 from security.verification import (
     SETTINGS_LIMITS,
     account_days_left,
@@ -235,36 +236,10 @@ reminders_col = None
 templates_col = None  # globale -- PAS scopée par guild_id, contrairement à tout le reste
 
 def init_mongo():
-    global mongo, db, warns_col, config_col, locked_channels_col, sanctions_col, reaction_roles_col, notes_col, audit_col, bot_state_col, killswitch_tokens_col, case_counters_col, sticky_messages_col, ban_appeals_col, server_backups_col, invite_uses_col, role_menus_col, scheduled_col, quarantine_col, reminders_col, templates_col
-    mongo = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
-    db = mongo["discordbot"]
-    warns_col = db["warns"]
-    config_col = db["config"]
-    locked_channels_col = db["locked_channels"]
-    sanctions_col = db["sanctions"]
-    reaction_roles_col = db["reaction_roles"]
-    notes_col = db["notes"]
-    audit_col = db["audit_log"]
-    bot_state_col = db["bot_state"]
-    killswitch_tokens_col = db["killswitch_tokens"]
-    case_counters_col = db["case_counters"]
-    sticky_messages_col = db["sticky_messages"]
-    ban_appeals_col = db["ban_appeals"]
-    server_backups_col = db["server_backups"]
-    invite_uses_col = db["invite_uses"]
-    role_menus_col = db["role_menus"]
-    scheduled_col = db["scheduled_announcements"]
-    quarantine_col = db["quarantine"]
-    reminders_col = db["reminders"]
-    templates_col = db["templates"]
-    # Même collections, exposées via l'objet stable `core.col` (cf. core.py) :
-    # les futurs modules extraits de main.py s'appuient dessus, pas sur ces globals.
-    core.init_db(mongo, db)
-    # Exposé sur l'objet bot (pas avant : init_mongo() tourne dans on_ready(),
-    # après setup_hook()/le chargement des cogs) -- un cog qui a besoin de Mongo
-    # (ex: cogs/faq.py) lit bot.db au moment de la commande/l'event, jamais à
-    # l'import du module, donc cette valeur est déjà prête à ce moment-là.
-    bot.db = db
+    # Keep the legacy module-level aliases stable while the connection setup
+    # itself lives in nexus_runtime.mongo.
+    state = initialize_mongo(MongoClient, os.getenv("MONGO_URI"), bot)
+    globals().update(state)
 
 
 async def send_sanction_dm(member_or_user, guild, sanction_type, reason):
