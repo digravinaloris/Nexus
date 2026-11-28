@@ -96,6 +96,10 @@ class BotService:
         """Return submitted appeals for one guild."""
         raise NotImplementedError
 
+    def dashboard_submitted_appeals_snapshot(self, guild_id: str, limit: int = 100) -> List[Dict[str, object]]:
+        """Return bounded, token-free appeal DTOs for the dashboard review queue."""
+        raise NotImplementedError
+
     def api_get_appeal(self, token: str) -> Optional[Dict[str, object]]:
         """Return one appeal by its token."""
         raise NotImplementedError

@@ -702,6 +702,34 @@ def test_api_sanction_cases_snapshot_rejects_invalid_arguments(guild_id, filter_
     assert session.calls == []
 
 
+def test_dashboard_submitted_appeals_snapshot_dispatches_and_validates_dto():
+    dto = [{
+        "case_id": 12, "sanction_type": "ban", "user_name": "ExampleUser",
+        "user_id": "123456789012345678", "ban_reason": "original reason",
+        "appeal_text": "Please review", "submitted_at": "2026-11-28T09:30:00Z",
+    }]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    client = _client(session)
+    result = client.dashboard_submitted_appeals_snapshot("345678901234567890", 10)
+    assert result[0]["submitted_at"].isoformat() == "2026-11-28T09:30:00+00:00"
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload["method"] == "dashboard_submitted_appeals_snapshot"
+    assert payload["args"] == ["345678901234567890", 10]
+
+    malformed = [dict(dto[0], appeal_text="x" * 4001)]
+    bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": malformed}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad).dashboard_submitted_appeals_snapshot("345678901234567890", 10)
+
+
+@pytest.mark.parametrize(("guild_id", "limit"), [("bad", 10), ("123", True), ("123", 101), ("123", 0)])
+def test_dashboard_submitted_appeals_snapshot_rejects_invalid_arguments(guild_id, limit):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).dashboard_submitted_appeals_snapshot(guild_id, limit)
+    assert session.calls == []
+
+
 def test_dashboard_roles_snapshot_dispatch_and_validates_dto():
     dto = [
         {"id": "123456789012345678", "name": "@everyone"},

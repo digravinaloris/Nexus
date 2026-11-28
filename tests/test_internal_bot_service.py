@@ -608,6 +608,54 @@ def test_signed_dispatch_allows_dashboard_roles_snapshot_and_rejects_bad_dto():
 
 
 
+def test_signed_dispatch_projects_submitted_appeals_without_tokens_or_mongo_fields():
+    from datetime import datetime
+
+    client, service = _client()
+    service.dashboard_submitted_appeals_snapshot = lambda guild_id, limit: [{
+        "_id": "mongo-secret", "token": "public-appeal-token", "guild_id": guild_id,
+        "case_id": 12, "sanction_type": "ban", "user_name": "ExampleUser",
+        "user_id": "123456789012345678", "ban_reason": "original reason",
+        "appeal_text": "Please review", "submitted_at": datetime(2026, 11, 28, 9, 30),
+        "status": "submitted", "processing_at": None,
+    }]
+    body = _request_body({"method": "dashboard_submitted_appeals_snapshot", "args": ["123", 10], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+    assert result == [{
+        "case_id": 12, "sanction_type": "ban", "user_name": "ExampleUser",
+        "user_id": "123456789012345678", "ban_reason": "original reason",
+        "appeal_text": "Please review", "submitted_at": "2026-11-28T09:30:00Z",
+    }]
+    assert "token" not in result[0] and "_id" not in result[0] and "guild_id" not in result[0]
+
+
+@pytest.mark.parametrize("args", [["bad", 10], ["123", True], ["123", 101], ["123"], ["123", 10, "extra"]])
+def test_signed_dispatch_rejects_invalid_submitted_appeals_arguments(args):
+    client, service = _client()
+    body = _request_body({"method": "dashboard_submitted_appeals_snapshot", "args": args, "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_fails_closed_for_malformed_submitted_appeals():
+    from datetime import datetime
+
+    client, service = _client()
+    service.dashboard_submitted_appeals_snapshot = lambda guild_id, limit: [{
+        "guild_id": guild_id, "case_id": True, "sanction_type": "ban",
+        "user_name": "ExampleUser", "user_id": "123456789012345678",
+        "ban_reason": "reason", "appeal_text": "appeal",
+        "submitted_at": datetime(2026, 11, 28, 9, 30), "status": "submitted",
+    }]
+    body = _request_body({"method": "dashboard_submitted_appeals_snapshot", "args": ["123", 10], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
+
+
 def test_signed_dispatch_projects_sanction_case_documents_to_safe_dto():
     from datetime import datetime
 

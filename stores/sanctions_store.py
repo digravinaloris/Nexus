@@ -195,9 +195,13 @@ def get_sanction_cases(guild_id, filter_type="", limit=50):
 
 
 
-def get_submitted_appeals(guild_id):
-    """Return submitted appeals awaiting moderator review, newest first."""
-    return list(col.ban_appeals.find({"guild_id": str(guild_id), "status": "submitted"}).sort("submitted_at", -1))
+def get_submitted_appeals(guild_id, limit=100):
+    """Return a bounded list of submitted appeals awaiting moderator review, newest first."""
+    return list(
+        col.ban_appeals.find({"guild_id": str(guild_id), "status": "submitted"})
+        .sort("submitted_at", -1)
+        .limit(limit)
+    )
 
 
 

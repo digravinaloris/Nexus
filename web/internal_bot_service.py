@@ -143,6 +143,10 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_submitted_appeals_snapshot":
+            if len(args) != 2 or not valid_guild_id(args[0]) or type(args[1]) is not int or not 1 <= args[1] <= 100:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_sanction_cases_snapshot":
             if (len(args) != 3 or not valid_guild_id(args[0])
                 or not isinstance(args[1], str)
@@ -253,6 +257,39 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name == "dashboard_submitted_appeals_snapshot":
+                required = {"guild_id", "case_id", "sanction_type", "user_name", "user_id", "ban_reason", "appeal_text", "submitted_at", "status"}
+                def appeal_dto(item):
+                    if not isinstance(item, dict) or not required.issubset(item):
+                        return None
+                    stamp = item.get("submitted_at")
+                    if not isinstance(stamp, datetime):
+                        return None
+                    if stamp.tzinfo is None:
+                        stamp = stamp.replace(tzinfo=timezone.utc)
+                    stamp = stamp.astimezone(timezone.utc)
+                    case_id, sanction_type = item.get("case_id"), item.get("sanction_type")
+                    user_name, user_id = item.get("user_name"), item.get("user_id")
+                    ban_reason, appeal_text = item.get("ban_reason"), item.get("appeal_text")
+                    if (str(item.get("guild_id")) != str(operation_args[0]) or item.get("status") != "submitted"
+                        or type(case_id) is not int or not 1 <= case_id <= (2**63 - 1)
+                        or not isinstance(sanction_type, str) or re.fullmatch(r"[a-z][a-z0-9_]{0,31}", sanction_type) is None
+                        or not isinstance(user_name, str) or not 1 <= len(user_name) <= 100
+                        or not isinstance(user_id, str) or not valid_guild_id(user_id)
+                        or not isinstance(ban_reason, str) or len(ban_reason) > 1000
+                        or not isinstance(appeal_text, str) or not 1 <= len(appeal_text) <= 4000):
+                        return None
+                    return {"case_id": case_id, "sanction_type": sanction_type, "user_name": user_name,
+                        "user_id": user_id, "ban_reason": ban_reason, "appeal_text": appeal_text,
+                        "submitted_at": stamp.isoformat().replace("+00:00", "Z")}
+                if not isinstance(result, list) or len(result) > operation_args[1]:
+                    return jsonify({"error": "internal service unavailable"}), 503
+                projected = [appeal_dto(item) for item in result]
+                if (any(item is None for item in projected)
+                    or len({item["case_id"] for item in projected}) != len(projected)
+                    or any(projected[i]["submitted_at"] < projected[i + 1]["submitted_at"] for i in range(len(projected) - 1))):
+                    return jsonify({"error": "internal service unavailable"}), 503
+                result = projected
             if method_name == "api_sanction_cases_snapshot":
                 def case_dto(item):
                     required = {"guild_id", "case_id", "type", "timestamp", "user_id", "reason"}
