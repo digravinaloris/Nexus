@@ -145,3 +145,31 @@ The isolated Worker spike has already validated key runtime primitives in CI; do
 - Removing or changing the existing Render production path.
 
 This checkpoint records PR-level code and documentation progress only. The route layer is separated from the runtime, but the in-process adapter still depends on the bot process and MongoDB. Render remains the rollback path until a separately approved migration and cutover.
+
+
+## Progress checkpoint (2026-11-28 — refreshed)
+
+### Additional work completed since the previous checkpoint
+
+- [x] PRs #328-#329: introduced and transported a dedicated REST-safe configuration DTO; raw Mongo configuration remains local-only.
+- [x] PR #331: introduced an allow-listed dashboard configuration read model and switched dashboard routes away from the raw configuration snapshot.
+- [x] PRs #332-#335: transported dashboard config and upcoming calendar snapshots, and added remote owner/admin checks plus candidate-guild filtering.
+- [x] PRs #336-#343: moved root compatibility shims into `compat/` and extracted Mongo initialization, web server startup, SIGTERM handling, thread startup, Mongo cleanup, and runtime service startup helpers from `main.py`.
+
+### Current migration blockers
+
+1. Production OAuth still stores the Discord access token in Flask's readable signed-cookie session. The isolated D1 session interface remains proof code, not production integration.
+2. Production route handlers still resolve the in-process BotService adapter. The signed HTTP adapter and Cloudflare Fetch adapter are not injected into the production Worker app.
+3. The Cloudflare Fetch adapter still supports only a subset of the now-expanded signed internal operation allowlist. It needs parity in reviewed, read-only slices before dashboard routes can run remotely.
+4. The route-to-service inventory is historical and its old counts must not be used as current coverage figures. Refresh it from current `main`.
+5. Full route, template, static-asset, environment/binding, and rollback parity remain unproven.
+
+### Next implementation sequence
+
+1. Refresh the route-to-service inventory against current `main`, comparing interface, in-process adapter, signed endpoint, HTTP adapter, Worker Fetch adapter, and tests.
+2. Extend the Cloudflare Fetch adapter with already-reviewed read-only dashboard DTO operations in small PRs, preserving strict guild scope, exact schemas, bounds, and fail-closed behavior.
+3. Complete production server-side OAuth session integration only after the Worker D1 binding, key lifecycle, cookie behavior, outage handling, and full OAuth regression tests are proven.
+4. Inject the remote adapter into a separate Worker app entry point only after those gates pass; retain the current Render startup and in-process adapter unchanged.
+5. Finish route/assets parity and operational readiness before requesting separate deployment approval.
+
+No Cloudflare resources, secrets, DNS, production settings, or deployment were changed. The current Render path remains untouched.
