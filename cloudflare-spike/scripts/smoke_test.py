@@ -244,6 +244,30 @@ def main():
     require("samesite=lax" in delete_cookie.lower(), "Logout deletion cookie does not use SameSite=Lax")
     require("path=/" in delete_cookie.lower(), "Logout deletion cookie path is not root")
 
+    # A stale request must not overwrite a newer D1 session revision.
+    status, _, set_cookie = call_with_cookie(
+        "/__spike/flask-session/login", "POST"
+    )
+    require(status == 200, "Stale-write Flask session setup failed")
+    stale_cookie = extract_session_cookie(set_cookie)
+    status, stale_write, stale_delete = call_with_cookie(
+        "/__spike/flask-session/stale-write", "POST", stale_cookie
+    )
+    require(status == 200 and stale_write.get("stale") is True, "Stale-write conflict setup failed")
+    require(
+        isinstance(stale_delete, str) and "max-age=0" in stale_delete.lower(),
+        "Revision-conflicted response did not clear its stale browser cookie",
+    )
+    status, stale_identity, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=stale_cookie
+    )
+    require(
+        status == 200
+        and stale_identity.get("authenticated") is True
+        and "stale_write_probe" not in stale_identity,
+        "Revision-conflicted write overwrote the persisted session payload",
+    )
+
     status, storage_failure, _ = call_with_cookie(
         "/__spike/flask-session/storage-failure", "POST", logout_cookie
     )

@@ -995,6 +995,31 @@ def expire_flask_session_absolute():
     return _expire_flask_session("expires_at")
 
 
+@app.post("/__spike/flask-session/stale-write")
+def force_stale_flask_session_write():
+    """Force a revision conflict after this request loaded its session."""
+    sid = request.cookies.get(app.config["SESSION_COOKIE_NAME"], "")
+    if not sid:
+        return jsonify({"stale": False}), 400
+    try:
+        _await(
+            _db()
+            .prepare(
+                """
+                UPDATE spike_flask_sessions
+                SET revision = revision + 1
+                WHERE session_hash = ? AND revoked_at IS NULL
+                """
+            )
+            .bind(_digest(sid))
+            .run()
+        )
+    except Exception:
+        return jsonify({"error": "local D1 unavailable"}), 503
+    session["stale_write_probe"] = "must-not-persist"
+    return jsonify({"stale": True})
+
+
 @app.post("/__spike/flask-session/storage-failure")
 def fail_flask_session_storage():
     original_getter = app.session_interface._db_getter
