@@ -93,6 +93,7 @@ class SignedHttpBotService(BotService):
             "dashboard_settings_snapshot": 1,
             "dashboard_roles_snapshot": 1,
             "dashboard_sanction_stats_snapshot": 2,
+            "dashboard_sanction_types_snapshot": 1,
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
@@ -106,7 +107,7 @@ class SignedHttpBotService(BotService):
         )
         if not valid_count:
             raise ValueError("Invalid internal BotService arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
@@ -353,6 +354,11 @@ class SignedHttpBotService(BotService):
                 or len({item["label"] for item in result}) != len(result)
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "dashboard_sanction_types_snapshot":
+            if (not isinstance(result, list) or len(result) > 50
+                or not all(isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,31}", value) for value in result)
+                or len(set(result)) != len(result)):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method == "dashboard_roles_snapshot":
             if result is not None and (
                 not isinstance(result, list)
@@ -458,6 +464,9 @@ class SignedHttpBotService(BotService):
             raise ValueError("Invalid sanction statistics day range")
         result = self._dispatch_snapshot("dashboard_sanction_stats_snapshot", (guild_id, days))
         return [(item["label"], item["count"]) for item in result]
+
+    def dashboard_sanction_types_snapshot(self, guild_id: str):
+        return self._dispatch_snapshot("dashboard_sanction_types_snapshot", (guild_id,))
 
     def dashboard_roles_snapshot(self, guild_id: str):
         return self._dispatch_snapshot("dashboard_roles_snapshot", (guild_id,))
