@@ -1044,3 +1044,96 @@ def test_dashboard_config_snapshot_rejects_invalid_guild_ids(guild_id):
     with pytest.raises(ValueError):
         _client(session).dashboard_config_snapshot(guild_id)
     assert session.calls == []
+
+
+def test_dashboard_public_templates_snapshot_dispatches_and_normalizes_timestamps():
+    session = FakeSession(
+        response=FakeResponse(
+            payload={
+                "ok": True,
+                "result": [{
+                    "code": "welcome-pack",
+                    "name": "Welcome Pack",
+                    "created_guild_name": "Nexus Community",
+                    "created_at": "2026-11-28T09:30:00Z",
+                    "feature_toggle_count": 4,
+                    "command_role_count": 2,
+                }],
+            }
+        )
+    )
+
+    result = _client(session).dashboard_public_templates_snapshot()
+
+    assert result == [{
+        "code": "welcome-pack",
+        "name": "Welcome Pack",
+        "created_guild_name": "Nexus Community",
+        "created_at": datetime.datetime(
+            2026, 11, 28, 9, 30, tzinfo=datetime.timezone.utc
+        ),
+        "feature_toggle_count": 4,
+        "command_role_count": 2,
+    }]
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {
+        "method": "dashboard_public_templates_snapshot",
+        "args": [],
+        "kwargs": {},
+    }
+    verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+
+
+@pytest.mark.parametrize(
+    "templates",
+    [
+        [{
+            "code": "welcome-pack",
+            "name": "Welcome Pack",
+            "created_guild_name": "Nexus Community",
+            "created_at": "2026-11-28T09:30:00Z",
+            "feature_toggle_count": 4,
+            "command_role_count": 2,
+            "creator_id": "123456789012345678",
+        }],
+        [{
+            "code": "welcome-pack",
+            "name": "Welcome Pack",
+            "created_guild_name": "Nexus Community",
+            "created_at": "not-a-date",
+            "feature_toggle_count": 4,
+            "command_role_count": 2,
+        }],
+        [
+            {
+                "code": "welcome-pack",
+                "name": "Welcome Pack",
+                "created_guild_name": "Nexus Community",
+                "created_at": "2026-11-28T09:30:00Z",
+                "feature_toggle_count": 4,
+                "command_role_count": 2,
+            },
+            {
+                "code": "welcome-pack",
+                "name": "Duplicate",
+                "created_guild_name": "Another Server",
+                "created_at": "2026-11-27T09:30:00Z",
+                "feature_toggle_count": 0,
+                "command_role_count": 0,
+            },
+        ],
+    ],
+)
+def test_dashboard_public_templates_snapshot_rejects_unsafe_dtos(templates):
+    session = FakeSession(
+        response=FakeResponse(payload={"ok": True, "result": templates})
+    )
+
+    with pytest.raises(BotServiceTransportError, match="invalid public templates"):
+        _client(session).dashboard_public_templates_snapshot()

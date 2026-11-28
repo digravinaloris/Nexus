@@ -101,6 +101,7 @@ class SignedHttpBotService(BotService):
             "api_authenticate_key": (1, 2),
             "api_rest_config_snapshot": 1,
             "dashboard_config_snapshot": 1,
+            "dashboard_public_templates_snapshot": 0,
             "dashboard_calendar_upcoming_events": 3,
             "is_guild_owner": 2,
             "is_guild_admin": 2,
@@ -257,7 +258,61 @@ class SignedHttpBotService(BotService):
             )
 
         result = payload["result"]
-        if method == "available_guild_ids":
+        if method == "dashboard_public_templates_snapshot":
+            required = {
+                "code", "name", "created_guild_name", "created_at",
+                "feature_toggle_count", "command_role_count",
+            }
+
+            def valid_public_template(item):
+                if (
+                    not isinstance(item, dict)
+                    or set(item) != required
+                    or not isinstance(item["code"], str)
+                    or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", item["code"]) is None
+                    or not isinstance(item["name"], str)
+                    or not 1 <= len(item["name"]) <= 100
+                    or not isinstance(item["created_guild_name"], str)
+                    or not 1 <= len(item["created_guild_name"]) <= 100
+                    or not isinstance(item["created_at"], str)
+                    or type(item["feature_toggle_count"]) is not int
+                    or not 0 <= item["feature_toggle_count"] <= 500
+                    or type(item["command_role_count"]) is not int
+                    or not 0 <= item["command_role_count"] <= 500
+                ):
+                    return False
+                try:
+                    stamp = datetime.datetime.fromisoformat(
+                        item["created_at"].replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    return False
+                return stamp.tzinfo is not None and stamp.utcoffset() == datetime.timedelta(0)
+
+            if (
+                not isinstance(result, list)
+                or len(result) > 50
+                or not all(valid_public_template(item) for item in result)
+                or len({item["code"] for item in result}) != len(result)
+                or any(
+                    result[index]["created_at"] < result[index + 1]["created_at"]
+                    for index in range(len(result) - 1)
+                )
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
+            ):
+                raise BotServiceTransportError(
+                    "Internal BotService returned an invalid public templates snapshot"
+                )
+            result = [
+                dict(
+                    item,
+                    created_at=datetime.datetime.fromisoformat(
+                        item["created_at"].replace("Z", "+00:00")
+                    ).astimezone(datetime.timezone.utc),
+                )
+                for item in result
+            ]
+        elif method == "available_guild_ids":
             if (
                 not isinstance(result, list)
                 or len(result) > 500
@@ -814,6 +869,9 @@ class SignedHttpBotService(BotService):
         if not self._valid_guild_id(guild_id):
             raise ValueError("Invalid guild ID")
         return self._dispatch_snapshot("dashboard_config_snapshot", (guild_id,))
+
+    def dashboard_public_templates_snapshot(self):
+        return self._dispatch_snapshot("dashboard_public_templates_snapshot", ())
 
     def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50):
         if not self._valid_guild_id(guild_id):
