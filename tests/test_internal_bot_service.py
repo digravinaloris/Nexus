@@ -490,7 +490,6 @@ def test_internal_service_enabled_with_missing_keyring_fails_closed():
 
 
 def test_signed_dispatch_allows_dashboard_overview_snapshot_with_valid_dto():
-    service = FakeBotService()
     dto = {
         "id": "123", "name": "Test Server", "owner_id": "42",
         "text_channels": [{"id": "111", "name": "general"}],
@@ -499,8 +498,8 @@ def test_signed_dispatch_allows_dashboard_overview_snapshot_with_valid_dto():
                 "kick_members": False, "manage_roles": False}}],
         "role_names": {"222": "Admin"}, "open_tickets": [],
     }
+    client, service = _client()
     service.dashboard_overview_snapshot = lambda guild_id, category=None: dto
-    client, _ = _client()
     body = _request_body({"method": "dashboard_overview_snapshot", "args": ["123"], "kwargs": {}})
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 200
