@@ -88,6 +88,58 @@ def test_factory_injects_flask_session_interface():
 
     assert app.session_interface is session_interface
 
+
+def test_factory_can_require_a_complete_server_side_session_backend():
+    class CompleteServerSessionInterface:
+        nexus_server_side_sessions = True
+
+        def consume_oauth_state(self, session, expected_state):
+            return True
+
+        def rotate_session(self, session):
+            return None
+
+        def revoke_session(self, session):
+            return None
+
+    backend = CompleteServerSessionInterface()
+    app = _create_app(
+        _config(),
+        session_interface=backend,
+        require_server_side_sessions=True,
+    )
+
+    assert app.session_interface is backend
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [
+        None,
+        object(),
+        type("PartialBackend", (), {
+            "nexus_server_side_sessions": True,
+            "consume_oauth_state": lambda self, session, state: True,
+            "rotate_session": lambda self, session: None,
+        })(),
+    ],
+)
+def test_factory_rejects_missing_or_incomplete_server_side_session_backend(backend):
+    with pytest.raises(RuntimeError, match="server-side session interface"):
+        _create_app(
+            _config(),
+            session_interface=backend,
+            require_server_side_sessions=True,
+        )
+
+
+def test_factory_keeps_legacy_session_mode_when_server_side_sessions_not_required():
+    app = _create_app(_config())
+
+    assert app.session_interface is not None
+    assert app.test_client().get("/login").status_code == 302
+
+
 def test_factory_installs_csrf_protection():
     app = _create_app(_config())
     response = app.test_client().post("/dashboard/lang/fr", data={"next": "/dashboard"})
