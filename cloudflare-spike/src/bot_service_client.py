@@ -678,7 +678,7 @@ class CloudflareFetchBotService:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
 
     def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> list:
-        if not valid_id(guild_id):
+        if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
             raise ValueError("Invalid guild ID")
         if not isinstance(now, datetime.datetime) or now.tzinfo is None:
             raise ValueError("Calendar snapshot time must be timezone-aware")
