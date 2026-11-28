@@ -157,7 +157,7 @@ def test_factory_rejects_backend_without_flask_session_interface_methods(missing
             return None
 
     backend = IncompleteFlaskSessionInterface()
-    delattr(backend, missing_method)
+    setattr(backend, missing_method, None)
     with pytest.raises(RuntimeError, match="opaque cookies, encrypted"):
         _create_app(
             _config(),
