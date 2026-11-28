@@ -452,7 +452,7 @@ def main():
             "actor_name": "Moderator",
             "action": "Banned member",
             "details": "spam",
-            "timestamp": "2026-11-28T09:30:00+00:00",
+            "timestamp": "Sat, 28 Nov 2026 09:30:00 GMT",
         }],
         f"Signed audit snapshot failed: {fetch_audit}",
     )
