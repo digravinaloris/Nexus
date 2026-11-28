@@ -541,6 +541,8 @@ class CloudflareFetchBotService:
                     and isinstance(member["is_muted"], bool)
                     for member in result
                 )
+                or len({member["id"] for member in result if isinstance(member, dict) and "id" in member}) != len(result)
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
             ):
                 raise CloudflareBotServiceError(
                     "Internal BotService returned invalid members snapshot"
