@@ -91,6 +91,8 @@ def mock_internal_bot_service():
             "spike-guild-list-malformed",
             "spike-role-malformed",
             "spike-stats-malformed",
+            "spike-stats-out-of-range",
+            "spike-stats-wrong-guild",
             "spike-faq-malformed",
             "spike-members-malformed",
             "spike-dashboard-sanction-stats-malformed",
@@ -480,6 +482,14 @@ def mock_internal_bot_service():
             malformed = dict(results[method])
             malformed["locked"] = "false"
             return jsonify({"ok": True, "result": malformed})
+        if key_id == "spike-stats-out-of-range":
+            malformed = dict(results[method])
+            malformed["warns_today"] = 10_000_001
+            return jsonify({"ok": True, "result": malformed})
+        if key_id == "spike-stats-wrong-guild":
+            malformed = dict(results[method])
+            malformed["guild_id"] = "456"
+            return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if (
         isinstance(method, str)
@@ -582,6 +592,22 @@ def exercise_fetch_bot_service_client(method):
             invalid_client = CloudflareFetchBotService(
                 base_url="http://127.0.0.1:8787",
                 key_id="spike-stats-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_guild_stats_snapshot("123")
+        elif method == "api_guild_stats_snapshot_out_of_range":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-stats-out-of-range",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_guild_stats_snapshot("123")
+        elif method == "api_guild_stats_snapshot_wrong_guild":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-stats-wrong-guild",
                 secret=_test_bot_service_secret(),
                 allow_local_http=True,
             )
