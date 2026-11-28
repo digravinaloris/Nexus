@@ -916,6 +916,81 @@ def create_invalid_flask_session_payload(kind):
     return jsonify({"prepared": True})
 
 
+@app.post("/__spike/flask-session/create-legacy-key")
+def create_legacy_key_flask_session():
+    """Insert a test session encrypted with the previous D1 key version."""
+    sid = secrets.token_urlsafe(32)
+    session_hash = app.session_interface._digest(sid)
+    active_version = app.session_interface.active_key_version
+    try:
+        app.session_interface.active_key_version = 1
+        _, ciphertext_hex, nonce_hex, key_version = app.session_interface._encrypt(
+            sid,
+            {
+                "access_token": "spike-legacy-key-access-token",
+                "csrf_token": "spike-legacy-key-csrf-secret",
+            },
+        )
+    finally:
+        app.session_interface.active_key_version = active_version
+    now = int(time.time())
+    try:
+        _await(
+            _db().prepare(
+                """
+                INSERT INTO spike_flask_sessions
+                    (session_hash, ciphertext_hex, nonce_hex, key_version,
+                     created_at, expires_at, idle_expires_at, revision)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                """
+            ).bind(
+                session_hash,
+                ciphertext_hex,
+                nonce_hex,
+                key_version,
+                now,
+                now + app.session_interface.absolute_timeout,
+                now + app.session_interface.idle_timeout,
+            ).run()
+        )
+    except Exception:
+        return jsonify({"error": "legacy session fixture unavailable"}), 503
+    response = jsonify({"created": True, "key_version": key_version})
+    response.set_cookie(
+        app.config["SESSION_COOKIE_NAME"],
+        sid,
+        httponly=True,
+        secure=app.config["SESSION_COOKIE_SECURE"],
+        samesite="Lax",
+        path="/",
+    )
+    return response
+
+
+@app.post("/__spike/flask-session/touch-key-version")
+def touch_key_version_flask_session():
+    session["key_rotation_probe"] = True
+    return jsonify({"touched": True})
+
+
+@app.get("/__spike/flask-session/key-version")
+def inspect_flask_session_key_version():
+    sid = request.cookies.get(app.config["SESSION_COOKIE_NAME"], "")
+    if not sid:
+        return jsonify({"key_version": None}), 400
+    try:
+        row = _await(
+            _db().prepare(
+                "SELECT key_version FROM spike_flask_sessions WHERE session_hash = ? AND revoked_at IS NULL"
+            ).bind(app.session_interface._digest(sid)).first()
+        )
+    except Exception:
+        return jsonify({"error": "session key lookup unavailable"}), 503
+    return jsonify({
+        "key_version": int(_row_value(row, "key_version")) if row else None
+    })
+
+
 @app.post("/__spike/flask-session/login")
 def create_flask_session():
     """Create a disposable Flask session containing a fake bearer credential."""
