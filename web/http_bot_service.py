@@ -90,6 +90,7 @@ class SignedHttpBotService(BotService):
             "api_guild_stats_snapshot": (1, 2),
             "dashboard_overview_snapshot": (1, 2),
             "dashboard_settings_snapshot": 1,
+            "dashboard_roles_snapshot": 1,
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
@@ -324,6 +325,20 @@ class SignedHttpBotService(BotService):
                 or not isinstance(result["locked"], bool)
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "dashboard_roles_snapshot":
+            if result is not None and (
+                not isinstance(result, list)
+                or len(result) > 500
+                or not all(
+                    isinstance(item, dict)
+                    and set(item) == {"id", "name"}
+                    and self._valid_guild_id(item["id"])
+                    and isinstance(item["name"], str)
+                    and 1 <= len(item["name"]) <= 100
+                    for item in result
+                )
+            ):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method == "dashboard_settings_snapshot":
             if result is not None:
                 def valid_item(item):
@@ -407,6 +422,9 @@ class SignedHttpBotService(BotService):
         if guild_id is not None and not self._valid_guild_id(guild_id):
             raise ValueError("Invalid guild ID")
         return self._dispatch_snapshot("api_guild_list_snapshot", args)
+
+    def dashboard_roles_snapshot(self, guild_id: str):
+        return self._dispatch_snapshot("dashboard_roles_snapshot", (guild_id,))
 
     def dashboard_settings_snapshot(self, guild_id: str):
         return self._dispatch_snapshot("dashboard_settings_snapshot", (guild_id,))
