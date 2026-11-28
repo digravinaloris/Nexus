@@ -244,6 +244,22 @@ def main():
     require("samesite=lax" in delete_cookie.lower(), "Logout deletion cookie does not use SameSite=Lax")
     require("path=/" in delete_cookie.lower(), "Logout deletion cookie path is not root")
 
+    # Invalid or oversized server-side payloads must fail closed without
+    # issuing an authenticated browser cookie.
+    for payload_kind in ("unserializable", "oversized"):
+        status, invalid_payload, invalid_cookie = call_with_cookie(
+            f"/__spike/flask-session/invalid-payload/{payload_kind}", "POST"
+        )
+        require(
+            status == 503
+            and invalid_payload.get("error") == "session storage unavailable",
+            f"{payload_kind} session payload did not fail closed: {invalid_payload}",
+        )
+        require(
+            not invalid_cookie or "nexus_spike_session=" not in invalid_cookie,
+            f"{payload_kind} session payload unexpectedly issued a browser cookie",
+        )
+
     # A stale request must not overwrite a newer D1 session revision.
     status, _, set_cookie = call_with_cookie(
         "/__spike/flask-session/login", "POST"
