@@ -1212,3 +1212,64 @@ def test_signed_dispatch_fails_closed_for_malformed_public_template_dtos(field, 
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 503
     assert response.get_json() == {"error": "internal service unavailable"}
+
+
+def test_signed_dispatch_projects_one_public_template_to_safe_dto():
+    client, service = _client()
+    template = {
+        "code": "AbC_123-x",
+        "name": "Welcome Pack",
+        "created_guild_name": "Example Server",
+        "created_at": datetime.datetime(2026, 11, 28, 9, 30),
+        "public": True,
+        "created_by": "private-user-id",
+        "_id": "mongo-secret",
+        "snapshot": {
+            "feature_toggles": {"tickets_enabled": True},
+            "automod": {"automod_spam_count": 10, "banned_words": ["spam"]},
+            "warn_escalation_enabled": False,
+            "command_roles_by_name": {"ban": ["Moderators"]},
+        },
+    }
+    service.dashboard_template_snapshot = lambda code: template
+    body = _request_body({
+        "method": "dashboard_template_snapshot", "args": ["AbC_123-x"], "kwargs": {}
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json()["result"] == {
+        "code": "AbC_123-x",
+        "name": "Welcome Pack",
+        "created_guild_name": "Example Server",
+        "created_at": "2026-11-28T09:30:00Z",
+        "snapshot": template["snapshot"],
+    }
+
+
+@pytest.mark.parametrize("args", [[], [123], ["unsafe/code"], ["x" * 33], ["safe", "extra"]])
+def test_signed_dispatch_rejects_invalid_public_template_detail_arguments(args):
+    client, service = _client()
+    body = _request_body({
+        "method": "dashboard_template_snapshot", "args": args, "kwargs": {}
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_fails_closed_for_private_or_malformed_template_detail():
+    client, service = _client()
+    service.dashboard_template_snapshot = lambda code: {
+        "code": "safe", "name": "Template", "created_guild_name": "Server",
+        "created_at": datetime.datetime(2026, 11, 28, 9, 30), "public": False,
+        "snapshot": {
+            "feature_toggles": {}, "automod": {}, "warn_escalation_enabled": False,
+            "command_roles_by_name": {},
+        },
+    }
+    body = _request_body({
+        "method": "dashboard_template_snapshot", "args": ["safe"], "kwargs": {}
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
