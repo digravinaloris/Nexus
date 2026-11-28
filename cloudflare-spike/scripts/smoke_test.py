@@ -77,6 +77,20 @@ def main():
     require(status == 200 and setup.get("ready"), f"D1 schema setup failed: {setup}")
 
 
+    # Malformed browser-supplied IDs must never be treated as authenticated
+    # sessions, and the unusable cookie must be cleared immediately.
+    status, malformed_identity, malformed_delete = call_with_cookie(
+        "/__spike/flask-session/me", cookie="not-a-valid-session-id"
+    )
+    require(
+        status == 200 and malformed_identity.get("authenticated") is False,
+        "Malformed opaque session cookie was accepted",
+    )
+    require(
+        isinstance(malformed_delete, str) and "max-age=0" in malformed_delete.lower(),
+        "Malformed opaque session cookie was not cleared",
+    )
+
     # Exercise Flask's real SessionInterface, not only the lower-level D1 primitives.
     status, login, set_cookie = call_with_cookie(
         "/__spike/flask-session/login", "POST"
