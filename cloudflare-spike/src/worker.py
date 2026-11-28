@@ -617,8 +617,14 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.api_guild_list_snapshot("123")
         elif method == "api_guild_id_candidates":
             result = client.api_guild_id_candidates()
+        elif method == "api_guild_id_candidates_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-guild-candidates-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.api_guild_id_candidates()
         elif method == "available_guild_ids":
             result = client.available_guild_ids(["123", "456"])
+        elif method == "available_guild_ids_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-available-guilds-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.available_guild_ids(["123", "456"])
         elif method == "api_text_channels_snapshot":
             result = client.api_text_channels_snapshot("123")
         elif method == "api_text_channels_snapshot_invalid":
