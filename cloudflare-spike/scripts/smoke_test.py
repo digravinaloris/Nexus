@@ -585,7 +585,12 @@ def main():
     require(
         status == 200
         and fetch_health.get("result")
-        == {"status": "alive", "guild_count": 12},
+        == {
+            "status": "alive",
+            "discord_gateway": "connected",
+            "mongodb": "connected",
+            "guild_count": 12,
+        },
         f"Workers Fetch health snapshot failed: {fetch_health}",
     )
     status, fetch_public = call(
