@@ -76,6 +76,17 @@ def main():
     status, setup = call("/__spike/setup", "POST", {})
     require(status == 200 and setup.get("ready"), f"D1 schema setup failed: {setup}")
 
+    status, session_config = call("/__spike/session-config-validation", "POST", {})
+    require(
+        status == 200 and session_config.get("all_passed") is True,
+        f"D1 session constructor accepted invalid configuration: {session_config}",
+    )
+    require(
+        len(session_config.get("checks", {})) == 12
+        and all(session_config["checks"].values()),
+        f"D1 session configuration validation coverage is incomplete: {session_config}",
+    )
+
     status, health_snapshot = call("/__spike/fetch-client/health_snapshot", "POST", {})
     require(
         status == 200
