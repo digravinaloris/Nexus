@@ -687,3 +687,65 @@ def test_dashboard_request_redirects_and_revokes_after_discord_401():
     assert backend.revocations == 1
     assert not backend.session
     assert "Set-Cookie" not in response.headers
+
+
+def test_oauth_callback_fails_closed_when_session_rotation_fails():
+    import time
+    from flask.sessions import SessionInterface, SessionMixin
+
+    class BackendSession(dict, SessionMixin):
+        new = False
+        modified = False
+        accessed = False
+
+    class FakeSessionInterface(SessionInterface):
+        def __init__(self):
+            self.session = BackendSession(
+                oauth_state="rotation-failure-state",
+                oauth_state_created_at=time.time(),
+                oauth_code_verifier="B" * 43,
+            )
+
+        def open_session(self, app, request):
+            return self.session
+
+        def save_session(self, app, session, response):
+            pass
+
+        def rotate_session(self, session):
+            raise RuntimeError("session backend rotation unavailable")
+
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class FakeDiscordHttpClient:
+        def post(self, url, **kwargs):
+            return FakeResponse(200, {"access_token": "never-persist-this-token", "expires_in": 3600})
+
+        def get(self, url, **kwargs):
+            return FakeResponse(200, {"id": "123456789012345678", "username": "rotation-failure-user"})
+
+
+
+    backend = FakeSessionInterface()
+    app = _create_app(
+        _config(DISCORD_HTTP_CLIENT=FakeDiscordHttpClient()),
+        session_interface=backend,
+    )
+
+
+    response = app.test_client().get(
+        "/callback?code=valid-authorization-code&state=rotation-failure-state"
+    )
+
+
+    assert response.status_code == 500
+    assert "access_token" not in backend.session
+    assert "csrf_token" not in backend.session
+    assert "dash_user" not in backend.session
+    assert "Set-Cookie" not in response.headers
