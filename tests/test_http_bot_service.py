@@ -630,6 +630,40 @@ def test_dashboard_settings_snapshot_rejects_invalid_guild_ids(guild_id):
 
 
 
+def test_dashboard_sanction_stats_snapshot_dispatches_bounded_dto_and_returns_tuples():
+    dto = [
+        {"label": "01/11", "count": 0},
+        {"label": "02/11", "count": 3},
+    ]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    client = _client(session)
+    assert client.dashboard_sanction_stats_snapshot("345678901234567890", days=2) == [("01/11", 0), ("02/11", 3)]
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload["method"] == "dashboard_sanction_stats_snapshot"
+    assert payload["args"] == ["345678901234567890", 2]
+
+    malformed = [dict(dto[0]), {"label": "31/02", "count": 1}]
+    bad_session = FakeSession(response=FakeResponse(payload={"ok": True, "result": malformed}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad_session).dashboard_sanction_stats_snapshot("345678901234567890", days=2)
+
+
+@pytest.mark.parametrize("days", [0, 31, -1, "2", 2.0, True, False])
+def test_dashboard_sanction_stats_snapshot_rejects_invalid_day_ranges_without_network(days):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).dashboard_sanction_stats_snapshot("345678901234567890", days=days)
+    assert session.calls == []
+
+
+@pytest.mark.parametrize("guild_id", ["abc", "0", "1" * 21])
+def test_dashboard_sanction_stats_snapshot_rejects_invalid_guild_ids_without_network(guild_id):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).dashboard_sanction_stats_snapshot(guild_id)
+    assert session.calls == []
+
+
 def test_dashboard_roles_snapshot_dispatch_and_validates_dto():
     dto = [
         {"id": "123456789012345678", "name": "@everyone"},
