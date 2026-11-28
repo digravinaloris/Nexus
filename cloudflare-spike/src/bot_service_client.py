@@ -232,6 +232,16 @@ class CloudflareFetchBotService:
                 or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", args[0]) is None
             ):
                 raise ValueError("Invalid public template detail arguments")
+        elif method == "dashboard_presence_ping":
+            if (
+                expected_type is not type(None)
+                or len(args) != 3
+                or not valid_id(args[0])
+                or not valid_id(args[1])
+                or not isinstance(args[2], str)
+                or not 1 <= len(args[2].strip()) <= 100
+            ):
+                raise ValueError("Invalid dashboard presence heartbeat arguments")
         elif method == "dashboard_presence_viewers":
             if expected_type is not list or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid dashboard presence viewer arguments")
