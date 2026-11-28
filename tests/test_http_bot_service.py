@@ -1,3 +1,4 @@
+import datetime
 import json
 
 import pytest
@@ -933,6 +934,55 @@ def test_dashboard_config_snapshot_dispatches_and_rejects_unsafe_dto_fields():
         bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": invalid}))
         with pytest.raises(BotServiceTransportError, match="invalid response"):
             _client(bad).dashboard_config_snapshot("345678901234567890")
+
+
+def test_dashboard_calendar_upcoming_events_dispatches_and_validates_dto():
+    now = datetime.datetime(2026, 11, 28, 12, 0, tzinfo=datetime.timezone.utc)
+    dto = [{
+        "_id": "0123456789abcdef01234567",
+        "guild_id": "345678901234567890",
+        "title": "Community event",
+        "description": "A safe event",
+        "role_id": "456789012345678901",
+        "starts_at": "2026-12-01T18:00:00Z",
+        "timezone": "Europe/Paris",
+        "time_set": True,
+    }]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    client = _client(session)
+    result = client.dashboard_calendar_upcoming_events("345678901234567890", now, limit=25)
+    assert result[0]["starts_at"] == datetime.datetime(2026, 12, 1, 18, 0, tzinfo=datetime.timezone.utc)
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload == {
+        "method": "dashboard_calendar_upcoming_events",
+        "args": ["345678901234567890", "2026-11-28T12:00:00+00:00", 25],
+        "kwargs": {},
+    }
+
+    invalid_results = (
+        [{**dto[0], "guild_id": "123"}],
+        [{**dto[0], "created_by": "private-user-id"}],
+        [{**dto[0], "role_id": {"unexpected": "object"}}],
+        [{**dto[0], "starts_at": "not-a-date"}],
+        [{**dto[0], "time_set": 1}],
+    )
+    for invalid in invalid_results:
+        bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": invalid}))
+        with pytest.raises(BotServiceTransportError, match="invalid response"):
+            _client(bad).dashboard_calendar_upcoming_events("345678901234567890", now, limit=25)
+
+
+def test_dashboard_calendar_upcoming_events_rejects_invalid_arguments_before_transport():
+    session = FakeSession()
+    client = _client(session)
+    now = datetime.datetime(2026, 11, 28, 12, 0, tzinfo=datetime.timezone.utc)
+    with pytest.raises(ValueError):
+        client.dashboard_calendar_upcoming_events("bad", now)
+    with pytest.raises(ValueError):
+        client.dashboard_calendar_upcoming_events("123", datetime.datetime(2026, 11, 28))
+    with pytest.raises(ValueError):
+        client.dashboard_calendar_upcoming_events("123", now, limit=True)
+    assert session.calls == []
 
 
 @pytest.mark.parametrize("guild_id", ["bad", "0", "1" * 21])
