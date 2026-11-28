@@ -44,7 +44,7 @@ Validation requirements:
 - Each item must be an object with exactly `case_id`, `type`, `timestamp`, `user_id`, and `reason`.
 - `case_id`: exact positive integer, not bool, bounded to 1..2^63-1.
 - `type`: normalized identifier matching `[a-z][a-z0-9_]{0,31}`.
-- `timestamp`: timezone-aware ISO-8601 UTC timestamp; serialize with a trailing `Z`. Reject naive or malformed timestamps.
+- `timestamp`: serialize as ISO-8601 UTC with a trailing `Z`. MongoDB-naive datetimes are interpreted as UTC (the driver's default decode behavior); reject other malformed timestamp values.
 - `user_id`: decimal snowflake string, 1–20 digits, integer range 1..2^64-1.
 - `reason`: string, bounded to 1,000 characters; empty string is allowed when absent.
 - Reject duplicate case IDs and any extra fields.
