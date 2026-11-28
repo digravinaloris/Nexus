@@ -161,6 +161,14 @@ class CloudflareFetchBotService:
             expected = (list, type(None)) if method == "dashboard_roles_snapshot" else (dict, type(None))
             if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid dashboard snapshot arguments")
+        elif method == "dashboard_overview_snapshot":
+            if (
+                expected_type != (dict, type(None))
+                or len(args) not in {1, 2}
+                or not valid_id(args[0])
+                or (len(args) == 2 and not valid_id(args[1]))
+            ):
+                raise ValueError("Invalid dashboard overview arguments")
         elif method == "dashboard_sanction_stats_snapshot":
             if (
                 expected_type is not list
@@ -361,6 +369,57 @@ class CloudflareFetchBotService:
             or len(set(result)) != len(result)
         ):
             raise CloudflareBotServiceError("Internal BotService returned invalid dashboard sanction types")
+        if method == "dashboard_overview_snapshot" and result is not None:
+            permission_keys = {"administrator", "manage_guild", "ban_members", "kick_members", "manage_roles"}
+            def valid_overview_channel(item):
+                return (
+                    isinstance(item, dict)
+                    and set(item) == {"id", "name"}
+                    and valid_id(item["id"])
+                    and isinstance(item["name"], str)
+                    and 1 <= len(item["name"]) <= 100
+                )
+            def valid_overview_role(item):
+                return (
+                    isinstance(item, dict)
+                    and set(item) == {"id", "name", "permissions"}
+                    and valid_id(item["id"])
+                    and isinstance(item["name"], str)
+                    and 1 <= len(item["name"]) <= 100
+                    and isinstance(item["permissions"], dict)
+                    and set(item["permissions"]) == permission_keys
+                    and all(type(value) is bool for value in item["permissions"].values())
+                )
+            if (
+                not isinstance(result, dict)
+                or set(result) != {"id", "name", "owner_id", "text_channels", "roles", "role_names", "open_tickets"}
+                or not valid_id(result["id"])
+                or not valid_id(result["owner_id"])
+                or not isinstance(result["name"], str)
+                or not 1 <= len(result["name"]) <= 256
+                or any(
+                    not isinstance(result[key], list)
+                    or len(result[key]) > 500
+                    or not all(validator(item) for item in result[key])
+                    for key, validator in (
+                        ("text_channels", valid_overview_channel),
+                        ("roles", valid_overview_role),
+                        ("open_tickets", valid_overview_channel),
+                    )
+                )
+                or not isinstance(result["role_names"], dict)
+                or len(result["role_names"]) > 500
+                or not all(
+                    valid_id(role_id)
+                    and isinstance(role_name, str)
+                    and 1 <= len(role_name) <= 100
+                    for role_id, role_name in result["role_names"].items()
+                )
+                or len({item["id"] for item in result["text_channels"]}) != len(result["text_channels"])
+                or len({item["id"] for item in result["roles"]}) != len(result["roles"])
+                or len({item["id"] for item in result["open_tickets"]}) != len(result["open_tickets"])
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid dashboard overview")
         if method == "dashboard_roles_snapshot" and result is not None:
             if (
                 not isinstance(result, list)
@@ -568,6 +627,10 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def dashboard_overview_snapshot(self, guild_id: str, ticket_category_id: str | None = None) -> dict | None:
+        args = [guild_id] if ticket_category_id is None else [guild_id, ticket_category_id]
+        return self._dispatch("dashboard_overview_snapshot", args, (dict, type(None)))
 
     def dashboard_sanction_stats_snapshot(self, guild_id: str, days: int = 30) -> list:
         result = self._dispatch("dashboard_sanction_stats_snapshot", [guild_id, days], list)

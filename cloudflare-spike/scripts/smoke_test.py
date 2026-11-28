@@ -445,6 +445,41 @@ def main():
     status, invalid_dashboard_args = call("/__spike/fetch-client/dashboard_config_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard config arguments: {invalid_dashboard_args}")
 
+    status, fetch_dashboard_overview = call("/__spike/fetch-client/dashboard_overview_snapshot", "POST", {})
+    expected_dashboard_overview = {
+        "id": "123",
+        "name": "Spike Test Server",
+        "owner_id": "42",
+        "text_channels": [{"id": "456", "name": "general"}],
+        "roles": [{
+            "id": "321",
+            "name": "Moderator",
+            "permissions": {
+                "administrator": False,
+                "manage_guild": True,
+                "ban_members": False,
+                "kick_members": False,
+                "manage_roles": False,
+            },
+        }],
+        "role_names": {"321": "Moderator", "654": "Member"},
+        "open_tickets": [{"id": "789", "name": "ticket-1"}],
+    }
+    require(
+        status == 200 and fetch_dashboard_overview.get("result") == expected_dashboard_overview,
+        f"Signed dashboard overview snapshot failed: {fetch_dashboard_overview}",
+    )
+    status, invalid_dashboard_overview = call("/__spike/fetch-client/dashboard_overview_snapshot_invalid", "POST", {})
+    require(
+        status == 503 and invalid_dashboard_overview.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed dashboard overview: {invalid_dashboard_overview}",
+    )
+    status, invalid_dashboard_overview_args = call("/__spike/fetch-client/dashboard_overview_snapshot_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_dashboard_overview_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid dashboard overview arguments: {invalid_dashboard_overview_args}",
+    )
+
     status, fetch_sanction_stats = call("/__spike/fetch-client/dashboard_sanction_stats_snapshot", "POST", {})
     require(
         status == 200 and fetch_sanction_stats.get("result") == [["27/11", 0], ["28/11", 3]],
