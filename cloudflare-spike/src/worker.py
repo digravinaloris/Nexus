@@ -104,6 +104,7 @@ def mock_internal_bot_service():
             "spike-member-warnings-out-of-range",
             "spike-health-malformed",
             "spike-public-status-malformed",
+            "spike-api-health-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -310,6 +311,10 @@ def mock_internal_bot_service():
     if isinstance(method, str) and method in results and args == [] and method != "dashboard_public_templates_snapshot":
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_health_snapshot" and args == ["123"]:
+        if key_id == "spike-api-health-malformed":
+            malformed = dict(results[method])
+            malformed["guild_count"] = True
+            return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_guild_list_snapshot" and args == ["123"]:
         if key_id == "spike-guild-list-malformed":
