@@ -83,6 +83,11 @@ def main():
     )
     require(status == 200 and login.get("authenticated") is True, "Flask D1 login failed")
     old_cookie = extract_session_cookie(set_cookie)
+    cookie_attributes = set_cookie.lower()
+    require("httponly" in cookie_attributes, "Session cookie is not HttpOnly")
+    require("samesite=lax" in cookie_attributes, "Session cookie does not use SameSite=Lax")
+    require("path=/" in cookie_attributes, "Session cookie path is not root")
+    require("domain=" not in cookie_attributes, "Session cookie unexpectedly sets a Domain attribute")
     require(len(old_cookie) == 43, "Browser cookie is not a 256-bit opaque session ID")
     require(
         "spike-only-discord-access-token" not in set_cookie
@@ -154,6 +159,9 @@ def main():
         isinstance(delete_cookie, str) and "max-age=0" in delete_cookie.lower(),
         "Logout did not clear the browser cookie",
     )
+    require("httponly" in delete_cookie.lower(), "Logout deletion cookie is not HttpOnly")
+    require("samesite=lax" in delete_cookie.lower(), "Logout deletion cookie does not use SameSite=Lax")
+    require("path=/" in delete_cookie.lower(), "Logout deletion cookie path is not root")
 
     status, storage_failure, _ = call_with_cookie(
         "/__spike/flask-session/storage-failure", "POST", logout_cookie
