@@ -212,6 +212,7 @@ from stores.template_store import (
 )
 from web.app_factory import create_web_app
 from nexus_runtime.web_server import run_web_server
+from nexus_runtime.signals import handle_sigterm
 
 # MongoDB setup
 mongo = None
@@ -4556,9 +4557,7 @@ def keep_alive():
 # discord.py sait déjà gérer proprement (fermeture de la connexion websocket
 # avant de quitter, plutôt qu'une coupure brutale en plein milieu).
 def _handle_sigterm(signum, frame):
-    print("[SHUTDOWN] Received SIGTERM, shutting down gracefully...", flush=True)
-    log_json("info", "shutdown_sigterm")
-    raise KeyboardInterrupt()
+    handle_sigterm(signum, frame, log_json)
 
 
 # Si Discord/Cloudflare renvoie un 429 au login (rate limit) : bot.run() ferme
