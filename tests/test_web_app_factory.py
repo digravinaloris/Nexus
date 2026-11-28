@@ -817,3 +817,40 @@ def test_oauth_callback_fails_closed_when_session_save_fails():
     assert backend.save_attempts == 2  # Flask attempts to save both the original and error response
     assert backend.persisted == {}
     assert "Set-Cookie" not in response.headers
+
+
+
+def test_logout_clears_session_when_backend_revocation_fails():
+    from flask.sessions import SessionInterface, SessionMixin
+
+    class BackendSession(dict, SessionMixin):
+        new = False
+        modified = False
+        accessed = False
+
+    class FakeSessionInterface(SessionInterface):
+        def __init__(self):
+            self.session = BackendSession(
+                access_token="logout-revocation-failure-token",
+                token_expires_at=9999999999,
+                dash_user={"id": "123456789012345678"},
+                csrf_token="Z" * 32,
+            )
+
+        def open_session(self, app, request):
+            return self.session
+
+        def save_session(self, app, session, response):
+            pass
+
+        def revoke_session(self, session):
+            raise RuntimeError("session backend revoke unavailable")
+
+    backend = FakeSessionInterface()
+    app = _create_app(_config(), session_interface=backend)
+    response = app.test_client().post("/logout", data={"csrf_token": "Z" * 32})
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "Unable to revoke session. Please retry."}
+    assert not backend.session
+    assert "Set-Cookie" not in response.headers
