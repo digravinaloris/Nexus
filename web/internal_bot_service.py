@@ -149,7 +149,7 @@ def create_internal_bot_service_blueprint(
             operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_resolve_appeal_by_case":
             if (len(args) != 3 or not valid_guild_id(args[0]) or type(args[1]) is not int
-                or not 1 <= args[1] <= (2**63 - 1) or args[2] not in {"accepted", "denied"}):
+                or not 1 <= args[1] <= (2**63 - 1) or not isinstance(args[2], str) or args[2] not in {"accepted", "denied"}):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_submitted_appeals_snapshot":
