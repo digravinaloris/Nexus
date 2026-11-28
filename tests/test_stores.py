@@ -202,6 +202,15 @@ def test_sanction_appeals_roundtrip():
     assert sanctions_store.get_ban_appeal("nope") is None
 
 
+def test_warnlist_snapshot_is_guild_scoped_and_bounded(mongo_db):
+    for user_id in range(1, 5):
+        sanctions_store.set_warns(1, user_id, user_id)
+    sanctions_store.set_warns(2, 99, 5)
+    docs = sanctions_store.get_warnlist(1, limit=2)
+    assert len(docs) == 2
+    assert all(doc["guild_id"] == "1" for doc in docs)
+
+
 def test_appeal_case_id_actions_are_guild_scoped_and_atomic(mongo_db):
     sanctions_store.create_sanction_appeal(1, 7, "ban", 42, "Bob", "reason", "secret-token")
     mongo_db["ban_appeals"].update_one({"token": "secret-token"}, {"$set": {
