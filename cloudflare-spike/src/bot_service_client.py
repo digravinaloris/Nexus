@@ -170,6 +170,9 @@ class CloudflareFetchBotService:
                 or (len(args) == 2 and not valid_id(args[1]))
             ):
                 raise ValueError("Invalid dashboard overview arguments")
+        elif method == "api_warnlist_snapshot":
+            if expected_type is not list or len(args) != 1 or not valid_id(args[0]):
+                raise ValueError("Invalid warning list snapshot arguments")
         elif method == "api_sanction_cases_snapshot":
             if (
                 expected_type is not list
@@ -407,6 +410,23 @@ class CloudflareFetchBotService:
             or len(set(result)) != len(result)
         ):
             raise CloudflareBotServiceError("Internal BotService returned invalid dashboard sanction types")
+        if method == "api_warnlist_snapshot":
+            def valid_warning(item):
+                return (
+                    isinstance(item, dict)
+                    and set(item) == {"user_id", "count"}
+                    and isinstance(item["user_id"], str)
+                    and re.fullmatch(r"[0-9]{1,20}", item["user_id"]) is not None
+                    and type(item["count"]) is int
+                    and 1 <= item["count"] <= 1000000
+                )
+            if (
+                not isinstance(result, list)
+                or len(result) > 1000
+                or not all(valid_warning(item) for item in result)
+                or len({item["user_id"] for item in result}) != len(result)
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid warning list snapshot")
         if method == "api_sanction_cases_snapshot":
             required = {"case_id", "type", "timestamp", "user_id", "reason"}
             def valid_sanction_case(item):
