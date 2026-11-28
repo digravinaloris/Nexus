@@ -133,10 +133,18 @@ def create_internal_bot_service_blueprint(
         }
 
         def valid_guild_id(value):
-            return isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value) is not None
+            return (
+                isinstance(value, str)
+                and re.fullmatch(r"[0-9]{1,20}", value) is not None
+                and 0 < int(value) <= (2**64 - 1)
+            )
 
         if method_name in {"is_guild_owner", "is_guild_admin"}:
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_settings_snapshot":
+            if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_overview_snapshot":
@@ -225,6 +233,30 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name == "dashboard_settings_snapshot" and result is not None:
+                def valid_settings_item(item):
+                    return (
+                        isinstance(item, dict)
+                        and set(item) == {"id", "name"}
+                        and valid_guild_id(item["id"])
+                        and isinstance(item["name"], str)
+                        and 1 <= len(item["name"]) <= 100
+                    )
+                if (
+                    not isinstance(result, dict)
+                    or set(result) != {"id", "name", "owner_id", "text_channels", "voice_channels", "roles"}
+                    or not valid_guild_id(result.get("id"))
+                    or not valid_guild_id(result.get("owner_id"))
+                    or not isinstance(result.get("name"), str)
+                    or not 1 <= len(result["name"]) <= 256
+                    or any(
+                        not isinstance(result.get(key), list)
+                        or len(result[key]) > 500
+                        or not all(valid_settings_item(item) for item in result[key])
+                        for key in ("text_channels", "voice_channels", "roles")
+                    )
+                ):
+                    return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "dashboard_overview_snapshot" and result is not None:
                 permission_keys = {"administrator", "manage_guild", "ban_members", "kick_members", "manage_roles"}
                 def valid_item(item):

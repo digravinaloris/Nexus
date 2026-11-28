@@ -597,3 +597,33 @@ def test_dashboard_overview_snapshot_dispatch_and_validates_dto():
     bad_session = FakeSession(response=FakeResponse(payload={"ok": True, "result": malformed}))
     with pytest.raises(BotServiceTransportError, match="invalid response"):
         _client(bad_session).dashboard_overview_snapshot("123456789012345678")
+
+
+
+def test_dashboard_settings_snapshot_dispatch_and_validates_dto():
+    dto = {
+        "id": "123456789012345678", "name": "Nexus", "owner_id": "234567890123456789",
+        "text_channels": [{"id": "345678901234567890", "name": "general"}],
+        "voice_channels": [{"id": "456789012345678901", "name": "General"}],
+        "roles": [{"id": "567890123456789012", "name": "Moderator"}],
+    }
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    client = _client(session)
+    assert client.dashboard_settings_snapshot("123456789012345678") == dto
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload["method"] == "dashboard_settings_snapshot"
+    assert payload["args"] == ["123456789012345678"]
+
+    malformed = dict(dto)
+    malformed["voice_channels"] = [{"id": "not-a-snowflake", "name": "General"}]
+    bad_session = FakeSession(response=FakeResponse(payload={"ok": True, "result": malformed}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad_session).dashboard_settings_snapshot("123456789012345678")
+
+
+@pytest.mark.parametrize("guild_id", ["abc", "0", "1" * 21])
+def test_dashboard_settings_snapshot_rejects_invalid_guild_ids(guild_id):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).dashboard_settings_snapshot(guild_id)
+    assert session.calls == []

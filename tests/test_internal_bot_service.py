@@ -513,3 +513,32 @@ def test_signed_dispatch_rejects_malformed_dashboard_overview_dto():
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 503
     assert response.get_json() == {"error": "internal service unavailable"}
+
+
+
+def test_signed_dispatch_allows_dashboard_settings_snapshot_with_valid_dto():
+    dto = {
+        "id": "123", "name": "Test Server", "owner_id": "42",
+        "text_channels": [{"id": "111", "name": "general"}],
+        "voice_channels": [{"id": "112", "name": "General"}],
+        "roles": [{"id": "222", "name": "Admin"}],
+    }
+    client, service = _client()
+    service.dashboard_settings_snapshot = lambda guild_id: dto
+    body = _request_body({"method": "dashboard_settings_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": dto}
+
+
+def test_signed_dispatch_rejects_malformed_dashboard_settings_snapshot():
+    client, service = _client()
+    service.dashboard_settings_snapshot = lambda _guild_id: {
+        "id": "123", "name": "Bad", "owner_id": "42",
+        "text_channels": [], "voice_channels": [{"id": "not-valid", "name": "General"}],
+        "roles": [],
+    }
+    body = _request_body({"method": "dashboard_settings_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
