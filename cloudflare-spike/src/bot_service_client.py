@@ -157,6 +157,10 @@ class CloudflareFetchBotService:
         elif method == "dashboard_config_snapshot":
             if expected_type is not dict or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid dashboard config snapshot arguments")
+        elif method in {"dashboard_roles_snapshot", "dashboard_settings_snapshot"}:
+            expected = (list, type(None)) if method == "dashboard_roles_snapshot" else (dict, type(None))
+            if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
+                raise ValueError("Invalid dashboard snapshot arguments")
         elif method in {"api_members_snapshot", "api_rest_config_snapshot"}:
             expected = (list, type(None)) if method == "api_members_snapshot" else dict
             if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
@@ -312,6 +316,44 @@ class CloudflareFetchBotService:
                 raise CloudflareBotServiceError(
                     "Internal BotService returned invalid FAQ snapshot"
                 )
+        if method == "dashboard_roles_snapshot" and result is not None:
+            if (
+                not isinstance(result, list)
+                or len(result) > 500
+                or not all(
+                    isinstance(item, dict)
+                    and set(item) == {"id", "name"}
+                    and valid_id(item["id"])
+                    and isinstance(item["name"], str)
+                    and 1 <= len(item["name"]) <= 100
+                    for item in result
+                )
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid dashboard roles")
+        if method == "dashboard_settings_snapshot" and result is not None:
+            def valid_setting_item(item):
+                return (
+                    isinstance(item, dict)
+                    and set(item) == {"id", "name"}
+                    and valid_id(item["id"])
+                    and isinstance(item["name"], str)
+                    and 1 <= len(item["name"]) <= 100
+                )
+            if (
+                not isinstance(result, dict)
+                or set(result) != {"id", "name", "owner_id", "text_channels", "voice_channels", "roles"}
+                or not valid_id(result["id"])
+                or not valid_id(result["owner_id"])
+                or not isinstance(result["name"], str)
+                or not 1 <= len(result["name"]) <= 256
+                or any(
+                    not isinstance(result[key], list)
+                    or len(result[key]) > 500
+                    or not all(valid_setting_item(item) for item in result[key])
+                    for key in ("text_channels", "voice_channels", "roles")
+                )
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid dashboard settings")
         if method == "dashboard_config_snapshot":
             allowed = {"guild_id", "logs_channel", "autorole", "language", "tickets_enabled", "ticket_category_id", "appeal_channel_id", "boost_channel_id", "member_count_channel_id", "welcome_channel_id", "welcome_banner_enabled", "verification_enabled", "verified_role_id", "unverified_role_id", "quarantine_enabled", "quarantine_role_id", "quarantine_channel_id", "trap_channel_enabled", "trap_channel_id", "jtc_channel_id", "detailed_logs_enabled", "antinuke_enabled", "weekly_digest_enabled", "log_dashboard_actions", "anti_link_global_enabled", "anti_mention_spam_enabled", "anti_media_flood_enabled", "auto_slowmode_enabled", "anti_doxx_enabled", "raid_pattern_alert_enabled", "auto_translate_enabled", "remindme_enabled", "serverinfo_visual_enabled", "automod_spam_count", "automod_spam_window", "automod_caps_ratio", "automod_raid_count", "automod_raid_window", "mention_spam_threshold", "media_flood_count", "media_flood_window", "auto_slowmode_threshold", "auto_slowmode_window", "auto_slowmode_seconds", "auto_slowmode_duration_minutes", "warn_escalation_enabled", "warn_mute_threshold", "warn_mute_minutes", "warn_kick_threshold", "min_account_age_days", "antinuke_threshold", "quarantine_suspicion_days", "quarantine_hold_minutes", "banned_words", "banned_domains", "calendar_timezone", "calendar_channel_id", "calendar_manager_role_ids", "command_roles", "command_templates"}
             forbidden = ("secret", "token", "webhook", "api_key", "password", "cookie", "credential")
@@ -481,3 +523,9 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def dashboard_roles_snapshot(self, guild_id: str) -> list | None:
+        return self._dispatch("dashboard_roles_snapshot", [guild_id], (list, type(None)))
+
+    def dashboard_settings_snapshot(self, guild_id: str) -> dict | None:
+        return self._dispatch("dashboard_settings_snapshot", [guild_id], (dict, type(None)))
