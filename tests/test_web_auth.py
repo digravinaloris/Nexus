@@ -529,3 +529,40 @@ def test_callback_uses_app_injected_discord_http_client(env, monkeypatch):
     with env.client.session_transaction() as sess:
         assert sess["access_token"] == "injected-access"
         assert sess["dash_user"]["username"] == "worker-user"
+
+
+def test_expired_session_is_cleared_even_if_backend_revoke_fails(env, monkeypatch):
+    def fail_revoke(_session):
+        raise RuntimeError("session store unavailable")
+
+    monkeypatch.setattr(env.nexus.api.session_interface, "revoke_session", fail_revoke, raising=False)
+    with env.client.session_transaction() as sess:
+        sess["access_token"] = "expired-access"
+        sess["token_expires_at"] = 1
+
+    response = env.client.get("/dashboard/111/calendar")
+    assert response.status_code in (301, 302)
+    assert response.headers["Location"].endswith("/login")
+    with env.client.session_transaction() as sess:
+        assert not sess
+
+
+def test_discord_401_clears_session_even_if_backend_revoke_fails(env, monkeypatch):
+    class UnauthorizedResponse:
+        status_code = 401
+
+    def fail_revoke(_session):
+        raise RuntimeError("session store unavailable")
+
+    monkeypatch.setattr(env.nexus.api.session_interface, "revoke_session", fail_revoke, raising=False)
+    monkeypatch.setattr(auth.requests, "get", lambda *args, **kwargs: UnauthorizedResponse())
+    with env.client.session_transaction() as sess:
+        sess["access_token"] = "invalid-access"
+        sess["token_expires_at"] = 4102444800
+        sess["csrf_token"] = "expected-csrf-token-" + "x" * 32
+
+    response = env.client.get("/dashboard/123456789012345678/calendar")
+    assert response.status_code in (301, 302)
+    assert response.headers["Location"].endswith("/login")
+    with env.client.session_transaction() as sess:
+        assert not sess
