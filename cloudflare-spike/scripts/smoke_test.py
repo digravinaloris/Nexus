@@ -648,6 +648,12 @@ def main():
         and fetch_api_health.get("result") == {"online": True, "locked": False, "guild_count": 1},
         f"Signed API health read failed: {fetch_api_health}",
     )
+    status, invalid_api_health = call("/__spike/fetch-client/api_health_snapshot_invalid", "POST", {})
+    require(
+        status == 503
+        and invalid_api_health.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed API health DTO: {invalid_api_health}",
+    )
     status, fetch_api_guilds = call("/__spike/fetch-client/api_guild_list_snapshot", "POST", {})
     require(
         status == 200
