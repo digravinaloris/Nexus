@@ -154,6 +154,9 @@ class CloudflareFetchBotService:
         elif method == "api_faq_snapshot":
             if expected_type != (dict, type(None)) or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid FAQ snapshot arguments")
+        elif method == "dashboard_config_snapshot":
+            if expected_type is not dict or len(args) != 1 or not valid_id(args[0]):
+                raise ValueError("Invalid dashboard config snapshot arguments")
         elif method in {"api_members_snapshot", "api_rest_config_snapshot"}:
             expected = (list, type(None)) if method == "api_members_snapshot" else dict
             if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
