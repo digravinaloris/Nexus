@@ -1227,3 +1227,49 @@ def test_dashboard_presence_viewers_rejects_malformed_response(result):
 
     with pytest.raises(BotServiceTransportError, match="invalid dashboard presence snapshot"):
         _client(session).dashboard_presence_viewers("123")
+
+
+
+def test_dashboard_presence_ping_sends_signed_guild_scoped_heartbeat():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": None}))
+
+    assert _client(session).dashboard_presence_ping("123", "456", "Loris") is None
+
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {
+        "method": "dashboard_presence_ping",
+        "args": ["123", "456", "Loris"],
+        "kwargs": {},
+    }
+    verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+
+
+@pytest.mark.parametrize(
+    "guild_id,user_id,name",
+    [
+        ("0", "456", "Loris"),
+        ("123", "0", "Loris"),
+        ("123", "bad-user", "Loris"),
+        ("123", "456", ""),
+        ("123", "456", " " * 101),
+        ("123", "456", "x" * 101),
+    ],
+)
+def test_dashboard_presence_ping_rejects_invalid_arguments(guild_id, user_id, name):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).dashboard_presence_ping(guild_id, user_id, name)
+    assert session.calls == []
+
+
+def test_dashboard_presence_ping_rejects_non_null_response():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": True}))
+
+    with pytest.raises(BotServiceTransportError, match="invalid dashboard presence heartbeat"):
+        _client(session).dashboard_presence_ping("123", "456", "Loris")
