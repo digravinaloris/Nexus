@@ -49,6 +49,44 @@ class FakeMongo:
         self.admin = FakeMongoAdmin(error)
 
 
+def test_public_template_snapshot_exposes_only_marketplace_metadata(monkeypatch):
+    import datetime
+    from web import in_process_bot_service
+
+    created_at = datetime.datetime(2026, 11, 28, tzinfo=datetime.timezone.utc)
+    monkeypatch.setattr(in_process_bot_service, "list_public_templates", lambda limit: [
+        {
+            "code": "a1b2c3d4",
+            "name": "Community setup",
+            "public": True,
+            "created_guild_id": "123",
+            "created_guild_name": "Example server",
+            "created_by": "456",
+            "created_at": created_at,
+            "snapshot": {
+                "feature_toggles": ["tickets", "automod"],
+                "command_roles_by_name": {"ban": ["Moderator"]},
+                "private_config": {"api_key": "must-not-leak"},
+            },
+            "_id": "mongo-object-id",
+        },
+        {"public": False, "snapshot": {}},
+    ])
+    result = InProcessBotService().dashboard_public_templates_snapshot()
+
+    assert result == [{
+        "code": "a1b2c3d4",
+        "name": "Community setup",
+        "created_guild_name": "Example server",
+        "created_at": created_at,
+        "feature_toggle_count": 2,
+        "command_role_count": 1,
+    }]
+    assert "snapshot" not in result[0]
+    assert "created_by" not in result[0]
+    assert "_id" not in result[0]
+
+
 def test_health_snapshot_reports_connected_dependencies(monkeypatch):
     monkeypatch.setattr(core, "bot", FakeBot(guilds=[1, 2]))
     monkeypatch.setattr(core, "mongo", FakeMongo())
