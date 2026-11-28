@@ -319,7 +319,7 @@ def mock_internal_bot_service():
             return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if method in {"api_text_channels_snapshot", "api_roles_snapshot"} and args == ["123"]:
-        if key_id in {"spike-channels-malformed", "spike-roles-malformed"}:
+        if key_id in {"spike-channels-malformed", "spike-roles-malformed", "spike-role-malformed"}:
             return jsonify({"ok": True, "result": {"unexpected": "not-a-list"}})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_guild_list_snapshot" and args == ["123"]:
