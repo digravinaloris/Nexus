@@ -98,6 +98,8 @@ def mock_internal_bot_service():
             "spike-public-templates-duplicate",
             "spike-audit-malformed",
             "spike-sanction-cases-malformed",
+            "spike-member-warnings-malformed",
+            "spike-member-warnings-out-of-range",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
