@@ -1,7 +1,7 @@
 # Cloudflare migration: current-state audit
 
-Audit date: 2026-11-27  
-Audited baseline: `main` at `dcef55450e5c96b4916fcbd29a6b67d98bc61636`
+Audit date: 2026-11-28  
+Audited baseline: `main` immediately after PR #343 (`da5726419b8a8a7aa5ced8369cf373b56b62f915`)
 
 ## Executive summary
 
@@ -48,9 +48,9 @@ The route/service boundary is useful and should be preserved, but it does not ye
 
 ### 3. Remote BotService parity is incomplete
 
-The `BotService` interface contains many operations used by dashboard, public, verification, OAuth, webhook, and mobile REST routes. The existing `SignedHttpBotService` implementation currently dispatches only `health_snapshot` and `public_status_snapshot`. The Worker Fetch adapter and internal endpoint have a larger but still deliberately allow-listed read-only subset; mutation and full dashboard workflows are not transported.
+The remote boundary has advanced since the previous audit. `SignedHttpBotService` and the signed internal dispatch endpoint now include an explicit allowlist for health/status, guild discovery and authorization, mobile REST snapshots, safe REST and dashboard configuration projections, dashboard overview/settings/roles, sanction and audit snapshots, warnings, calendar upcoming events, appeals snapshots, and case-ID-based appeal claim/release/resolve operations. PRs #328-#335 added the configuration, calendar, authorization, and guild-filtering slices. The raw `api_config_snapshot` remains local-only.
 
-A successful health request therefore does not demonstrate that dashboard, appeals, verification, moderation, calendar, templates, audit exports, or mobile API behavior can run remotely.
+The Cloudflare-native `CloudflareFetchBotService` in `cloudflare-spike/` still implements a smaller subset of this surface. It is a local runtime proof and is not wired into the production `create_web_app()`; the app continues to use its in-process adapter. Other dashboard writes, moderation, verification, public security flows, webhook delivery, and complete Worker route parity are not transported. A passing health or snapshot request does not establish full website parity.
 
 **Gate:** generate a method-by-method route usage matrix, then add narrow DTO schemas and transport tests in small groups. Add privileged mutations only with server-side identity/permission checks, idempotency, audit logging, bounded payloads, and stable error mapping.
 
@@ -70,8 +70,9 @@ Pages should serve static assets where appropriate; the Worker should handle dyn
 
 ## Recommended implementation order
 
-1. **Finish the route-to-service inventory.** Enumerate every `get_bot_service()` call in all route modules and classify it as read, mutation, authorization, persistence, or external delivery. Record the corresponding adapter and test coverage. This is the next safest code-adjacent task because it defines the actual scope of remote parity.
-2. **Complete transport contracts in small slices.** Extend the signed internal endpoint and Worker Fetch adapter from read-only snapshots toward the operations required by the dashboard and REST API. Start with low-risk read-only dashboard support, then narrowly scoped writes. Add contract tests with every operation.
+1. **Refresh the route-to-service inventory against current `main`.** The published inventory is explicitly historical and must not be used for coverage counts. Re-enumerate route call sites and compare each method across the interface, in-process adapter, signed endpoint, HTTP client, Worker Fetch client, and tests.
+2. **Close the Worker Fetch parity gap.** Port the already-reviewed read-only DTO operations from the signed HTTP adapter into the Cloudflare-native Fetch client in small tested groups. Start with dashboard snapshots/configuration and preserve exact schema, guild-scope, response-size, and failure validation. Keep the Worker client isolated until the production app can inject it safely.
+3. **Add remaining operations only after authorization review.** Dashboard writes, moderation, verification, public security flows, and webhook delivery require actor identity, bot-side permission checks, idempotency where applicable, audit records, and stable errors.
 3. **Implement production server-side OAuth sessions.** Reuse the proven primitives only after adapting them to production configuration, cookie policy, key provisioning/rotation, migrations, backup/restore, and outage handling. This is a security release blocker.
 4. **Separate web and bot runtime configuration.** Add a separately testable Worker app entry point and explicit dependency allowlist without changing the current Render startup path.
 5. **Prove route and asset parity.** Test OAuth, dashboard permissions/actions, appeals, verification, GitHub webhook, and every mobile API route; inventory templates, static assets, cache rules, and redirects.
@@ -93,4 +94,15 @@ Reviewed on the audited `main` baseline:
 - `main.py`, `requirements.txt`
 - `web/app_factory.py`, `web/auth.py`, `web/bot_service.py`, `web/in_process_bot_service.py`, `web/http_bot_service.py`, `web/rest_api.py`, `web/dashboard.py`
 - `cloudflare-spike/src/worker.py`, `cloudflare-spike/src/bot_service_client.py`, `cloudflare-spike/src/d1_session_interface.py`, `cloudflare-spike/wrangler.jsonc`
+
+## Progress since the 2026-11-27 audit
+
+The following changes are present on the audited `main` baseline:
+
+- PRs #328-#329 add an explicit REST-safe configuration projection and signed transport; raw Mongo configuration is not exposed.
+- PR #331 adds a separate allow-listed dashboard configuration read model and removes dashboard route reads of the raw config snapshot.
+- PRs #332-#335 extend signed transport for dashboard config, upcoming calendar events, owner/admin authorization checks, and candidate-guild filtering.
+- PRs #336-#343 organize root-level compatibility modules and extract runtime initialization/shutdown/startup helpers from `main.py`. These reduce entrypoint complexity but do not by themselves move the web process to Cloudflare.
+
+The main remaining blockers are unchanged: production OAuth still stores the Discord access token in Flask's readable signed cookie; production web routes still use the in-process adapter; the Cloudflare Fetch adapter is not wired into the production app; and complete route/template/static-asset parity is not proven.
 - `docs/cloudflare-full-site-migration.md`, `docs/CLOUDFLARE_COMPATIBILITY_INVENTORY.md`, `docs/CLOUDFLARE_WORKER_SPIKE.md`, `docs/CLOUDFLARE_BOT_SERVICE_CONTRACT.md`
