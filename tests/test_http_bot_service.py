@@ -664,6 +664,20 @@ def test_dashboard_sanction_stats_snapshot_rejects_invalid_guild_ids_without_net
     assert session.calls == []
 
 
+def test_dashboard_sanction_types_snapshot_dispatch_and_validates_bounded_values():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": ["ban", "kick", "soft_ban"]}))
+    client = _client(session)
+    assert client.dashboard_sanction_types_snapshot("345678901234567890") == ["ban", "kick", "soft_ban"]
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload["method"] == "dashboard_sanction_types_snapshot"
+    assert payload["args"] == ["345678901234567890"]
+
+    for malformed in [["ban", "bad value"], ["ban", "ban"], ["x" * 33], ["ban"] * 51, [1]]:
+        bad_session = FakeSession(response=FakeResponse(payload={"ok": True, "result": malformed}))
+        with pytest.raises(BotServiceTransportError, match="invalid response"):
+            _client(bad_session).dashboard_sanction_types_snapshot("345678901234567890")
+
+
 def test_dashboard_roles_snapshot_dispatch_and_validates_dto():
     dto = [
         {"id": "123456789012345678", "name": "@everyone"},
