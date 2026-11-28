@@ -672,8 +672,7 @@ class SignedHttpBotService(BotService):
                 or ("command_roles" in result and not valid_command_mapping(result["command_roles"], allow_role_ids=True))
                 or ("command_templates" in result and not valid_command_mapping(result["command_templates"]))
                 or any(
-                    value is not None
-                    and type(value) not in {bool, int, float, str}
+                    value is not None and type(value) not in {bool, int, float, str}
                     for key, value in result.items() if key in scalar_fields
                 )
                 or not safe_dashboard_value(result)
