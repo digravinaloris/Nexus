@@ -170,6 +170,17 @@ class CloudflareFetchBotService:
                 or (len(args) == 2 and not valid_id(args[1]))
             ):
                 raise ValueError("Invalid dashboard overview arguments")
+        elif method == "api_sanction_cases_snapshot":
+            if (
+                expected_type is not list
+                or len(args) != 3
+                or not valid_id(args[0])
+                or not isinstance(args[1], str)
+                or (args[1] and re.fullmatch(r"[a-z][a-z0-9_]{0,31}", args[1]) is None)
+                or type(args[2]) is not int
+                or not 1 <= args[2] <= 200
+            ):
+                raise ValueError("Invalid sanction cases snapshot arguments")
         elif method == "api_audit_snapshot":
             if (
                 expected_type is not list
@@ -396,6 +407,40 @@ class CloudflareFetchBotService:
             or len(set(result)) != len(result)
         ):
             raise CloudflareBotServiceError("Internal BotService returned invalid dashboard sanction types")
+        if method == "api_sanction_cases_snapshot":
+            required = {"case_id", "type", "timestamp", "user_id", "reason"}
+            def valid_sanction_case(item):
+                if (
+                    not isinstance(item, dict)
+                    or set(item) != required
+                    or type(item["case_id"]) is not int
+                    or not 1 <= item["case_id"] <= (2**63 - 1)
+                    or not isinstance(item["type"], str)
+                    or re.fullmatch(r"[a-z][a-z0-9_]{0,31}", item["type"]) is None
+                    or not valid_id(item["user_id"])
+                    or not isinstance(item["reason"], str)
+                    or len(item["reason"]) > 1000
+                    or not isinstance(item["timestamp"], str)
+                ):
+                    return False
+                try:
+                    stamp = datetime.datetime.fromisoformat(item["timestamp"].replace("Z", "+00:00"))
+                except ValueError:
+                    return False
+                return stamp.tzinfo is not None and stamp.utcoffset() == datetime.timedelta(0)
+            if (
+                not isinstance(result, list)
+                or len(result) > args[2]
+                or not all(valid_sanction_case(item) for item in result)
+                or len({item["case_id"] for item in result}) != len(result)
+                or any(result[i]["timestamp"] < result[i + 1]["timestamp"] for i in range(len(result) - 1))
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid sanction cases snapshot")
+            result = [
+                dict(item, timestamp=datetime.datetime.fromisoformat(item["timestamp"].replace("Z", "+00:00")))
+                for item in result
+            ]
         if method == "api_audit_snapshot":
             required = {"actor_name", "action", "details", "timestamp"}
             def valid_audit_entry(item):
@@ -712,6 +757,18 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def api_sanction_cases_snapshot(self, guild_id: str, filter_type: str = "", limit: int = 50) -> list:
+        if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
+            raise ValueError("Invalid guild ID")
+        if (
+            not isinstance(filter_type, str)
+            or (filter_type and re.fullmatch(r"[a-z][a-z0-9_]{0,31}", filter_type) is None)
+            or type(limit) is not int
+            or not 1 <= limit <= 200
+        ):
+            raise ValueError("Invalid sanction cases arguments")
+        return self._dispatch("api_sanction_cases_snapshot", [guild_id, filter_type, limit], list)
 
     def api_audit_snapshot(self, guild_id: str, limit: int = 20) -> list:
         if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
