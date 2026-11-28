@@ -852,6 +852,8 @@ def main():
     require(status == 200 and dashboard_config.get("result") == expected_dashboard_config, f"Signed dashboard config snapshot failed: {dashboard_config}")
     status, invalid_dashboard_config = call("/__spike/fetch-client/dashboard_config_snapshot_invalid", "POST", {})
     require(status == 503 and invalid_dashboard_config.get("error") == "local Worker Fetch transport unavailable", f"Workers Fetch accepted unsafe dashboard config: {invalid_dashboard_config}")
+    status, nonfinite_dashboard_config = call("/__spike/fetch-client/dashboard_config_snapshot_nonfinite", "POST", {})
+    require(status == 503 and nonfinite_dashboard_config.get("error") == "local Worker Fetch transport unavailable", f"Workers Fetch accepted non-finite dashboard config: {nonfinite_dashboard_config}")
     status, invalid_dashboard_args = call("/__spike/fetch-client/dashboard_config_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard config arguments: {invalid_dashboard_args}")
 
@@ -1250,6 +1252,8 @@ def main():
         and invalid_config.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch client accepted an unreviewed REST config field: {invalid_config}",
     )
+    status, nonfinite_config = call("/__spike/fetch-client/api_rest_config_snapshot_nonfinite", "POST", {})
+    require(status == 503 and nonfinite_config.get("error") == "local Worker Fetch transport unavailable", f"Workers Fetch accepted non-finite REST config: {nonfinite_config}")
     status, invalid_config_args = call("/__spike/fetch-client/api_rest_config_snapshot_invalid_args", "POST", {})
     require(
         status == 200 and invalid_config_args.get("result") == {"rejected": True},
