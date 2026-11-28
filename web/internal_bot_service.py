@@ -143,6 +143,10 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_roles_snapshot":
+            if len(args) != 1 or not valid_guild_id(args[0]):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_settings_snapshot":
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -233,6 +237,19 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name == "dashboard_roles_snapshot" and result is not None and (
+                not isinstance(result, list)
+                or len(result) > 500
+                or not all(
+                    isinstance(item, dict)
+                    and set(item) == {"id", "name"}
+                    and valid_guild_id(item["id"])
+                    and isinstance(item["name"], str)
+                    and 1 <= len(item["name"]) <= 100
+                    for item in result
+                )
+            ):
+                return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "dashboard_settings_snapshot" and result is not None:
                 def valid_settings_item(item):
                     return (
