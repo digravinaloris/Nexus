@@ -102,6 +102,7 @@ class SignedHttpBotService(BotService):
             "api_rest_config_snapshot": 1,
             "dashboard_config_snapshot": 1,
             "dashboard_public_templates_snapshot": 0,
+            "dashboard_calendar_has_duplicate_event": 3,
             "dashboard_calendar_upcoming_events": 3,
             "is_guild_owner": 2,
             "is_guild_admin": 2,
@@ -127,7 +128,7 @@ class SignedHttpBotService(BotService):
             if (not isinstance(args[0], str) or not args[0].isascii() or not 1 <= len(args[0]) <= 512
                 or (len(args) == 2 and not self._valid_guild_id(args[1]))):
                 raise ValueError("Invalid API key authentication arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot", "api_rest_config_snapshot", "dashboard_config_snapshot", "dashboard_calendar_upcoming_events", "is_guild_owner", "is_guild_admin"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot", "api_rest_config_snapshot", "dashboard_config_snapshot", "dashboard_calendar_upcoming_events", "dashboard_calendar_has_duplicate_event", "is_guild_owner", "is_guild_admin"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
@@ -159,6 +160,20 @@ class SignedHttpBotService(BotService):
                 raise ValueError("Invalid calendar snapshot timestamp") from exc
             if requested_at.tzinfo is None:
                 raise ValueError("Invalid calendar snapshot timestamp")
+        if method == "dashboard_calendar_has_duplicate_event":
+            if (
+                not isinstance(args[1], str)
+                or not 1 <= len(args[1]) <= 100
+                or not isinstance(args[2], str)
+                or len(args[2]) > 64
+            ):
+                raise ValueError("Invalid calendar duplicate-check arguments")
+            try:
+                requested_at = datetime.datetime.fromisoformat(args[2].replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("Invalid calendar duplicate-check timestamp") from exc
+            if requested_at.tzinfo is None:
+                raise ValueError("Invalid calendar duplicate-check timestamp")
 
         if method == "api_member_warnings" and not self._valid_guild_id(args[1]):
             raise ValueError("Invalid member ID")
@@ -258,7 +273,12 @@ class SignedHttpBotService(BotService):
             )
 
         result = payload["result"]
-        if method == "dashboard_public_templates_snapshot":
+        if method == "dashboard_calendar_has_duplicate_event":
+            if not isinstance(result, bool):
+                raise BotServiceTransportError(
+                    "Internal BotService returned an invalid calendar duplicate-check result"
+                )
+        elif method == "dashboard_public_templates_snapshot":
             required = {
                 "code", "name", "created_guild_name", "created_at",
                 "feature_toggle_count", "command_role_count",
@@ -872,6 +892,19 @@ class SignedHttpBotService(BotService):
 
     def dashboard_public_templates_snapshot(self):
         return self._dispatch_snapshot("dashboard_public_templates_snapshot", ())
+
+    def dashboard_calendar_has_duplicate_event(self, guild_id: str, title: str, starts_at) -> bool:
+        if not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        if not isinstance(title, str) or not 1 <= len(title) <= 100:
+            raise ValueError("Invalid calendar event title")
+        if not isinstance(starts_at, datetime.datetime) or starts_at.tzinfo is None:
+            raise ValueError("Calendar event time must be timezone-aware")
+        timestamp = starts_at.astimezone(datetime.timezone.utc).isoformat()
+        return self._dispatch_snapshot(
+            "dashboard_calendar_has_duplicate_event",
+            (guild_id, title, timestamp),
+        )
 
     def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50):
         if not self._valid_guild_id(guild_id):
