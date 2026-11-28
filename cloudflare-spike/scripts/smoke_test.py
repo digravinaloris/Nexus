@@ -665,6 +665,18 @@ def main():
         }],
         f"Signed API guild-list read failed: {fetch_api_guilds}",
     )
+    status, invalid_channels = call("/__spike/fetch-client/api_text_channels_snapshot_invalid", "POST", {})
+    require(
+        status == 503
+        and invalid_channels.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed text-channel collection: {invalid_channels}",
+    )
+    status, invalid_roles = call("/__spike/fetch-client/api_roles_snapshot_invalid", "POST", {})
+    require(
+        status == 503
+        and invalid_roles.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed role collection: {invalid_roles}",
+    )
     status, invalid_guild_list = call(
         "/__spike/fetch-client/api_guild_list_snapshot_invalid", "POST", {}
     )

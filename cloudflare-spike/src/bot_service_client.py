@@ -504,11 +504,10 @@ class CloudflareFetchBotService:
                 or len({item.get("id") for item in result if isinstance(item, dict)}) != len(result)
             ):
                 raise CloudflareBotServiceError("Internal BotService returned an invalid guild list")
-        if (
-            method in {"api_text_channels_snapshot", "api_roles_snapshot"}
-            and result is not None
-            and (
-                len(result) > 500
+        if method in {"api_text_channels_snapshot", "api_roles_snapshot"} and result is not None:
+            if (
+                not isinstance(result, list)
+                or len(result) > 500
                 or not all(
                     isinstance(item, dict)
                     and set(item) == {"id", "name"}
@@ -517,11 +516,12 @@ class CloudflareFetchBotService:
                     and 1 <= len(item["name"]) <= 100
                     for item in result
                 )
-            )
-        ):
-            raise CloudflareBotServiceError(
-                "Internal BotService returned invalid guild collection"
-            )
+                or len({item["id"] for item in result if isinstance(item, dict) and "id" in item}) != len(result)
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
+            ):
+                raise CloudflareBotServiceError(
+                    "Internal BotService returned invalid guild collection"
+                )
         if method == "api_members_snapshot" and result is not None:
             expected_member_fields = {"id", "name", "username", "avatar_url", "is_muted"}
             if (
