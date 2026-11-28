@@ -445,6 +445,29 @@ def main():
     status, invalid_dashboard_args = call("/__spike/fetch-client/dashboard_config_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard config arguments: {invalid_dashboard_args}")
 
+    status, fetch_calendar_events = call("/__spike/fetch-client/dashboard_calendar_upcoming_events", "POST", {})
+    calendar_result = fetch_calendar_events.get("result")
+    require(
+        status == 200
+        and isinstance(calendar_result, list)
+        and len(calendar_result) == 1
+        and set(calendar_result[0]) == {"_id", "guild_id", "title", "description", "role_id", "starts_at", "timezone", "time_set"}
+        and calendar_result[0]["guild_id"] == "123"
+        and calendar_result[0]["title"] == "Community event"
+        and isinstance(calendar_result[0]["starts_at"], str),
+        f"Signed dashboard calendar events snapshot failed: {fetch_calendar_events}",
+    )
+    status, invalid_calendar_events = call("/__spike/fetch-client/dashboard_calendar_upcoming_events_invalid", "POST", {})
+    require(
+        status == 503 and invalid_calendar_events.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed dashboard calendar events: {invalid_calendar_events}",
+    )
+    status, invalid_calendar_args = call("/__spike/fetch-client/dashboard_calendar_upcoming_events_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_calendar_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid dashboard calendar arguments: {invalid_calendar_args}",
+    )
+
     status, fetch_dashboard_overview = call("/__spike/fetch-client/dashboard_overview_snapshot", "POST", {})
     expected_dashboard_overview = {
         "id": "123",
