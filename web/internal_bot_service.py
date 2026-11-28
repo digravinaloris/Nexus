@@ -219,6 +219,13 @@ def create_internal_bot_service_blueprint(
             if args != []:
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_template_snapshot":
+            if (
+                len(args) != 1 or not isinstance(args[0], str)
+                or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", args[0]) is None
+            ):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_authenticate_key":
             if (len(args) not in {1, 2} or not isinstance(args[0], str)
                 or not args[0].isascii() or not 1 <= len(args[0]) <= 512
@@ -362,6 +369,11 @@ def create_internal_bot_service_blueprint(
                     or any(not isinstance(name, str) or not 1 <= len(name) <= 100 for name in result)
                     or len(json.dumps(result, ensure_ascii=True).encode("utf-8")) > 8192
                 ):
+                    return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "dashboard_template_snapshot" and result is not None:
+                try:
+                    result = project_public_template(result)
+                except (TypeError, ValueError, OverflowError):
                     return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "dashboard_public_templates_snapshot":
                 required = {"code", "name", "created_guild_name", "created_at", "feature_toggle_count", "command_role_count"}
