@@ -244,6 +244,25 @@ def main():
     require("samesite=lax" in delete_cookie.lower(), "Logout deletion cookie does not use SameSite=Lax")
     require("path=/" in delete_cookie.lower(), "Logout deletion cookie path is not root")
 
+    # A session encrypted with an unavailable key version must fail closed
+    # as a storage/configuration error, never become an anonymous success.
+    status, unknown_key_fixture, set_cookie = call_with_cookie(
+        "/__spike/flask-session/create-unknown-key", "POST"
+    )
+    require(
+        status == 200 and unknown_key_fixture.get("key_version") == 99,
+        f"Unknown-key session fixture failed: {unknown_key_fixture}",
+    )
+    unknown_key_cookie = extract_session_cookie(set_cookie)
+    status, unknown_key_response, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=unknown_key_cookie
+    )
+    require(
+        status == 503
+        and unknown_key_response.get("error") == "session storage unavailable",
+        f"Missing encryption key did not fail closed: {unknown_key_response}",
+    )
+
     # A legacy Flask session must remain readable and be re-encrypted
     # with the active key version on its next successful write.
     status, legacy_flask, set_cookie = call_with_cookie(
