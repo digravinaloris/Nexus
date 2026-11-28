@@ -38,6 +38,7 @@ class D1ServerSession(CallbackDict, SessionMixin):
         unavailable=False,
         created_at=None,
         expires_at=None,
+        revision=0,
     ):
         def on_update(_self):
             _self.modified = True
@@ -49,6 +50,7 @@ class D1ServerSession(CallbackDict, SessionMixin):
         self.unavailable = unavailable
         self.created_at = created_at
         self.expires_at = expires_at
+        self.revision = revision
         super().__init__(initial or {}, on_update)
 
 
@@ -137,7 +139,7 @@ class D1SessionInterface(SessionInterface):
                     WHERE session_hash = ? AND revoked_at IS NULL
                       AND expires_at > ? AND idle_expires_at > ?
                     RETURNING ciphertext_hex, nonce_hex, key_version,
-                              created_at, expires_at
+                              created_at, expires_at, revision
                     """
                 )
                 .bind(now + self.idle_timeout, session_hash, now, now)
@@ -175,6 +177,7 @@ class D1SessionInterface(SessionInterface):
                 new=False,
                 created_at=int(self._row_value(row, "created_at")),
                 expires_at=int(self._row_value(row, "expires_at")),
+                revision=int(self._row_value(row, "revision")),
             )
         except Exception:
             # Corrupt or unauthenticated records are never treated as sessions.
@@ -243,8 +246,8 @@ class D1SessionInterface(SessionInterface):
                         """
                         INSERT INTO spike_flask_sessions
                             (session_hash, ciphertext_hex, nonce_hex, key_version,
-                             created_at, expires_at, idle_expires_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                             created_at, expires_at, idle_expires_at, revision)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
                         """
                     )
                     .bind(
@@ -265,10 +268,10 @@ class D1SessionInterface(SessionInterface):
                         """
                         UPDATE spike_flask_sessions
                         SET ciphertext_hex = ?, nonce_hex = ?, key_version = ?,
-                            idle_expires_at = MIN(expires_at, ?)
+                            idle_expires_at = MIN(expires_at, ?), revision = revision + 1
                         WHERE session_hash = ? AND revoked_at IS NULL
-                          AND expires_at > ? AND idle_expires_at > ?
-                        RETURNING session_hash
+                          AND expires_at > ? AND idle_expires_at > ? AND revision = ?
+                        RETURNING revision
                         """
                     )
                     .bind(
@@ -279,12 +282,14 @@ class D1SessionInterface(SessionInterface):
                         session_hash,
                         now,
                         now,
+                        session.revision,
                     )
                     .first()
                 )
                 if updated is None:
                     response.delete_cookie(cookie_name, path="/", secure=cookie_secure, httponly=True, samesite="Lax")
                     return
+                session.revision = int(self._row_value(updated, "revision"))
         except Exception:
             response.status_code = 503
             response.set_data(b'{"error":"session storage unavailable"}')
@@ -303,6 +308,67 @@ class D1SessionInterface(SessionInterface):
             path="/",
             domain=app.config.get("SESSION_COOKIE_DOMAIN"),
         )
+
+    def consume_oauth_state(self, session, expected_state):
+        """Atomically consume the one-time OAuth state using a revision CAS.
+
+        Concurrent callbacks may both load the same cookie, but only the first
+        request can replace the encrypted payload at the revision it observed.
+        """
+        state = session.get("oauth_state")
+        if (
+            not isinstance(expected_state, str)
+            or not expected_state
+            or not isinstance(state, str)
+            or not secrets.compare_digest(state, expected_state)
+        ):
+            return False
+
+        payload = dict(session)
+        payload.pop("oauth_state", None)
+        payload.pop("oauth_state_created_at", None)
+        payload.pop("oauth_code_verifier", None)
+        session_hash, ciphertext_hex, nonce_hex, key_version = self._encrypt(
+            session.sid, payload
+        )
+        now = int(time.time())
+        try:
+            updated = self._awaiter(
+                self._db_getter()
+                .prepare(
+                    """
+                    UPDATE spike_flask_sessions
+                    SET ciphertext_hex = ?, nonce_hex = ?, key_version = ?,
+                        revision = revision + 1
+                    WHERE session_hash = ? AND revision = ? AND revoked_at IS NULL
+                      AND expires_at > ? AND idle_expires_at > ?
+                    RETURNING revision
+                    """
+                )
+                .bind(
+                    ciphertext_hex,
+                    nonce_hex,
+                    key_version,
+                    session_hash,
+                    session.revision,
+                    now,
+                    now,
+                )
+                .first()
+            )
+        except Exception as exc:
+            raise SessionStorageUnavailable("D1 OAuth state consumption failed") from exc
+
+        if updated is None:
+            return False
+
+        session.pop("oauth_state", None)
+        session.pop("oauth_state_created_at", None)
+        session.pop("oauth_code_verifier", None)
+        session.revision = int(self._row_value(updated, "revision"))
+        # The encrypted payload was already committed by the CAS above.
+        session.modified = False
+        return True
 
     def rotate_session(self, session):
         """Atomically revoke the pre-auth ID and create its replacement."""
@@ -323,11 +389,11 @@ class D1SessionInterface(SessionInterface):
                         db.prepare(
                             """
                             UPDATE spike_flask_sessions
-                            SET revoked_at = ?, rotated_to = ?
+                            SET revoked_at = ?, rotated_to = ?, revision = revision + 1
                             WHERE session_hash = ? AND revoked_at IS NULL
-                              AND expires_at > ? AND idle_expires_at > ?
+                              AND expires_at > ? AND idle_expires_at > ? AND revision = ?
                             """
-                        ).bind(now, new_hash, old_hash, now, now),
+                        ).bind(now, new_hash, old_hash, now, now, session.revision),
                         db.prepare(
                             """
                             INSERT INTO spike_flask_sessions
@@ -336,7 +402,7 @@ class D1SessionInterface(SessionInterface):
                             SELECT ?, ?, ?, ?, ?, ?, ?
                             WHERE EXISTS (
                                 SELECT 1 FROM spike_flask_sessions
-                                WHERE session_hash = ? AND rotated_to = ?
+                                WHERE session_hash = ? AND rotated_to = ? AND revision = ?
                             )
                             """
                         ).bind(
@@ -349,6 +415,7 @@ class D1SessionInterface(SessionInterface):
                             now + self.idle_timeout,
                             old_hash,
                             new_hash,
+                            session.revision + 1,
                         ),
                     ]
                 )
@@ -373,6 +440,7 @@ class D1SessionInterface(SessionInterface):
         session.new = False
         session.created_at = now
         session.expires_at = expires_at
+        session.revision = 0
         session.modified = True
 
     def revoke_session(self, session):

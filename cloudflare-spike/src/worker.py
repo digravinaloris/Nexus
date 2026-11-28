@@ -836,6 +836,7 @@ def setup_schema():
             created_at INTEGER NOT NULL,
             expires_at INTEGER NOT NULL,
             idle_expires_at INTEGER NOT NULL,
+            revision INTEGER NOT NULL DEFAULT 0,
             revoked_at INTEGER,
             rotated_to TEXT
         )
@@ -869,6 +870,23 @@ def create_flask_session():
     session["access_token"] = "spike-only-discord-access-token"
     session["csrf_token"] = "spike-only-csrf-secret"
     return jsonify({"authenticated": True})
+
+
+@app.post("/__spike/flask-session/oauth-login")
+def create_oauth_state_session():
+    """Create a disposable session for atomic one-time OAuth-state tests."""
+    state = secrets.token_urlsafe(32)
+    session["oauth_state"] = state
+    session["oauth_state_created_at"] = time.time()
+    session["oauth_code_verifier"] = secrets.token_urlsafe(48)
+    return jsonify({"state": state})
+
+
+@app.post("/__spike/flask-session/oauth-consume")
+def consume_oauth_state_session():
+    state = _json_body().get("state")
+    consumed = app.session_interface.consume_oauth_state(session, state)
+    return jsonify({"consumed": consumed})
 
 
 @app.get("/__spike/flask-session/me")

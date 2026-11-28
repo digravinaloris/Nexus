@@ -25,9 +25,17 @@ def call(path: str, method: str = "GET", payload: dict | None = None):
 
 
 
-def call_with_cookie(path: str, method: str = "GET", cookie: str | None = None):
+def call_with_cookie(
+    path: str,
+    method: str = "GET",
+    cookie: str | None = None,
+    payload: dict | None = None,
+):
+    body = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {"Cookie": f"nexus_spike_session={cookie}"} if cookie else {}
-    request = Request(f"{BASE_URL}{path}", headers=headers, method=method)
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    request = Request(f"{BASE_URL}{path}", data=body, headers=headers, method=method)
     try:
         with urlopen(request, timeout=10) as response:
             return response.status, json.loads(response.read().decode("utf-8")), response.headers.get("Set-Cookie")
@@ -162,6 +170,34 @@ def main():
     require(
         status == 200 and after_logout.get("authenticated") is False,
         "Logged-out Flask session remained usable",
+    )
+
+    # Two concurrent requests sharing the same pre-auth cookie must not
+    # both consume the same OAuth state/PKCE verifier.
+    status, oauth_setup, set_cookie = call_with_cookie(
+        "/__spike/flask-session/oauth-login", "POST"
+    )
+    require(status == 200, "OAuth state session setup failed")
+    oauth_cookie = extract_session_cookie(set_cookie)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                call_with_cookie,
+                "/__spike/flask-session/oauth-consume",
+                "POST",
+                oauth_cookie,
+                {"state": oauth_setup["state"]},
+            )
+            for _ in range(2)
+        ]
+        consume_results = [future.result() for future in futures]
+    require(
+        all(status == 200 for status, _, _ in consume_results),
+        "Concurrent OAuth state consumption request failed",
+    )
+    require(
+        sum(1 for _, result, _ in consume_results if result.get("consumed") is True) == 1,
+        "OAuth state was not consumed exactly once by the D1 session CAS",
     )
 
     status, state = call("/__spike/state", "POST", {})
