@@ -627,3 +627,30 @@ def test_dashboard_settings_snapshot_rejects_invalid_guild_ids(guild_id):
     with pytest.raises(ValueError):
         _client(session).dashboard_settings_snapshot(guild_id)
     assert session.calls == []
+
+
+
+def test_dashboard_roles_snapshot_dispatch_and_validates_dto():
+    dto = [
+        {"id": "123456789012345678", "name": "@everyone"},
+        {"id": "234567890123456789", "name": "Moderator"},
+    ]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    client = _client(session)
+    assert client.dashboard_roles_snapshot("345678901234567890") == dto
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload["method"] == "dashboard_roles_snapshot"
+    assert payload["args"] == ["345678901234567890"]
+
+    bad = [{"id": "not-a-snowflake", "name": "Moderator"}]
+    bad_session = FakeSession(response=FakeResponse(payload={"ok": True, "result": bad}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad_session).dashboard_roles_snapshot("345678901234567890")
+
+
+@pytest.mark.parametrize("guild_id", ["abc", "0", "1" * 21])
+def test_dashboard_roles_snapshot_rejects_invalid_guild_ids(guild_id):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).dashboard_roles_snapshot(guild_id)
+    assert session.calls == []
