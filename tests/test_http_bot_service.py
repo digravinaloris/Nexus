@@ -526,3 +526,50 @@ def test_remote_api_health_snapshot_rejects_invalid_optional_guild_id(guild_id):
     with pytest.raises(ValueError, match="guild ID"):
         _client(session).api_health_snapshot(guild_id)
     assert session.calls == []
+
+
+def test_remote_guild_stats_snapshot_validates_dto_and_signed_arguments():
+    result_value = {
+        "guild_id": "123456789012345678", "name": "Nexus Community",
+        "member_count": 42, "ban_count": 2, "muted_count": 1,
+        "open_tickets_count": 3, "warned_count": 4, "warns_today": 1,
+        "activity_7d": [0, 1, 2, 0, 1, 0, 3], "locked": False,
+    }
+    for args in (["123456789012345678"], ["123456789012345678", "234567890123456789"]):
+        session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result_value}))
+        assert _client(session).api_guild_stats_snapshot(*args) == result_value
+        body = session.calls[0][1]["data"]
+        assert json.loads(body)["method"] == "api_guild_stats_snapshot"
+        assert json.loads(body)["args"] == args
+        verify_internal_request(keyring={"current": SECRET}, method="POST",
+            path="/internal/v1/dispatch", body=body,
+            headers=session.calls[0][1]["headers"])
+
+
+@pytest.mark.parametrize("result", [
+    {},
+    {"guild_id":"123456789012345678", "name":"Nexus", "member_count":-1, "ban_count":0,
+     "muted_count":0, "open_tickets_count":0, "warned_count":0, "warns_today":0,
+     "activity_7d":[0]*7, "locked":False},
+    {"guild_id":"123456789012345678", "name":"Nexus", "member_count":1, "ban_count":0,
+     "muted_count":0, "open_tickets_count":0, "warned_count":0, "warns_today":0,
+     "activity_7d":[0]*6, "locked":False},
+    {"guild_id":"123456789012345678", "name":"Nexus", "member_count":1, "ban_count":0,
+     "muted_count":0, "open_tickets_count":0, "warned_count":0, "warns_today":0,
+     "activity_7d":[0]*7, "locked":0},
+])
+def test_remote_guild_stats_snapshot_rejects_malformed_dtos(result):
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(session).api_guild_stats_snapshot("123456789012345678")
+
+
+@pytest.mark.parametrize("args", [
+    ("abc",), ("123456789012345678", "abc"),
+    ("123456789012345678", "1" * 21),
+])
+def test_remote_guild_stats_snapshot_rejects_invalid_ids(args):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).api_guild_stats_snapshot(*args)
+    assert session.calls == []
