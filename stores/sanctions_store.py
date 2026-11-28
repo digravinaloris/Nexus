@@ -208,9 +208,9 @@ def get_dashboard_warning_counts(guild_id, since):
     }
 
 
-def get_warnlist(guild_id):
-    """Return active warning counts for one guild, without exposing Mongo details."""
-    return list(col.warns.find({"guild_id": str(guild_id), "count": {"$gt": 0}}))
+def get_warnlist(guild_id, limit=1000):
+    """Return a bounded list of active warning counts for one guild."""
+    return list(col.warns.find({"guild_id": str(guild_id), "count": {"$gt": 0}}).limit(limit))
 
 
 

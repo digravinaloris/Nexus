@@ -643,6 +643,39 @@ def test_signed_dispatch_fails_closed_for_non_boolean_case_appeal_action_result(
     assert response.status_code == 503
 
 
+def test_signed_dispatch_projects_warning_snapshots_to_safe_dtos():
+    client, service = _client()
+    service.api_member_warnings = lambda guild_id, user_id: 3
+    body = _request_body({"method": "api_member_warnings", "args": ["123", "456"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200 and response.get_json() == {"ok": True, "result": 3}
+
+    service.api_warnlist_snapshot = lambda guild_id: [{
+        "_id": "mongo-secret", "guild_id": guild_id, "user_id": "456", "count": 2,
+    }]
+    body = _request_body({"method": "api_warnlist_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body, nonce="warnlistvalidnonce123456"))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": [{"user_id": "456", "count": 2}]}
+
+
+def test_signed_dispatch_rejects_invalid_warning_snapshot_arguments():
+    client, service = _client()
+    body = _request_body({"method": "api_member_warnings", "args": ["123", "bad"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403 and service.calls == []
+
+
+def test_signed_dispatch_fails_closed_for_malformed_warning_snapshots():
+    client, service = _client()
+    service.api_warnlist_snapshot = lambda guild_id: [{
+        "guild_id": "456", "user_id": "123", "count": 2,
+    }]
+    body = _request_body({"method": "api_warnlist_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+
+
 def test_signed_dispatch_projects_audit_entries_to_safe_dto():
     from datetime import datetime
 

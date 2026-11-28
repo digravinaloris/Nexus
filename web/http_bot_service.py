@@ -96,6 +96,8 @@ class SignedHttpBotService(BotService):
             "dashboard_sanction_types_snapshot": 1,
             "api_sanction_cases_snapshot": 3,
             "api_audit_snapshot": 2,
+            "api_member_warnings": 2,
+            "api_warnlist_snapshot": 1,
             "dashboard_submitted_appeals_snapshot": 2,
             "api_claim_appeal_by_case": 2,
             "api_release_appeal_claim_by_case": 2,
@@ -113,7 +115,7 @@ class SignedHttpBotService(BotService):
         )
         if not valid_count:
             raise ValueError("Invalid internal BotService arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
@@ -122,6 +124,8 @@ class SignedHttpBotService(BotService):
         ):
             raise ValueError("Invalid ticket category ID")
 
+        if method == "api_member_warnings" and not self._valid_guild_id(args[1]):
+            raise ValueError("Invalid member ID")
         if method == "api_audit_snapshot" and (type(args[1]) is not int or not 1 <= args[1] <= 100):
             raise ValueError("Invalid audit limit")
         if method == "dashboard_sanction_stats_snapshot" and (type(args[1]) is not int or not 1 <= args[1] <= 30):
@@ -354,6 +358,17 @@ class SignedHttpBotService(BotService):
                 or not isinstance(result["locked"], bool)
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "api_member_warnings":
+            if type(result) is not int or not 0 <= result <= 100000:
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "api_warnlist_snapshot":
+            if (not isinstance(result, list) or len(result) > 1000
+                or not all(isinstance(item, dict) and set(item) == {"user_id", "count"}
+                    and self._valid_guild_id(item["user_id"])
+                    and type(item["count"]) is int and 1 <= item["count"] <= 100000
+                    for item in result)
+                or len({item["user_id"] for item in result}) != len(result)):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method == "api_audit_snapshot":
             required = {"actor_name", "action", "details", "timestamp"}
             def valid_audit_entry(item):
@@ -563,6 +578,16 @@ class SignedHttpBotService(BotService):
 
     def dashboard_sanction_types_snapshot(self, guild_id: str):
         return self._dispatch_snapshot("dashboard_sanction_types_snapshot", (guild_id,))
+
+    def api_member_warnings(self, guild_id: str, user_id: str):
+        if not self._valid_guild_id(guild_id) or not self._valid_guild_id(user_id):
+            raise ValueError("Invalid guild or member ID")
+        return self._dispatch_snapshot("api_member_warnings", (guild_id, user_id))
+
+    def api_warnlist_snapshot(self, guild_id: str):
+        if not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        return self._dispatch_snapshot("api_warnlist_snapshot", (guild_id,))
 
     def api_audit_snapshot(self, guild_id: str, limit: int = 20):
         if not self._valid_guild_id(guild_id):

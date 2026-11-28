@@ -312,7 +312,7 @@ class InProcessBotService(BotService):
         return get_warns(guild_id, user_id)
 
     def api_warnlist_snapshot(self, guild_id: str) -> List[Dict[str, object]]:
-        return get_warnlist(guild_id)
+        return get_warnlist(guild_id, limit=1000)
 
     def api_submitted_appeals(self, guild_id: str) -> List[Dict[str, object]]:
         return get_submitted_appeals(guild_id)

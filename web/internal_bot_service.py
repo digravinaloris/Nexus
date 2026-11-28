@@ -152,6 +152,14 @@ def create_internal_bot_service_blueprint(
                 or not 1 <= args[1] <= (2**63 - 1) or not isinstance(args[2], str) or args[2] not in {"accepted", "denied"}):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "api_member_warnings":
+            if len(args) != 2 or not valid_guild_id(args[0]) or not valid_guild_id(args[1]):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "api_warnlist_snapshot":
+            if len(args) != 1 or not valid_guild_id(args[0]):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_audit_snapshot":
             if len(args) != 2 or not valid_guild_id(args[0]) or type(args[1]) is not int or not 1 <= args[1] <= 100:
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -273,6 +281,23 @@ def create_internal_bot_service_blueprint(
             if method_name in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
                 if not isinstance(result, bool):
                     return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_member_warnings":
+                if type(result) is not int or not 0 <= result <= 100000:
+                    return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_warnlist_snapshot":
+                if not isinstance(result, list) or len(result) > 1000:
+                    return jsonify({"error": "internal service unavailable"}), 503
+                projected = []
+                for item in result:
+                    if (not isinstance(item, dict) or not {"guild_id", "user_id", "count"}.issubset(item)
+                        or str(item.get("guild_id")) != str(operation_args[0])
+                        or not isinstance(item.get("user_id"), str) or not valid_guild_id(item["user_id"])
+                        or type(item.get("count")) is not int or not 1 <= item["count"] <= 100000):
+                        return jsonify({"error": "internal service unavailable"}), 503
+                    projected.append({"user_id": item["user_id"], "count": item["count"]})
+                if len({item["user_id"] for item in projected}) != len(projected):
+                    return jsonify({"error": "internal service unavailable"}), 503
+                result = projected
             if method_name == "api_audit_snapshot":
                 required = {"actor_name", "action", "details", "timestamp"}
                 def audit_dto(item):
