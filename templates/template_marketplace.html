@@ -14,7 +14,7 @@
     <div class="audit-entry">
       <div class="audit-meta"><strong>{{ tpl.name }}</strong> · from {{ tpl.created_guild_name }} · {{ tpl.created_at.strftime('%Y-%m-%d') }}</div>
       <div class="audit-action">
-        {{ tpl.snapshot.feature_toggles|length }} toggles, {{ tpl.snapshot.command_roles_by_name|length }} role permission(s)
+        {{ tpl.feature_toggle_count }} toggles, {{ tpl.command_role_count }} role permission(s)
         <a class="btn ghost" style="margin-left:10px;" href="{{ url_for('dash_template_import', guild_id=guild_id, code=tpl.code) }}">Import</a>
       </div>
     </div>
