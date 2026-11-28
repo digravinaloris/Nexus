@@ -383,6 +383,10 @@ def mock_internal_bot_service():
             }]
             return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_presence_ping" and args == ["123", "42", "Loris"]:
+        if key_id == "spike-presence-ping-malformed":
+            return jsonify({"ok": True, "result": {"unexpected": True}})
+        return jsonify({"ok": True, "result": None})
     if method == "dashboard_presence_viewers" and args == ["123"]:
         if key_id == "spike-presence-viewers-malformed":
             return jsonify({"ok": True, "result": ["Loris", "x" * 101]})
