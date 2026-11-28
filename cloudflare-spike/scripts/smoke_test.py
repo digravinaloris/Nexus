@@ -149,6 +149,57 @@ def main():
         "Rotated Flask session was not persisted",
     )
 
+    # Two concurrent requests using the same pre-rotation cookie must
+    # never both rotate it successfully or create two active replacements.
+    status, _, set_cookie = call_with_cookie(
+        "/__spike/flask-session/login", "POST"
+    )
+    require(status == 200, "Concurrent-rotation Flask session setup failed")
+    race_cookie = extract_session_cookie(set_cookie)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                call_with_cookie,
+                "/__spike/flask-session/rotate",
+                "POST",
+                race_cookie,
+            )
+            for _ in range(2)
+        ]
+        race_results = [future.result() for future in futures]
+    successful_rotations = [
+        result for result in race_results
+        if result[0] == 200 and result[1].get("rotated") is True
+    ]
+    failed_rotations = [
+        result for result in race_results
+        if result[0] == 503
+        and result[1].get("error") == "session storage unavailable"
+    ]
+    require(
+        len(successful_rotations) == 1 and len(failed_rotations) == 1,
+        f"Concurrent session rotation was not single-winner: {race_results}",
+    )
+    race_new_cookie = extract_session_cookie(successful_rotations[0][2])
+    require(
+        race_new_cookie != race_cookie,
+        "Concurrent session rotation reused the pre-auth cookie",
+    )
+    status, race_old_identity, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=race_cookie
+    )
+    require(
+        status == 200 and race_old_identity.get("authenticated") is False,
+        "Pre-rotation cookie remained usable after concurrent rotation",
+    )
+    status, race_new_identity, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=race_new_cookie
+    )
+    require(
+        status == 200 and race_new_identity.get("authenticated") is True,
+        "Winning concurrent rotation did not persist its replacement session",
+    )
+
     status, tampered, _ = call_with_cookie(
         "/__spike/flask-session/tamper", "POST", new_cookie
     )
