@@ -156,6 +156,26 @@ def create_internal_bot_service_blueprint(
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_calendar_upcoming_events":
+            if (
+                len(args) != 3
+                or not valid_guild_id(args[0])
+                or not isinstance(args[1], str)
+                or len(args[1]) > 64
+                or type(args[2]) is not int
+                or not 1 <= args[2] <= 50
+            ):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            try:
+                requested_at = datetime.fromisoformat(args[1].replace("Z", "+00:00"))
+            except ValueError:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            if requested_at.tzinfo is None:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (
+                getattr(service, method_name, None),
+                [args[0], requested_at.astimezone(timezone.utc), args[2]],
+            )
         elif method_name == "dashboard_config_snapshot":
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -292,6 +312,49 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name == "dashboard_calendar_upcoming_events":
+                if result is not None:
+                    if not isinstance(result, list) or len(result) > operation_args[2]:
+                        return jsonify({"error": "internal service unavailable"}), 503
+                    projected = []
+                    required = {"_id", "guild_id", "title", "description", "role_id", "starts_at", "timezone", "time_set"}
+                    for item in result:
+                        stamp = item.get("starts_at") if isinstance(item, dict) else None
+                        if isinstance(stamp, datetime):
+                            if stamp.tzinfo is None:
+                                stamp = stamp.replace(tzinfo=timezone.utc)
+                            stamp = stamp.astimezone(timezone.utc)
+                        if (
+                            not isinstance(item, dict)
+                            or not required.issubset(item)
+                            or str(item.get("guild_id")) != operation_args[0]
+                            or not re.fullmatch(r"[0-9a-fA-F]{24}", str(item.get("_id", "")))
+                            or not isinstance(item.get("title"), str) or not 1 <= len(item["title"]) <= 100
+                            or not isinstance(item.get("description"), str) or len(item["description"]) > 1000
+                            or not valid_guild_id(item.get("role_id"))
+                            or not isinstance(stamp, datetime)
+                            or not isinstance(item.get("timezone"), str) or not 1 <= len(item["timezone"]) <= 64
+                            or not isinstance(item.get("time_set"), bool)
+                        ):
+                            return jsonify({"error": "internal service unavailable"}), 503
+                        projected.append({
+                            "_id": str(item["_id"]),
+                            "guild_id": operation_args[0],
+                            "title": item["title"],
+                            "description": item["description"],
+                            "role_id": item["role_id"],
+                            "starts_at": stamp.isoformat().replace("+00:00", "Z"),
+                            "timezone": item["timezone"],
+                            "time_set": item["time_set"],
+                        })
+                    if any(
+                        projected[i]["starts_at"] > projected[i + 1]["starts_at"]
+                        for i in range(len(projected) - 1)
+                    ):
+                        return jsonify({"error": "internal service unavailable"}), 503
+                    if len(json.dumps(projected, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024:
+                        return jsonify({"error": "internal service unavailable"}), 503
+                    result = projected
             if method_name in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
                 if not isinstance(result, bool):
                     return jsonify({"error": "internal service unavailable"}), 503

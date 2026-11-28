@@ -1,3 +1,4 @@
+import datetime
 import json
 import time
 
@@ -64,6 +65,20 @@ class FakeBotService:
     def dashboard_config_snapshot(self, guild_id):
         self.calls.append(("dashboard_config_snapshot", guild_id))
         return {"guild_id": guild_id, "welcome_channel_id": "456", "warn_mute_threshold": 3}
+
+    def dashboard_calendar_upcoming_events(self, guild_id, now, limit=50):
+        self.calls.append(("dashboard_calendar_upcoming_events", guild_id, now, limit))
+        return [{
+            "_id": "0123456789abcdef01234567",
+            "guild_id": guild_id,
+            "title": "Community event",
+            "description": "A safe event",
+            "role_id": "456",
+            "starts_at": datetime.datetime(2026, 12, 1, 18, 0, tzinfo=datetime.timezone.utc),
+            "timezone": "Europe/Paris",
+            "time_set": True,
+            "created_by": "private-user-id",
+        }]
 
 
     def guild_presence(self, guild_id):
@@ -867,6 +882,49 @@ def test_signed_dispatch_rejects_invalid_rest_config_snapshot_arguments(args):
     client, service = _client()
     body = _request_body({
         "method": "api_rest_config_snapshot", "args": args, "kwargs": {}
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_returns_allowlisted_dashboard_calendar_events():
+    client, service = _client()
+    body = _request_body({
+        "method": "dashboard_calendar_upcoming_events",
+        "args": ["123", "2026-11-28T12:00:00Z", 50],
+        "kwargs": {},
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "ok": True,
+        "result": [{
+            "_id": "0123456789abcdef01234567",
+            "guild_id": "123",
+            "title": "Community event",
+            "description": "A safe event",
+            "role_id": "456",
+            "starts_at": "2026-12-01T18:00:00Z",
+            "timezone": "Europe/Paris",
+            "time_set": True,
+        }],
+    }
+    assert service.calls[0][0:2] == ("dashboard_calendar_upcoming_events", "123")
+    assert service.calls[0][2] == datetime.datetime(2026, 11, 28, 12, 0, tzinfo=datetime.timezone.utc)
+    assert service.calls[0][3] == 50
+
+
+@pytest.mark.parametrize("args", [
+    ["123", "2026-11-28T12:00:00", 50],
+    ["123", "not-a-date", 50],
+    ["123", "2026-11-28T12:00:00Z", True],
+    ["bad", "2026-11-28T12:00:00Z", 50],
+])
+def test_signed_dispatch_rejects_invalid_dashboard_calendar_arguments(args):
+    client, service = _client()
+    body = _request_body({
+        "method": "dashboard_calendar_upcoming_events", "args": args, "kwargs": {}
     })
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 403

@@ -101,6 +101,7 @@ class SignedHttpBotService(BotService):
             "api_authenticate_key": (1, 2),
             "api_rest_config_snapshot": 1,
             "dashboard_config_snapshot": 1,
+            "dashboard_calendar_upcoming_events": 3,
             "dashboard_submitted_appeals_snapshot": 2,
             "api_claim_appeal_by_case": 2,
             "api_release_appeal_claim_by_case": 2,
@@ -122,7 +123,7 @@ class SignedHttpBotService(BotService):
             if (not isinstance(args[0], str) or not args[0].isascii() or not 1 <= len(args[0]) <= 512
                 or (len(args) == 2 and not self._valid_guild_id(args[1]))):
                 raise ValueError("Invalid API key authentication arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot", "api_rest_config_snapshot", "dashboard_config_snapshot"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot", "api_rest_config_snapshot", "dashboard_config_snapshot", "dashboard_calendar_upcoming_events"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
@@ -130,6 +131,21 @@ class SignedHttpBotService(BotService):
             and 0 < int(args[1]) <= (2**64 - 1)
         ):
             raise ValueError("Invalid ticket category ID")
+
+        if method == "dashboard_calendar_upcoming_events":
+            if (
+                not isinstance(args[1], str)
+                or len(args[1]) > 64
+                or type(args[2]) is not int
+                or not 1 <= args[2] <= 50
+            ):
+                raise ValueError("Invalid calendar snapshot arguments")
+            try:
+                requested_at = datetime.datetime.fromisoformat(args[1].replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("Invalid calendar snapshot timestamp") from exc
+            if requested_at.tzinfo is None:
+                raise ValueError("Invalid calendar snapshot timestamp")
 
         if method == "api_member_warnings" and not self._valid_guild_id(args[1]):
             raise ValueError("Invalid member ID")
@@ -681,6 +697,38 @@ class SignedHttpBotService(BotService):
                 or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True)) > 65536
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "dashboard_calendar_upcoming_events":
+            required = {"_id", "guild_id", "title", "description", "role_id", "starts_at", "timezone", "time_set"}
+            if result is not None:
+                if not isinstance(result, list) or len(result) > args[2]:
+                    raise BotServiceTransportError("Internal BotService returned an invalid response")
+                projected = []
+                for item in result:
+                    if (
+                        not isinstance(item, dict)
+                        or set(item) != required
+                        or item.get("guild_id") != args[0]
+                        or not isinstance(item.get("_id"), str)
+                        or re.fullmatch(r"[0-9a-fA-F]{24}", item["_id"]) is None
+                        or not isinstance(item.get("title"), str) or not 1 <= len(item["title"]) <= 100
+                        or not isinstance(item.get("description"), str) or len(item["description"]) > 1000
+                        or not self._valid_guild_id(item.get("role_id"))
+                        or not isinstance(item.get("starts_at"), str)
+                        or not isinstance(item.get("timezone"), str) or not 1 <= len(item["timezone"]) <= 64
+                        or not isinstance(item.get("time_set"), bool)
+                    ):
+                        raise BotServiceTransportError("Internal BotService returned an invalid response")
+                    try:
+                        starts_at = datetime.datetime.fromisoformat(item["starts_at"].replace("Z", "+00:00"))
+                    except ValueError as exc:
+                        raise BotServiceTransportError("Internal BotService returned an invalid response") from exc
+                    if starts_at.tzinfo is None:
+                        raise BotServiceTransportError("Internal BotService returned an invalid response")
+                    projected.append({**item, "starts_at": starts_at})
+                if any(projected[i]["starts_at"] > projected[i + 1]["starts_at"] for i in range(len(projected) - 1)):
+                    raise BotServiceTransportError("Internal BotService returned an invalid response")
+                result = projected
+
         return result
 
     def health_snapshot(self):
@@ -733,6 +781,16 @@ class SignedHttpBotService(BotService):
         if not self._valid_guild_id(guild_id):
             raise ValueError("Invalid guild ID")
         return self._dispatch_snapshot("dashboard_config_snapshot", (guild_id,))
+
+    def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50):
+        if not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        if not isinstance(now, datetime.datetime) or now.tzinfo is None:
+            raise ValueError("Calendar snapshot time must be timezone-aware")
+        if type(limit) is not int or not 1 <= limit <= 50:
+            raise ValueError("Invalid calendar snapshot limit")
+        timestamp = now.astimezone(datetime.timezone.utc).isoformat()
+        return self._dispatch_snapshot("dashboard_calendar_upcoming_events", (guild_id, timestamp, limit))
 
     def api_authenticate_key(self, provided_key: str, guild_id: str = None):
         if not isinstance(provided_key, str) or not provided_key.isascii() or not 1 <= len(provided_key) <= 512:
