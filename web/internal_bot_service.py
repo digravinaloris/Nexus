@@ -148,7 +148,6 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
-        elif method_name in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case"}:
             if len(args) != 2 or not valid_guild_id(args[0]) or type(args[1]) is not int or not 1 <= args[1] <= (2**63 - 1):                return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_resolve_appeal_by_case":
@@ -298,7 +297,6 @@ def create_internal_bot_service_blueprint(
                 )
             ):
                 return jsonify({"error": "unsupported internal operation"}), 403
-            operation_args = args            if len(args) == 2 and type(args[1]) is int:
                 operation_args = [args[0], str(args[1])]
             operations[method_name] = (
                 getattr(service, method_name, None),
@@ -448,7 +446,6 @@ def create_internal_bot_service_blueprint(
                             "timezone": item["timezone"],
                             "time_set": item["time_set"],
                         })                    if any(
-                        projected[i]["starts_at"] > projected[i + 1]["starts_at"]
                         for i in range(len(projected) - 1)
                     ):
                         return jsonify({"error": "internal service unavailable"}), 503
@@ -598,7 +595,6 @@ def create_internal_bot_service_blueprint(
                     and valid_guild_id(item["id"])
                     and isinstance(item["name"], str)
                     and 1 <= len(item["name"]) <= 100
-                    for item in result
                 )
             ):
                 return jsonify({"error": "internal service unavailable"}), 503
@@ -748,7 +744,6 @@ def create_internal_bot_service_blueprint(
                         and isinstance(member.get("avatar_url"), str)
                         and len(member["avatar_url"]) <= 2048
                         and member["avatar_url"].startswith("https://cdn.discordapp.com/")
-                        and isinstance(member.get("is_muted"), bool)
                         for member in result
                     )
                 ):
