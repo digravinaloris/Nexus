@@ -95,6 +95,7 @@ def mock_internal_bot_service():
             "spike-dashboard-sanction-stats-malformed",
             "spike-dashboard-overview-malformed",
             "spike-audit-malformed",
+            "spike-sanction-cases-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -282,6 +283,19 @@ def mock_internal_bot_service():
         if key_id == "spike-dashboard-sanction-types-duplicate":
             return jsonify({"ok": True, "result": ["ban", "ban"]})
         return jsonify({"ok": True, "result": results[method]})
+    if method == "api_sanction_cases_snapshot" and args == ["123", "ban", 10]:
+        cases = [{
+            "case_id": 7,
+            "type": "ban",
+            "timestamp": "2026-11-28T09:30:00Z",
+            "user_id": "123456789012345678",
+            "reason": "spam",
+        }]
+        if key_id == "spike-sanction-cases-malformed":
+            malformed = dict(cases[0])
+            malformed["user_id"] = "not-decimal"
+            return jsonify({"ok": True, "result": [malformed]})
+        return jsonify({"ok": True, "result": cases})
     if method == "api_audit_snapshot" and args == ["123", 10]:
         if key_id == "spike-audit-malformed":
             malformed = dict(results[method][0])
@@ -461,6 +475,15 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.dashboard_sanction_types_snapshot("123")
         elif method == "dashboard_sanction_types_snapshot_invalid_args":
             try: client.dashboard_sanction_types_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "api_sanction_cases_snapshot":
+            result = client.api_sanction_cases_snapshot("123", "ban", limit=10)
+        elif method == "api_sanction_cases_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-sanction-cases-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.api_sanction_cases_snapshot("123", "ban", limit=10)
+        elif method == "api_sanction_cases_snapshot_invalid_args":
+            try: client.api_sanction_cases_snapshot("not-decimal", "ban", limit=10)
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "api_audit_snapshot":
