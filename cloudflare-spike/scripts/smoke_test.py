@@ -82,7 +82,7 @@ def main():
         f"D1 session constructor accepted invalid configuration: {session_config}",
     )
     require(
-        len(session_config.get("checks", {})) == 12
+        len(session_config.get("checks", {})) == 18
         and all(session_config["checks"].values()),
         f"D1 session configuration validation coverage is incomplete: {session_config}",
     )

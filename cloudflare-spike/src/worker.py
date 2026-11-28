@@ -78,6 +78,25 @@ def validate_session_configuration():
         checks["valid_defaults"] = True
     except (TypeError, ValueError):
         checks["valid_defaults"] = False
+    key_checks = {}
+    key_probe = D1SessionInterface(**valid)
+    for name, getter in (
+        ("short_key", lambda _version: b"x" * 31),
+        ("long_key", lambda _version: b"x" * 33),
+        ("string_key", lambda _version: "x" * 32),
+        ("bytearray_key", lambda _version: bytearray(b"x" * 32)),
+        ("valid_key", lambda _version: b"x" * 32),
+        ("invalid_version", lambda _version: b"x" * 32),
+    ):
+        probe = D1SessionInterface(**{**valid, "key_getter": getter})
+        try:
+            version = 0 if name == "invalid_version" else 2
+            probe._key_for_version(version)
+        except (TypeError, ValueError):
+            key_checks[name] = name != "valid_key"
+        else:
+            key_checks[name] = name == "valid_key"
+    checks.update({f"key_{name}": passed for name, passed in key_checks.items()})
     return jsonify({"all_passed": all(checks.values()), "checks": checks})
 
 

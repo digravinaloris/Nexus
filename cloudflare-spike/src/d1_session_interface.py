@@ -119,6 +119,14 @@ class D1SessionInterface(SessionInterface):
             expires_at=now + self.absolute_timeout,
         )
 
+    def _key_for_version(self, key_version):
+        if type(key_version) is not int or not 1 <= key_version <= 2_147_483_647:
+            raise ValueError("key_version must be a positive 32-bit integer")
+        raw_key = self._key_getter(key_version)
+        if type(raw_key) is not bytes or len(raw_key) != 32:
+            raise ValueError("session encryption key must be exactly 32 bytes")
+        return raw_key
+
     def _encrypt(self, sid, payload):
         session_hash = self._digest(sid)
         key_version = self.active_key_version
@@ -129,7 +137,7 @@ class D1SessionInterface(SessionInterface):
         if len(plaintext) > _MAX_SESSION_BYTES:
             raise ValueError("session payload exceeds the configured limit")
         ciphertext = aes_gcm_encrypt(
-            self._key_getter(key_version),
+            self._key_for_version(key_version),
             nonce,
             plaintext,
             self._aad(session_hash, key_version),
@@ -170,7 +178,7 @@ class D1SessionInterface(SessionInterface):
 
         try:
             key_version = int(self._row_value(row, "key_version"))
-            key = self._key_getter(key_version)
+            key = self._key_for_version(key_version)
         except Exception:
             return self._new_session(unavailable=True)
 
