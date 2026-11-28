@@ -873,6 +873,12 @@ def main():
         status == 503 and invalid_audit.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch accepted malformed audit data: {invalid_audit}",
     )
+    status, oversized_audit = call("/__spike/fetch-client/api_audit_snapshot_oversized", "POST", {})
+    require(
+        status == 503
+        and oversized_audit.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted an oversized audit snapshot: {oversized_audit}",
+    )
     status, invalid_audit_args = call("/__spike/fetch-client/api_audit_snapshot_invalid_args", "POST", {})
     require(
         status == 200 and invalid_audit_args.get("result") == {"rejected": True},
