@@ -1,6 +1,6 @@
 # Cloudflare route-to-service inventory (2026-11-28)
 
-Audit baseline: `main` after PR #367 (merge commit `15990f2691db9ad0a2a5e521b5e41aaaa772089a`).
+Audit baseline: `main` after PR #368 and PR #373 (commit `327c553d50f6a8f7d8272610792a9fbe45a074d5`).
 
 This is a source-level inventory of the six Flask route modules and the current service/transport declarations. It is not a cutover-readiness certification. Counts describe method names found in the current source, not proven behavioral parity.
 
@@ -127,7 +127,7 @@ This is a method-name comparison, not a cutover-readiness metric. Mutations and 
 
 ## Scope and reproducibility
 
-This inventory was refreshed from current `main` at merge commit `55a8e916715cb63a23ad03fb70a9344f1d66a163`, reviewing:
+The method inventory was last refreshed at merge commit `55a8e916715cb63a23ad03fb70a9344f1d66a163`; the audit baseline above has since advanced to current `main`. PRs #368-#373 changed documentation and OAuth/session lifecycle handling, not the BotService method surface. Counts below therefore remain the previously scanned source-level counts, not a fresh route-parity scan. Reviewed:
 - Route call sites: `web/dashboard.py`, `web/public.py`, `web/verify.py`, `web/rest_api.py`, `web/auth.py`, `web/github_webhook.py`.
 - Interface and implementation declarations: `web/bot_service.py`, `web/in_process_bot_service.py`, `web/http_bot_service.py`, `web/internal_bot_service.py`.
 - Worker transport declarations: `cloudflare-spike/src/bot_service_client.py`.
@@ -136,4 +136,4 @@ The inventory should be regenerated after route or BotService contract changes. 
 
 ## Follow-up checkpoint (PR #367)
 
-PR #367 strengthens the disposable Worker Flask/D1 session smoke test with explicit cookie policy assertions: expected cookie name, `SameSite=Lax`, host-only scope (no `Domain`), and the intentional local HTTP-only `Secure` setting. These assertions are test-only and do not alter production OAuth/session configuration. Production server-side OAuth session migration remains a blocker before Worker identity routes can be cut over.
+PR #367 strengthens the disposable Worker Flask/D1 session smoke test with explicit cookie policy assertions: expected cookie name, `SameSite=Lax`, host-only scope (no `Domain`), and the intentional local HTTP-only `Secure` setting. PR #368 records that checkpoint in this inventory. PRs #372-#373 harden production OAuth failure cleanup and its regression coverage, but do not wire the D1 prototype into production. These changes do not alter the production cookie format. Production server-side OAuth session migration remains a blocker before Worker identity routes can be cut over.
