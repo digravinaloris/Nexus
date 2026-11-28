@@ -309,6 +309,26 @@ class CloudflareFetchBotService:
                 raise CloudflareBotServiceError(
                     "Internal BotService returned invalid FAQ snapshot"
                 )
+        if method == "dashboard_config_snapshot":
+            allowed = {"guild_id", "logs_channel", "autorole", "language", "tickets_enabled", "ticket_category_id", "appeal_channel_id", "boost_channel_id", "member_count_channel_id", "welcome_channel_id", "welcome_banner_enabled", "verification_enabled", "verified_role_id", "unverified_role_id", "quarantine_enabled", "quarantine_role_id", "quarantine_channel_id", "trap_channel_enabled", "trap_channel_id", "jtc_channel_id", "detailed_logs_enabled", "antinuke_enabled", "weekly_digest_enabled", "log_dashboard_actions", "anti_link_global_enabled", "anti_mention_spam_enabled", "anti_media_flood_enabled", "auto_slowmode_enabled", "anti_doxx_enabled", "raid_pattern_alert_enabled", "auto_translate_enabled", "remindme_enabled", "serverinfo_visual_enabled", "automod_spam_count", "automod_spam_window", "automod_caps_ratio", "automod_raid_count", "automod_raid_window", "mention_spam_threshold", "media_flood_count", "media_flood_window", "auto_slowmode_threshold", "auto_slowmode_window", "auto_slowmode_seconds", "auto_slowmode_duration_minutes", "warn_escalation_enabled", "warn_mute_threshold", "warn_mute_minutes", "warn_kick_threshold", "min_account_age_days", "antinuke_threshold", "quarantine_suspicion_days", "quarantine_hold_minutes", "banned_words", "banned_domains", "calendar_timezone", "calendar_channel_id", "calendar_manager_role_ids", "command_roles", "command_templates"}
+            forbidden = ("secret", "token", "webhook", "api_key", "password", "cookie", "credential")
+            def safe_value(value, depth=0):
+                if depth > 6: return False
+                if value is None or type(value) in {bool, int, float, str}: return not (isinstance(value, str) and len(value) > 4096)
+                if isinstance(value, list): return len(value) <= 1000 and all(safe_value(v, depth + 1) for v in value)
+                if isinstance(value, dict): return len(value) <= 100 and all(isinstance(k, str) and len(k) <= 100 and not any(x in k.lower() for x in forbidden) and safe_value(v, depth + 1) for k, v in value.items())
+                return False
+            def valid_mapping(value, role_ids=False):
+                return isinstance(value, dict) and len(value) <= 100 and all(isinstance(k, str) and 0 < len(k) <= 100 and isinstance(v, list) and len(v) <= 100 and all((isinstance(x, str) and len(x) <= 100) or (role_ids and type(x) is int and 0 < x < 2**64) for x in v) for k, v in value.items())
+            lists = {"banned_words", "banned_domains", "calendar_manager_role_ids"}
+            scalars = allowed - lists - {"guild_id", "command_roles", "command_templates"}
+            if (not isinstance(result, dict) or not set(result).issubset(allowed) or result.get("guild_id") != args[0]
+                or any(not isinstance(result[k], list) or len(result[k]) > 1000 or not all(isinstance(v, str) and len(v) <= 253 for v in result[k]) for k in lists if k in result)
+                or ("command_roles" in result and not valid_mapping(result["command_roles"], True))
+                or ("command_templates" in result and not valid_mapping(result["command_templates"]))
+                or any(v is not None and type(v) not in {bool, int, float, str} for k, v in result.items() if k in scalars)
+                or not safe_value(result) or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True)) > 65536):
+                raise CloudflareBotServiceError("Internal BotService returned an invalid dashboard config snapshot")
         if method == "api_rest_config_snapshot":
             allowed_fields = {
                 "guild_id", "logs_channel", "autorole", "allowed_roles",
@@ -455,3 +475,6 @@ class CloudflareFetchBotService:
 
     def api_rest_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("api_rest_config_snapshot", [guild_id], dict)
+
+    def dashboard_config_snapshot(self, guild_id: str) -> dict:
+        return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
