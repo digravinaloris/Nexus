@@ -109,19 +109,12 @@ def require_api_key(f):
             g.auth_guild_id = None
             return _invoke_authorized(f, args, kwargs)
         guild_id = kwargs.get("guild_id")
-        if guild_id:
-            cfg = get_bot_service().api_config_snapshot(guild_id)
-            if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
-                g.auth_guild_id = str(guild_id)
-                return _invoke_authorized(f, args, kwargs)
-        else:
-            # API endpoints without a guild ID resolve a per-guild key using
-            # serializable service snapshots, never Discord objects in this route.
-            for candidate_guild_id in get_bot_service().api_guild_id_candidates():
-                cfg = get_bot_service().api_config_snapshot(candidate_guild_id)
-                if cfg.get("api_key") and _api_key_matches(key, cfg["api_key"]):
-                    g.auth_guild_id = candidate_guild_id
-                    return _invoke_authorized(f, args, kwargs)
+        # Per-guild API keys are verified inside the bot service. The secret is
+        # never returned as config data to the Worker or route layer.
+        matched_guild_id = get_bot_service().api_authenticate_key(key, str(guild_id) if guild_id else None)
+        if matched_guild_id:
+            g.auth_guild_id = matched_guild_id
+            return _invoke_authorized(f, args, kwargs)
         return jsonify({"error": "Unauthorized"}), 401
     return wrapper
 
