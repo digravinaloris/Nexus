@@ -93,8 +93,13 @@ def dash_login_required(f):
             or not math.isfinite(expires_at)
             or time.time() >= expires_at
         ):
-            _session_backend_action("revoke_session")
-            session.clear()
+            try:
+                _session_backend_action("revoke_session")
+            except Exception:
+                # Credentials must not survive a failed backend revocation.
+                pass
+            finally:
+                session.clear()
             return redirect(url_for("dash_login"))
         return f(*args, **kwargs)
     return wrapper
@@ -121,8 +126,13 @@ def get_user_admin_guilds():
         return None
 
     if response.status_code == 401:
-        _session_backend_action("revoke_session")
-        session.clear()
+        try:
+            _session_backend_action("revoke_session")
+        except Exception:
+            # A backend outage must not keep an invalid token in the session.
+            pass
+        finally:
+            session.clear()
         return None
     if response.status_code != 200:
         return None
