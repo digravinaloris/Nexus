@@ -102,6 +102,8 @@ def mock_internal_bot_service():
             "spike-sanction-cases-malformed",
             "spike-member-warnings-malformed",
             "spike-member-warnings-out-of-range",
+            "spike-health-malformed",
+            "spike-public-status-malformed",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -151,7 +153,7 @@ def mock_internal_bot_service():
         return jsonify({"error": "unsupported operation"}), 403
 
     results = {
-        "health_snapshot": {"status": "alive", "guild_count": 12},
+        "health_snapshot": {"status": "alive", "discord_gateway": "connected", "mongodb": "connected", "guild_count": 12},
         "public_global_lock_state": False,
         "public_status_snapshot": {
             "online": True,
@@ -297,6 +299,14 @@ def mock_internal_bot_service():
     }
     method = payload.get("method")
     args = payload["args"]
+    if method == "health_snapshot" and args == [] and key_id == "spike-health-malformed":
+        malformed = dict(results["health_snapshot"])
+        malformed["guild_count"] = True
+        return jsonify({"ok": True, "result": malformed})
+    if method == "public_status_snapshot" and args == [] and key_id == "spike-public-status-malformed":
+        malformed = dict(results["public_status_snapshot"])
+        malformed["latency_ms"] = False
+        return jsonify({"ok": True, "result": malformed})
     if isinstance(method, str) and method in results and args == [] and method != "dashboard_public_templates_snapshot":
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_health_snapshot" and args == ["123"]:
@@ -487,8 +497,14 @@ def exercise_fetch_bot_service_client(method):
         )
         if method == "health_snapshot":
             result = client.health_snapshot()
+        elif method == "health_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-health-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.health_snapshot()
         elif method == "public_status_snapshot":
             result = client.public_status_snapshot()
+        elif method == "public_status_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-public-status-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.public_status_snapshot()
         elif method == "public_global_lock_state":
             result = client.public_global_lock_state()
         elif method == "is_guild_owner":
