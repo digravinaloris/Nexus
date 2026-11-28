@@ -828,6 +828,35 @@ def main():
         f"Workers Fetch accepted invalid sanction case arguments: {invalid_sanction_case_args}",
     )
 
+    status, member_warnings = call("/__spike/fetch-client/api_member_warnings", "POST", {})
+    require(
+        status == 200 and member_warnings.get("result") == 2,
+        f"Signed member warning count failed: {member_warnings}",
+    )
+    status, malformed_member_warnings = call(
+        "/__spike/fetch-client/api_member_warnings_invalid", "POST", {}
+    )
+    require(
+        status == 503
+        and malformed_member_warnings.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted a non-integer member warning count: {malformed_member_warnings}",
+    )
+    status, out_of_range_member_warnings = call(
+        "/__spike/fetch-client/api_member_warnings_out_of_range", "POST", {}
+    )
+    require(
+        status == 503
+        and out_of_range_member_warnings.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted an out-of-range member warning count: {out_of_range_member_warnings}",
+    )
+    status, invalid_member_warning_args = call(
+        "/__spike/fetch-client/api_member_warnings_invalid_args", "POST", {}
+    )
+    require(
+        status == 200 and invalid_member_warning_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid member warning arguments: {invalid_member_warning_args}",
+    )
+
     status, fetch_audit = call("/__spike/fetch-client/api_audit_snapshot", "POST", {})
     require(
         status == 200
