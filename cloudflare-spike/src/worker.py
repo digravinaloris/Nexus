@@ -371,6 +371,10 @@ def mock_internal_bot_service():
             }]
             return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_presence_viewers" and args == ["123"]:
+        if key_id == "spike-presence-viewers-malformed":
+            return jsonify({"ok": True, "result": ["Loris", "x" * 101]})
+        return jsonify({"ok": True, "result": ["Loris", "Alex"]})
     if method == "dashboard_roles_snapshot" and args == ["123"]:
         if key_id == "spike-dashboard-roles-malformed":
             return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "Moderator"}]})
@@ -628,6 +632,15 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.dashboard_overview_snapshot("123", "789")
         elif method == "dashboard_overview_snapshot_invalid_args":
             try: client.dashboard_overview_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "dashboard_presence_viewers":
+            result = client.dashboard_presence_viewers("123")
+        elif method == "dashboard_presence_viewers_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-presence-viewers-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_presence_viewers("123")
+        elif method == "dashboard_presence_viewers_invalid_args":
+            try: client.dashboard_presence_viewers("not-decimal")
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "dashboard_roles_snapshot":
