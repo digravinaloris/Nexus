@@ -327,6 +327,11 @@ def dash_logout():
         or not secrets.compare_digest(token, expected)
     ):
         return jsonify({"error": "Invalid CSRF token"}), 403
-    _session_backend_action("revoke_session")
+    try:
+        _session_backend_action("revoke_session")
+    except Exception:
+        # Never leave credentials in a session after logout invalidation fails.
+        session.clear()
+        return jsonify({"error": "Unable to revoke session. Please retry."}), 503
     session.clear()
     return redirect(url_for("dash_login"))
