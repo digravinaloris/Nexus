@@ -575,6 +575,20 @@ def test_signed_dispatch_rejects_malformed_dashboard_sanction_stats_series():
     assert response.get_json() == {"error": "internal service unavailable"}
 
 
+def test_signed_dispatch_allows_dashboard_sanction_types_snapshot_and_rejects_bad_values():
+    client, service = _client()
+    service.dashboard_sanction_types_snapshot = lambda guild_id: ["ban", "kick", "soft_ban"]
+    body = _request_body({"method": "dashboard_sanction_types_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": ["ban", "kick", "soft_ban"]}
+
+    service.dashboard_sanction_types_snapshot = lambda guild_id: ["ban", "not valid"]
+    body = _request_body({"method": "dashboard_sanction_types_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body, nonce="s" * 24))
+    assert response.status_code == 503
+
+
 def test_signed_dispatch_allows_dashboard_roles_snapshot_and_rejects_bad_dto():
     dto = [
         {"id": "123", "name": "@everyone"},

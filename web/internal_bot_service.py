@@ -148,6 +148,10 @@ def create_internal_bot_service_blueprint(
                 or type(args[1]) is not int or not 1 <= args[1] <= 30):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_sanction_types_snapshot":
+            if len(args) != 1 or not valid_guild_id(args[0]):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_roles_snapshot":
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -260,6 +264,12 @@ def create_internal_bot_service_blueprint(
                     or len({item[0] for item in result}) != len(result)):
                     return jsonify({"error": "internal service unavailable"}), 503
                 result = [{"label": label, "count": count} for label, count in result]
+            if method_name == "dashboard_sanction_types_snapshot" and (
+                not isinstance(result, list) or len(result) > 50
+                or not all(isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,31}", value) for value in result)
+                or len(set(result)) != len(result)
+            ):
+                return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "dashboard_roles_snapshot" and result is not None and (
                 not isinstance(result, list)
                 or len(result) > 500
