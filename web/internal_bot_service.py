@@ -130,6 +130,7 @@ def create_internal_bot_service_blueprint(
         operations = {
             "health_snapshot": (getattr(service, "health_snapshot", None), []),
             "public_status_snapshot": (getattr(service, "public_status_snapshot", None), []),
+            "public_global_lock_state": (getattr(service, "public_global_lock_state", None), []),
         }
 
         def valid_guild_id(value):
@@ -336,7 +337,7 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
-            if method_name == "dashboard_calendar_has_duplicate_event" and type(result) is not bool:
+            if method_name in {"dashboard_calendar_has_duplicate_event", "public_global_lock_state"} and type(result) is not bool:
                 return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "dashboard_public_templates_snapshot":
                 required = {"code", "name", "created_guild_name", "created_at", "feature_toggle_count", "command_role_count"}
