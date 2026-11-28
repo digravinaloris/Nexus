@@ -437,6 +437,30 @@ def main():
         status == 200 and invalid_faq_args.get("result") == {"rejected": True},
         f"Workers Fetch client accepted invalid FAQ arguments: {invalid_faq_args}",
     )
+    status, fetch_config = call("/__spike/fetch-client/api_rest_config_snapshot", "POST", {})
+    expected_config = {
+        "guild_id": "123",
+        "language": "en",
+        "tickets_enabled": True,
+        "welcome_banner_enabled": False,
+        "command_roles": {"ban": ["321"]},
+    }
+    require(
+        status == 200 and fetch_config.get("result") == expected_config,
+        f"Signed REST config snapshot failed: {fetch_config}",
+    )
+    status, invalid_config = call("/__spike/fetch-client/api_rest_config_snapshot_invalid", "POST", {})
+    require(
+        status == 503
+        and invalid_config.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted an unreviewed REST config field: {invalid_config}",
+    )
+    status, invalid_config_args = call("/__spike/fetch-client/api_rest_config_snapshot_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_config_args.get("result") == {"rejected": True},
+        f"Workers Fetch client accepted invalid REST config arguments: {invalid_config_args}",
+    )
+
     status, fetch_members = call(
         "/__spike/fetch-client/api_members_snapshot", "POST", {}
     )
