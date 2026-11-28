@@ -30,6 +30,69 @@ _NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{24,128}$")
 class CloudflareBotServiceError(RuntimeError):
     """Raised when a signed Worker-to-BotService request fails closed."""
 
+def _valid_public_template_detail(item):
+    required = {"code", "name", "created_guild_name", "created_at", "snapshot"}
+    if (
+        not isinstance(item, dict) or set(item) != required
+        or not isinstance(item["code"], str)
+        or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", item["code"]) is None
+        or not isinstance(item["name"], str) or not 1 <= len(item["name"]) <= 100
+        or not isinstance(item["created_guild_name"], str)
+        or not 1 <= len(item["created_guild_name"]) <= 100
+        or not isinstance(item["created_at"], str)
+    ):
+        return False
+    try:
+        stamp = datetime.datetime.fromisoformat(item["created_at"].replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if stamp.tzinfo is None or stamp.utcoffset() != datetime.timedelta(0):
+        return False
+    snapshot = item["snapshot"]
+    expected = {"feature_toggles", "automod", "warn_escalation_enabled", "command_roles_by_name"}
+    if not isinstance(snapshot, dict) or set(snapshot) != expected or type(snapshot["warn_escalation_enabled"]) is not bool:
+        return False
+    features = snapshot["feature_toggles"]
+    if (
+        not isinstance(features, dict) or len(features) > 100
+        or any(not isinstance(k, str) or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", k) is None or type(v) is not bool for k, v in features.items())
+    ):
+        return False
+    bounds = {
+        "automod_spam_count": (1, 1000), "automod_spam_window": (1, 3600),
+        "automod_caps_ratio": (0.1, 1), "automod_raid_count": (2, 1000),
+        "automod_raid_window": (2, 3600),
+    }
+    automod = snapshot["automod"]
+    if not isinstance(automod, dict) or not set(automod).issubset({"banned_words", "banned_domains", *bounds.keys()}):
+        return False
+    for key, value in automod.items():
+        if key in {"banned_words", "banned_domains"}:
+            if value is not None and (
+                not isinstance(value, list) or len(value) > 200
+                or any(not isinstance(entry, str) or len(entry) > 100 for entry in value)
+            ):
+                return False
+        elif value is not None and (
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or not bounds[key][0] <= value <= bounds[key][1]
+        ):
+            return False
+    roles = snapshot["command_roles_by_name"]
+    if not isinstance(roles, dict) or len(roles) > 100:
+        return False
+    for command, names in roles.items():
+        if (
+            not isinstance(command, str) or re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", command) is None
+            or not isinstance(names, list) or len(names) > 50
+            or any(not isinstance(name, str) or not 1 <= len(name) <= 100 for name in names)
+        ):
+            return False
+    try:
+        return len(json.dumps(item, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) <= 40 * 1024
+    except (TypeError, ValueError):
+        return False
+
 
 def _read_bounded_response(response) -> bytes:
     content_length = response.headers.get("content-length")
@@ -161,6 +224,13 @@ class CloudflareFetchBotService:
         elif method == "dashboard_public_templates_snapshot":
             if expected_type is not list or args != []:
                 raise ValueError("Invalid public template snapshot arguments")
+        elif method == "dashboard_template_snapshot":
+            if (
+                expected_type != (dict, type(None)) or len(args) != 1
+                or not isinstance(args[0], str)
+                or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", args[0]) is None
+            ):
+                raise ValueError("Invalid public template detail arguments")
         elif method == "dashboard_presence_viewers":
             if expected_type is not list or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid dashboard presence viewer arguments")
@@ -421,6 +491,8 @@ class CloudflareFetchBotService:
             or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 8 * 1024
         ):
             raise CloudflareBotServiceError("Internal BotService returned invalid dashboard presence viewers")
+        if method == "dashboard_template_snapshot" and result is not None and not _valid_public_template_detail(result):
+            raise CloudflareBotServiceError("Internal BotService returned invalid public template detail")
         if method == "dashboard_public_templates_snapshot":
             required = {"code", "name", "created_guild_name", "created_at", "feature_toggle_count", "command_role_count"}
             def valid_public_template(item):
@@ -900,6 +972,11 @@ class CloudflareFetchBotService:
 
     def dashboard_public_templates_snapshot(self) -> list:
         return self._dispatch("dashboard_public_templates_snapshot", [], list)
+
+    def dashboard_template_snapshot(self, code: str) -> dict | None:
+        if not isinstance(code, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", code) is None:
+            raise ValueError("Invalid public template code")
+        return self._dispatch("dashboard_template_snapshot", [code], (dict, type(None)))
 
 
     def dashboard_presence_viewers(self, guild_id: str) -> list:
