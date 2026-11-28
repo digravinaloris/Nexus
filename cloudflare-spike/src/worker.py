@@ -110,6 +110,7 @@ def mock_internal_bot_service():
             "spike-api-health-malformed",
             "spike-channels-malformed",
             "spike-roles-malformed",
+            "spike-dashboard-calendar-duplicate",
         }
         or not re.fullmatch(r"0|[1-9][0-9]{0,11}", timestamp_text)
         or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
@@ -412,6 +413,9 @@ def mock_internal_bot_service():
             malformed = dict(results[method][0])
             malformed["role_id"] = "not-decimal"
             return jsonify({"ok": True, "result": [malformed]})
+        if key_id == "spike-dashboard-calendar-duplicate":
+            duplicate = dict(results[method][0])
+            return jsonify({"ok": True, "result": [duplicate, duplicate]})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_overview_snapshot" and args in (["123"], ["123", "789"]):
         if key_id == "spike-dashboard-overview-malformed":
@@ -739,6 +743,10 @@ def exercise_fetch_bot_service_client(method):
             result = client.dashboard_calendar_upcoming_events("123", datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc), limit=10)
         elif method == "dashboard_calendar_upcoming_events_invalid":
             invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-calendar-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            from datetime import datetime, timezone
+            invalid_client.dashboard_calendar_upcoming_events("123", datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc), limit=10)
+        elif method == "dashboard_calendar_upcoming_events_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-calendar-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
             from datetime import datetime, timezone
             invalid_client.dashboard_calendar_upcoming_events("123", datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc), limit=10)
         elif method == "dashboard_calendar_upcoming_events_invalid_args":
