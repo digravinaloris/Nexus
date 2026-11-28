@@ -1226,6 +1226,14 @@ def main():
         and invalid_members.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch client accepted malformed members: {invalid_members}",
     )
+    status, duplicate_members = call(
+        "/__spike/fetch-client/api_members_snapshot_duplicate", "POST", {}
+    )
+    require(
+        status == 503
+        and duplicate_members.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted duplicate member IDs: {duplicate_members}",
+    )
     status, invalid_members_args = call(
         "/__spike/fetch-client/api_members_snapshot_invalid_args", "POST", {}
     )
