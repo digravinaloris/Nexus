@@ -1068,6 +1068,12 @@ def main():
         status == 503 and invalid_dashboard_overview.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch accepted malformed dashboard overview: {invalid_dashboard_overview}",
     )
+    status, mismatched_dashboard_role_names = call("/__spike/fetch-client/dashboard_overview_snapshot_role_name_mismatch", "POST", {})
+    require(
+        status == 503
+        and mismatched_dashboard_role_names.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted inconsistent dashboard role names: {mismatched_dashboard_role_names}",
+    )
     status, oversized_dashboard_overview = call("/__spike/fetch-client/dashboard_overview_snapshot_oversized", "POST", {})
     require(
         status == 503 and oversized_dashboard_overview.get("error") == "local Worker Fetch transport unavailable",

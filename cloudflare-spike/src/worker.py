@@ -102,6 +102,7 @@ def mock_internal_bot_service():
             "spike-members-duplicate",
             "spike-dashboard-sanction-stats-malformed",
             "spike-dashboard-overview-malformed",
+            "spike-dashboard-overview-role-name-mismatch",
             "spike-dashboard-overview-oversized",
             "spike-public-templates-malformed",
             "spike-public-templates-duplicate",
@@ -449,6 +450,10 @@ def mock_internal_bot_service():
                 "name": "Moderator",
                 "permissions": {"administrator": "yes"},
             }]
+            return jsonify({"ok": True, "result": malformed})
+        if key_id == "spike-dashboard-overview-role-name-mismatch":
+            malformed = dict(results[method])
+            malformed["role_names"] = dict(malformed["role_names"], **{"321": "Forged role name"})
             return jsonify({"ok": True, "result": malformed})
         if key_id == "spike-dashboard-overview-oversized":
             oversized = dict(results[method])
@@ -812,6 +817,9 @@ def exercise_fetch_bot_service_client(method):
             result = client.dashboard_overview_snapshot("123", "789")
         elif method == "dashboard_overview_snapshot_invalid":
             invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-overview-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_overview_snapshot("123", "789")
+        elif method == "dashboard_overview_snapshot_role_name_mismatch":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-overview-role-name-mismatch", secret=_test_bot_service_secret(), allow_local_http=True)
             invalid_client.dashboard_overview_snapshot("123", "789")
         elif method == "dashboard_overview_snapshot_oversized":
             invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-overview-oversized", secret=_test_bot_service_secret(), allow_local_http=True)
