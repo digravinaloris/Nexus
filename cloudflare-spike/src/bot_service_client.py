@@ -161,6 +161,9 @@ class CloudflareFetchBotService:
         elif method == "dashboard_public_templates_snapshot":
             if expected_type is not list or args != []:
                 raise ValueError("Invalid public template snapshot arguments")
+        elif method == "dashboard_presence_viewers":
+            if expected_type is not list or len(args) != 1 or not valid_id(args[0]):
+                raise ValueError("Invalid dashboard presence viewer arguments")
         elif method in {"dashboard_roles_snapshot", "dashboard_settings_snapshot"}:
             expected = (list, type(None)) if method == "dashboard_roles_snapshot" else (dict, type(None))
             if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
@@ -409,6 +412,15 @@ class CloudflareFetchBotService:
                 raise CloudflareBotServiceError(
                     "Internal BotService returned invalid FAQ snapshot"
                 )
+        if method == "dashboard_presence_viewers" and (
+            len(result) > 50
+            or not all(
+                isinstance(name, str) and 1 <= len(name.strip()) <= 100
+                for name in result
+            )
+            or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 8 * 1024
+        ):
+            raise CloudflareBotServiceError("Internal BotService returned invalid dashboard presence viewers")
         if method == "dashboard_public_templates_snapshot":
             required = {"code", "name", "created_guild_name", "created_at", "feature_toggle_count", "command_role_count"}
             def valid_public_template(item):
@@ -888,6 +900,12 @@ class CloudflareFetchBotService:
 
     def dashboard_public_templates_snapshot(self) -> list:
         return self._dispatch("dashboard_public_templates_snapshot", [], list)
+
+
+    def dashboard_presence_viewers(self, guild_id: str) -> list:
+        if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
+            raise ValueError("Invalid guild ID")
+        return self._dispatch("dashboard_presence_viewers", [guild_id], list)
 
     def dashboard_submitted_appeals_snapshot(self, guild_id: str, limit: int = 100) -> list:
         if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
