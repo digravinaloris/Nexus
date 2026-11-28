@@ -545,6 +545,36 @@ def test_signed_dispatch_rejects_malformed_dashboard_settings_snapshot():
 
 
 
+@pytest.mark.parametrize("days", [0, 31, -1, "2", 2.0, True, False])
+def test_signed_dispatch_rejects_invalid_dashboard_sanction_stats_arguments(days):
+    client, service = _client()
+    body = _request_body({"method": "dashboard_sanction_stats_snapshot", "args": ["123", days], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_serializes_dashboard_sanction_stats_as_validated_dto():
+    client, service = _client()
+    service.dashboard_sanction_stats_snapshot = lambda guild_id, days: [("01/11", 0), ("02/11", 3)]
+    body = _request_body({"method": "dashboard_sanction_stats_snapshot", "args": ["123", 2], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": [
+        {"label": "01/11", "count": 0}, {"label": "02/11", "count": 3}
+    ]}
+    assert service.calls == []
+
+
+def test_signed_dispatch_rejects_malformed_dashboard_sanction_stats_series():
+    client, service = _client()
+    service.dashboard_sanction_stats_snapshot = lambda guild_id, days: [("31/02", 1), ("02/11", 3)]
+    body = _request_body({"method": "dashboard_sanction_stats_snapshot", "args": ["123", 2], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
+
+
 def test_signed_dispatch_allows_dashboard_roles_snapshot_and_rejects_bad_dto():
     dto = [
         {"id": "123", "name": "@everyone"},

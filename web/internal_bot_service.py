@@ -143,6 +143,11 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_sanction_stats_snapshot":
+            if (len(args) != 2 or not valid_guild_id(args[0])
+                or type(args[1]) is not int or not 1 <= args[1] <= 30):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_roles_snapshot":
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -237,6 +242,24 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name == "dashboard_sanction_stats_snapshot":
+                def valid_sanction_label(label):
+                    if not isinstance(label, str) or re.fullmatch(r"[0-3][0-9]/[0-1][0-9]", label) is None:
+                        return False
+                    try:
+                        datetime.strptime(label + "/2000", "%d/%m/%Y")
+                        return True
+                    except ValueError:
+                        return False
+                days = operation_args[1]
+                if (not isinstance(result, list) or len(result) != days
+                    or not all(isinstance(item, (tuple, list)) and len(item) == 2
+                        and valid_sanction_label(item[0])
+                        and type(item[1]) is int and 0 <= item[1] <= 100000
+                        for item in result)
+                    or len({item[0] for item in result}) != len(result)):
+                    return jsonify({"error": "internal service unavailable"}), 503
+                result = [{"label": label, "count": count} for label, count in result]
             if method_name == "dashboard_roles_snapshot" and result is not None and (
                 not isinstance(result, list)
                 or len(result) > 500
