@@ -678,6 +678,30 @@ def test_dashboard_sanction_types_snapshot_dispatch_and_validates_bounded_values
             _client(bad_session).dashboard_sanction_types_snapshot("345678901234567890")
 
 
+def test_api_sanction_cases_snapshot_dispatches_and_validates_dto():
+    dto = [{"case_id": 7, "type": "ban", "timestamp": "2026-11-28T09:30:00Z", "user_id": "123456789012345678", "reason": "test"}]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    client = _client(session)
+    result = client.api_sanction_cases_snapshot("345678901234567890", "ban", 10)
+    assert result[0]["timestamp"].isoformat() == "2026-11-28T09:30:00+00:00"
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload["method"] == "api_sanction_cases_snapshot"
+    assert payload["args"] == ["345678901234567890", "ban", 10]
+
+    malformed = [dict(dto[0], reason="x" * 1001)]
+    bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": malformed}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad).api_sanction_cases_snapshot("345678901234567890", "ban", 10)
+
+
+@pytest.mark.parametrize(("guild_id", "filter_type", "limit"), [("bad", "", 10), ("123", "Bad Type", 10), ("123", "", True), ("123", "", 201)])
+def test_api_sanction_cases_snapshot_rejects_invalid_arguments(guild_id, filter_type, limit):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).api_sanction_cases_snapshot(guild_id, filter_type, limit)
+    assert session.calls == []
+
+
 def test_dashboard_roles_snapshot_dispatch_and_validates_dto():
     dto = [
         {"id": "123456789012345678", "name": "@everyone"},

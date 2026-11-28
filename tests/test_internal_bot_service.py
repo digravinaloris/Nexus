@@ -605,3 +605,58 @@ def test_signed_dispatch_allows_dashboard_roles_snapshot_and_rejects_bad_dto():
     body = _request_body({"method": "dashboard_roles_snapshot", "args": ["123"], "kwargs": {}})
     response = client.post(PATH, data=body, headers=_signed_headers(body, nonce="r" * 24))
     assert response.status_code == 503
+
+
+
+def test_signed_dispatch_projects_sanction_case_documents_to_safe_dto():
+    from datetime import datetime
+
+    client, service = _client()
+    service.api_sanction_cases_snapshot = lambda guild_id, filter_type, limit: [{
+        "_id": "mongo-secret",
+        "guild_id": guild_id,
+        "case_id": 9,
+        "type": "ban",
+        "timestamp": datetime(2026, 11, 28, 9, 30),
+        "user_id": "123456789012345678",
+        "reason": "bounded reason",
+        "moderator_id": "987654321098765432",
+        "edited_by_name": "Private Moderator",
+    }]
+    body = _request_body({"method": "api_sanction_cases_snapshot", "args": ["123", "ban", 10], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": [{
+        "case_id": 9,
+        "type": "ban",
+        "timestamp": "2026-11-28T09:30:00Z",
+        "user_id": "123456789012345678",
+        "reason": "bounded reason",
+    }]}
+
+
+@pytest.mark.parametrize("args", [
+    ["bad", "", 10], ["123", "Bad Type", 10], ["123", "", True],
+    ["123", "", 201], ["123", ""], ["123", "", 10, "extra"],
+])
+def test_signed_dispatch_rejects_invalid_sanction_case_arguments(args):
+    client, service = _client()
+    body = _request_body({"method": "api_sanction_cases_snapshot", "args": args, "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_fails_closed_for_malformed_sanction_case_documents():
+    from datetime import datetime
+
+    client, service = _client()
+    service.api_sanction_cases_snapshot = lambda guild_id, filter_type, limit: [{
+        "guild_id": guild_id, "case_id": True, "type": "ban",
+        "timestamp": datetime(2026, 11, 28, 9, 30), "user_id": "123456789012345678",
+        "reason": "reason",
+    }]
+    body = _request_body({"method": "api_sanction_cases_snapshot", "args": ["123", "", 10], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}

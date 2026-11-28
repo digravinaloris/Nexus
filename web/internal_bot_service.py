@@ -143,6 +143,13 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "api_sanction_cases_snapshot":
+            if (len(args) != 3 or not valid_guild_id(args[0])
+                or not isinstance(args[1], str)
+                or (args[1] and re.fullmatch(r"[a-z][a-z0-9_]{0,31}", args[1]) is None)
+                or type(args[2]) is not int or not 1 <= args[2] <= 200):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_sanction_stats_snapshot":
             if (len(args) != 2 or not valid_guild_id(args[0])
                 or type(args[1]) is not int or not 1 <= args[1] <= 30):
@@ -246,6 +253,35 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name == "api_sanction_cases_snapshot":
+                def case_dto(item):
+                    required = {"guild_id", "case_id", "type", "timestamp", "user_id", "reason"}
+                    if not isinstance(item, dict) or not required.issubset(item):
+                        return None
+                    stamp = item.get("timestamp")
+                    if not isinstance(stamp, datetime):
+                        return None
+                    if stamp.tzinfo is None:
+                        # PyMongo commonly decodes BSON UTC datetimes as naive values.
+                        stamp = stamp.replace(tzinfo=timezone.utc)
+                    stamp = stamp.astimezone(timezone.utc)
+                    case_id, sanction_type = item.get("case_id"), item.get("type")
+                    user_id, reason = item.get("user_id"), item.get("reason")
+                    if (type(case_id) is not int or not 1 <= case_id <= (2**63 - 1)
+                        or not isinstance(sanction_type, str) or re.fullmatch(r"[a-z][a-z0-9_]{0,31}", sanction_type) is None
+                        or not isinstance(user_id, str) or not valid_guild_id(user_id)
+                        or not isinstance(reason, str) or len(reason) > 1000
+                        or str(item.get("guild_id")) != str(operation_args[0])):
+                        return None
+                    return {"case_id": case_id, "type": sanction_type, "timestamp": stamp.isoformat().replace("+00:00", "Z"), "user_id": user_id, "reason": reason}
+                if not isinstance(result, list) or len(result) > operation_args[2]:
+                    return jsonify({"error": "internal service unavailable"}), 503
+                projected = [case_dto(item) for item in result]
+                if (any(item is None for item in projected)
+                    or len({item["case_id"] for item in projected}) != len(projected)
+                    or any(projected[i]["timestamp"] < projected[i + 1]["timestamp"] for i in range(len(projected) - 1))):
+                    return jsonify({"error": "internal service unavailable"}), 503
+                result = projected
             if method_name == "dashboard_sanction_stats_snapshot":
                 def valid_sanction_label(label):
                     if not isinstance(label, str) or re.fullmatch(r"[0-3][0-9]/[0-1][0-9]", label) is None:
