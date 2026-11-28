@@ -556,6 +556,7 @@ class CloudflareFetchBotService:
                 or not isinstance(result.get("enabled"), bool)
                 or not isinstance(result.get("entries"), list)
                 or len(result["entries"]) > 500
+                or len({entry["id"] for entry in result["entries"] if isinstance(entry, dict) and "id" in entry}) != len(result["entries"])
                 or not all(
                     isinstance(entry, dict)
                     and set(entry) == {"id", "keywords", "response"}
