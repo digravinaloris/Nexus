@@ -6,6 +6,7 @@ methods must be added alongside endpoint allowlisting and DTO tests.
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 from urllib.parse import urlsplit
@@ -91,6 +92,7 @@ class SignedHttpBotService(BotService):
             "dashboard_overview_snapshot": (1, 2),
             "dashboard_settings_snapshot": 1,
             "dashboard_roles_snapshot": 1,
+            "dashboard_sanction_stats_snapshot": 2,
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
@@ -104,7 +106,7 @@ class SignedHttpBotService(BotService):
         )
         if not valid_count:
             raise ValueError("Invalid internal BotService arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
@@ -112,6 +114,9 @@ class SignedHttpBotService(BotService):
             and 0 < int(args[1]) <= (2**64 - 1)
         ):
             raise ValueError("Invalid ticket category ID")
+
+        if method == "dashboard_sanction_stats_snapshot" and (type(args[1]) is not int or not 1 <= args[1] <= 30):
+            raise ValueError("Invalid sanction statistics day range")
 
         body = json.dumps(
             {"method": method, "args": list(args), "kwargs": {}},
@@ -325,6 +330,29 @@ class SignedHttpBotService(BotService):
                 or not isinstance(result["locked"], bool)
             ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "dashboard_sanction_stats_snapshot":
+            def valid_label(label):
+                if not isinstance(label, str) or re.fullmatch(r"[0-3][0-9]/[0-1][0-9]", label) is None:
+                    return False
+                try:
+                    datetime.datetime.strptime(label + "/2000", "%d/%m/%Y")
+                    return True
+                except ValueError:
+                    return False
+            if (
+                not isinstance(result, list)
+                or len(result) != args[1]
+                or not all(
+                    isinstance(item, dict)
+                    and set(item) == {"label", "count"}
+                    and valid_label(item["label"])
+                    and type(item["count"]) is int
+                    and 0 <= item["count"] <= 100000
+                    for item in result
+                )
+                or len({item["label"] for item in result}) != len(result)
+            ):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method == "dashboard_roles_snapshot":
             if result is not None and (
                 not isinstance(result, list)
@@ -422,6 +450,14 @@ class SignedHttpBotService(BotService):
         if guild_id is not None and not self._valid_guild_id(guild_id):
             raise ValueError("Invalid guild ID")
         return self._dispatch_snapshot("api_guild_list_snapshot", args)
+
+    def dashboard_sanction_stats_snapshot(self, guild_id: str, days: int = 30):
+        if not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        if type(days) is not int or not 1 <= days <= 30:
+            raise ValueError("Invalid sanction statistics day range")
+        result = self._dispatch_snapshot("dashboard_sanction_stats_snapshot", (guild_id, days))
+        return [(item["label"], item["count"]) for item in result]
 
     def dashboard_roles_snapshot(self, guild_id: str):
         return self._dispatch_snapshot("dashboard_roles_snapshot", (guild_id,))
