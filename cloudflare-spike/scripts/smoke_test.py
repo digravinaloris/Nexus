@@ -702,6 +702,22 @@ def main():
     status, invalid_sanction_type_args = call("/__spike/fetch-client/dashboard_sanction_types_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_sanction_type_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard sanction types arguments: {invalid_sanction_type_args}")
 
+    status, fetch_presence_viewers = call("/__spike/fetch-client/dashboard_presence_viewers", "POST", {})
+    require(
+        status == 200 and fetch_presence_viewers.get("result") == ["Loris", "Alex"],
+        f"Signed dashboard presence viewer read failed: {fetch_presence_viewers}",
+    )
+    status, invalid_presence_viewers = call("/__spike/fetch-client/dashboard_presence_viewers_invalid", "POST", {})
+    require(
+        status == 503 and invalid_presence_viewers.get("error") == "local Worker Fetch transport unavailable",
+        "Malformed dashboard presence viewer response was accepted",
+    )
+    status, invalid_presence_viewer_args = call("/__spike/fetch-client/dashboard_presence_viewers_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_presence_viewer_args.get("result") == {"rejected": True},
+        "Invalid dashboard presence viewer arguments were accepted",
+    )
+
     status, fetch_dashboard_roles = call("/__spike/fetch-client/dashboard_roles_snapshot", "POST", {})
     expected_dashboard_roles = [{"id": "321", "name": "Moderator"}, {"id": "654", "name": "Member"}]
     require(status == 200 and fetch_dashboard_roles.get("result") == expected_dashboard_roles, f"Signed dashboard roles snapshot failed: {fetch_dashboard_roles}")
