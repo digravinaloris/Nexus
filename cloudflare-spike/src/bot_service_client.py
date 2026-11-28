@@ -977,27 +977,29 @@ class CloudflareFetchBotService:
             if (
                 not isinstance(result, dict)
                 or set(result) != expected_fields
-                or not valid_id(result.get("guild_id"))
+                or result.get("guild_id") != args[0]
                 or not isinstance(result.get("name"), str)
                 or not 1 <= len(result["name"]) <= 100
                 or (
                     result.get("member_count") is not None
                     and (
                         type(result["member_count"]) is not int
-                        or result["member_count"] < 0
+                        or not 0 <= result["member_count"] <= 10_000_000
                     )
                 )
                 or any(
-                    type(result.get(field)) is not int or result[field] < 0
+                    type(result.get(field)) is not int
+                    or not 0 <= result[field] <= 10_000_000
                     for field in count_fields
                 )
                 or not isinstance(result.get("activity_7d"), list)
                 or len(result["activity_7d"]) != 7
                 or any(
-                    type(value) is not int or value < 0
+                    type(value) is not int or not 0 <= value <= 10_000_000
                     for value in result["activity_7d"]
                 )
                 or not isinstance(result.get("locked"), bool)
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 65_536
             ):
                 raise CloudflareBotServiceError(
                     "Internal BotService returned invalid guild stats"
