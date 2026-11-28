@@ -98,6 +98,7 @@ def mock_internal_bot_service():
             "spike-stats-out-of-range",
             "spike-stats-wrong-guild",
             "spike-faq-malformed",
+            "spike-faq-duplicate-entry-ids",
             "spike-members-malformed",
             "spike-members-duplicate",
             "spike-dashboard-sanction-stats-malformed",
@@ -525,6 +526,10 @@ def mock_internal_bot_service():
             malformed = dict(results[method])
             malformed["entries"] = [{"id": "invalid", "keywords": [], "response": ""}]
             return jsonify({"ok": True, "result": malformed})
+        if key_id == "spike-faq-duplicate-entry-ids":
+            duplicate = dict(results[method])
+            duplicate["entries"] = [dict(results[method]["entries"][0]), dict(results[method]["entries"][0])]
+            return jsonify({"ok": True, "result": duplicate})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_guild_stats_snapshot" and args in (["123"], ["123", "456"]):
         if key_id == "spike-stats-malformed":
@@ -691,6 +696,14 @@ def exercise_fetch_bot_service_client(method):
             invalid_client = CloudflareFetchBotService(
                 base_url="http://127.0.0.1:8787",
                 key_id="spike-faq-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_faq_snapshot("123")
+        elif method == "api_faq_snapshot_duplicate_entry_ids":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-faq-duplicate-entry-ids",
                 secret=_test_bot_service_secret(),
                 allow_local_http=True,
             )
