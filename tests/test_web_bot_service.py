@@ -1639,3 +1639,48 @@ def test_api_rest_config_snapshot_uses_explicit_safe_allowlist(monkeypatch):
         "ticket_category_id": "456",
     }
     assert not ({"log_webhook_url", "api_key", "_id", "future_unreviewed_secret"} & set(snapshot))
+
+
+def test_dashboard_config_snapshot_is_allowlisted_and_validates_nested_values(monkeypatch):
+    import web.in_process_bot_service as service_module
+
+    source = {
+        "guild_id": "123",
+        "welcome_channel_id": "456",
+        "warn_mute_threshold": 3,
+        "banned_words": ["spam"],
+        "calendar_manager_role_ids": ["789"],
+        "command_roles": {"ban": [789]},
+        "command_templates": {"safe": ["ban", "kick"]},
+        "log_webhook_url": "https://hooks.example/secret",
+        "api_key": "per-guild-secret",
+        "_id": "mongo-id",
+        "future_unreviewed_secret": "must-not-cross-boundary",
+    }
+    monkeypatch.setattr(service_module, "get_config", lambda guild_id: dict(source))
+    snapshot = InProcessBotService().dashboard_config_snapshot("123")
+
+    assert snapshot == {
+        "guild_id": "123",
+        "welcome_channel_id": "456",
+        "warn_mute_threshold": 3,
+        "banned_words": ["spam"],
+        "calendar_manager_role_ids": ["789"],
+        "command_roles": {"ban": [789]},
+        "command_templates": {"safe": ["ban", "kick"]},
+    }
+    assert not ({"log_webhook_url", "api_key", "_id", "future_unreviewed_secret"} & set(snapshot))
+
+
+def test_dashboard_config_snapshot_drops_invalid_nested_values(monkeypatch):
+    import web.in_process_bot_service as service_module
+
+    monkeypatch.setattr(service_module, "get_config", lambda guild_id: {
+        "guild_id": "123",
+        "banned_words": ["valid", 123],
+        "command_roles": {"ban": ["x" * 101]},
+        "command_templates": {"template": "not-a-list"},
+        "warn_mute_threshold": {"unexpected": "object"},
+    })
+    snapshot = InProcessBotService().dashboard_config_snapshot("123")
+    assert snapshot == {"guild_id": "123"}

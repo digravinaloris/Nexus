@@ -169,7 +169,7 @@ def dash_features_page(guild_id):
     """Équivalent web de /feature enable|disable|list -- construit depuis
     FEATURE_TOGGLES, donc tout nouveau toggle côté Discord apparaît ici tout seul."""
     guild_name = get_bot_service().guild_name(guild_id)
-    cfg = get_bot_service().api_config_snapshot(guild_id)
+    cfg = get_bot_service().dashboard_config_snapshot(guild_id)
 
     def is_enabled(meta):
         return bool(cfg.get(meta["config_key"], FEATURE_DEFAULT_ENABLED.get(meta["config_key"], False)))
@@ -206,7 +206,7 @@ def dash_calendar_page(guild_id):
     guild = get_bot_service().dashboard_settings_snapshot(guild_id)
     if guild is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    cfg = get_bot_service().api_config_snapshot(guild_id)
+    cfg = get_bot_service().dashboard_config_snapshot(guild_id)
     timezone_name = cfg.get("calendar_timezone") or "Europe/Paris"
     if request.method == "POST":
         action = request.form.get("action", "")
@@ -312,7 +312,7 @@ def dash_settings_page(guild_id):
     snapshot = get_bot_service().dashboard_settings_snapshot(guild_id)
     if snapshot is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    cfg = get_bot_service().api_config_snapshot(guild_id)
+    cfg = get_bot_service().dashboard_config_snapshot(guild_id)
     values = {key: cfg.get(key, default) for key, default in SETTINGS_DEFAULTS.items()}
     user_id = (session.get("dash_user") or {}).get("id")
     return render_template(
@@ -337,7 +337,7 @@ def dash_settings_save(guild_id, section):
     guild = get_bot_service().dashboard_settings_snapshot(guild_id)
     if guild is None:
         return jsonify({"error": "Bot not present on this server"}), 403
-    cfg = get_bot_service().api_config_snapshot(guild_id)
+    cfg = get_bot_service().dashboard_config_snapshot(guild_id)
     updates = {}
     try:
         if section == "automod":
@@ -441,7 +441,7 @@ def dash_template_import(guild_id, code):
             return redirect(url_for("dash_template_import", guild_id=guild_id, code=code))
 
         service.dashboard_apply_template_snapshot(guild_id, snapshot)
-        current_command_roles = service.api_config_snapshot(guild_id).get("command_roles", {})
+        current_command_roles = service.dashboard_config_snapshot(guild_id).get("command_roles", {})
         new_command_roles = build_template_command_role_mapping(
             command_roles_by_name, submitted_mappings, guild.get("roles", []), current_command_roles
         )
@@ -517,7 +517,7 @@ def dash_home():
 @dash_login_required
 @dash_guild_admin_required
 def dash_guild_page(guild_id):
-    cfg = get_bot_service().api_config_snapshot(guild_id)
+    cfg = get_bot_service().dashboard_config_snapshot(guild_id)
     service = get_bot_service()
     guild = service.dashboard_overview_snapshot(guild_id, cfg.get("ticket_category_id"))
     if guild is None:
@@ -548,7 +548,7 @@ def dash_guild_page(guild_id):
                     flash(f"⚠️ {role['name']}: " + ("sensitive permissions, given to every new member." if current_lang() == "en" else "permissions sensibles, donné à tout nouveau membre."))
 
         log_toggle = request.form.get("log_dashboard_actions") == "on"
-        if log_toggle != bool(get_bot_service().api_config_snapshot(guild_id).get("log_dashboard_actions")):
+        if log_toggle != bool(get_bot_service().dashboard_config_snapshot(guild_id).get("log_dashboard_actions")):
             get_bot_service().api_update_config(guild_id, {"log_dashboard_actions": log_toggle})
             changes.append(f"Discord logging of dashboard actions → {'on' if log_toggle else 'off'}")
 
@@ -676,7 +676,7 @@ def dash_permission_template(guild_id):
         commands_list = tpl["commands"]
         label = t(tpl["label_key"])
     elif source == "custom":
-        cfg = get_bot_service().api_config_snapshot(guild_id)
+        cfg = get_bot_service().dashboard_config_snapshot(guild_id)
         custom_templates = cfg.get("command_templates", {})
         if key in custom_templates:
             commands_list = custom_templates[key]
