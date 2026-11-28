@@ -796,59 +796,50 @@ def dash_cases_page(guild_id):
 @dash_guild_admin_required
 def dash_appeals_page(guild_id):
     guild_name = get_bot_service().guild_name(guild_id)
-    appeals = get_bot_service().api_submitted_appeals(guild_id)
+    appeals = get_bot_service().dashboard_submitted_appeals_snapshot(guild_id, 100)
     return render_template("appeals_review.html", guild_id=guild_id, guild_name=guild_name,
         appeals=appeals, user=session.get("dash_user"))
 
 
-@routes.route("/dashboard/<guild_id>/appeals/<token>/accept", methods=["POST"])
+@routes.route("/dashboard/<guild_id>/appeals/<int:case_id>/accept", methods=["POST"])
 @dash_login_required
 @dash_guild_admin_required
-def dash_appeal_accept(guild_id, token):
-    appeal = get_bot_service().api_get_appeal(token)
-    if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
-        flash("This appeal is no longer available.")
-        return redirect(url_for("dash_appeals_page", guild_id=guild_id))
-
-    if not get_bot_service().api_claim_appeal(guild_id, token):
+def dash_appeal_accept(guild_id, case_id):
+    service = get_bot_service()
+    appeal = next((item for item in service.dashboard_submitted_appeals_snapshot(guild_id, 100) if item["case_id"] == case_id), None)
+    if appeal is None or not service.api_claim_appeal_by_case(guild_id, case_id):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
 
     sanction_type = appeal.get("sanction_type", "ban")
-    service = get_bot_service()
     success, result = service.api_accept_appeal(guild_id, str(appeal["user_id"]), sanction_type)
     if not success:
-        get_bot_service().api_release_appeal_claim(guild_id, token)
+        service.api_release_appeal_claim_by_case(guild_id, case_id)
         raise RuntimeError(result or "Unable to resolve appeal")
-    if not get_bot_service().api_resolve_appeal(guild_id, token, "accepted"):
+    if not service.api_resolve_appeal_by_case(guild_id, case_id, "accepted"):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
-    get_bot_service().api_record_audit(guild_id, actor_id, actor_name, "Accepted appeal (via dashboard)", f"Case #{appeal['case_id']} ({sanction_type}) — {result}")
-    service.api_notify_appeal_result(guild_id, str(appeal["user_id"]), str(appeal["case_id"]), True, result)
-    flash(f"Case #{appeal['case_id']} accepted — {result}.")
+    service.api_record_audit(guild_id, actor_id, actor_name, "Accepted appeal (via dashboard)", f"Case #{case_id} ({sanction_type}) — {result}")
+    service.api_notify_appeal_result(guild_id, str(appeal["user_id"]), str(case_id), True, result)
+    flash(f"Case #{case_id} accepted — {result}.")
     return redirect(url_for("dash_appeals_page", guild_id=guild_id))
 
 
-@routes.route("/dashboard/<guild_id>/appeals/<token>/deny", methods=["POST"])
+@routes.route("/dashboard/<guild_id>/appeals/<int:case_id>/deny", methods=["POST"])
 @dash_login_required
 @dash_guild_admin_required
-def dash_appeal_deny(guild_id, token):
-    appeal = get_bot_service().api_get_appeal(token)
-    if not appeal or appeal["guild_id"] != str(guild_id) or appeal["status"] != "submitted":
+def dash_appeal_deny(guild_id, case_id):
+    service = get_bot_service()
+    appeal = next((item for item in service.dashboard_submitted_appeals_snapshot(guild_id, 100) if item["case_id"] == case_id), None)
+    if appeal is None or not service.api_claim_appeal_by_case(guild_id, case_id):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
-
-    if not get_bot_service().api_claim_appeal(guild_id, token):
-        flash("This appeal is no longer available.")
-        return redirect(url_for("dash_appeals_page", guild_id=guild_id))
-    if not get_bot_service().api_resolve_appeal(guild_id, token, "denied"):
+    if not service.api_resolve_appeal_by_case(guild_id, case_id, "denied"):
         flash("This appeal is no longer available.")
         return redirect(url_for("dash_appeals_page", guild_id=guild_id))
     actor_id, actor_name = dash_actor()
-    get_bot_service().api_record_audit(guild_id, actor_id, actor_name, "Denied appeal (via dashboard)", f"Case #{appeal['case_id']}")
-    get_bot_service().api_notify_appeal_result(
-        guild_id, str(appeal["user_id"]), str(appeal["case_id"]), False, None
-    )
-    flash(f"Case #{appeal['case_id']} denied.")
+    service.api_record_audit(guild_id, actor_id, actor_name, "Denied appeal (via dashboard)", f"Case #{case_id}")
+    service.api_notify_appeal_result(guild_id, str(appeal["user_id"]), str(case_id), False, None)
+    flash(f"Case #{case_id} denied.")
     return redirect(url_for("dash_appeals_page", guild_id=guild_id))
