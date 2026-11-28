@@ -70,6 +70,10 @@ class FakeBotService:
         self.calls.append(("dashboard_config_snapshot", guild_id))
         return {"guild_id": guild_id, "welcome_channel_id": "456", "warn_mute_threshold": 3}
 
+    def dashboard_presence_ping(self, guild_id, user_id, name):
+        self.calls.append(("dashboard_presence_ping", guild_id, user_id, name))
+        return None
+
     def dashboard_presence_viewers(self, guild_id):
         self.calls.append(("dashboard_presence_viewers", guild_id))
         return ["Loris", "Alex"]
@@ -244,6 +248,63 @@ def test_signed_dispatch_rejects_invalid_calendar_duplicate_arguments(args):
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 403
     assert service.calls == []
+
+
+def test_signed_dispatch_records_dashboard_presence_heartbeat():
+    client, service = _client()
+    body = _request_body({
+        "method": "dashboard_presence_ping",
+        "args": ["123", "456", "Loris"],
+        "kwargs": {},
+    })
+
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": None}
+    assert service.calls == [("dashboard_presence_ping", "123", "456", "Loris")]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["123", "456"],
+        ["bad-guild", "456", "Loris"],
+        ["123", "bad-user", "Loris"],
+        ["123", "456", ""],
+        ["123", "456", "x" * 101],
+        ["123", "456", " " * 101],
+        ["123", "456", "Loris", "extra"],
+    ],
+)
+def test_signed_dispatch_rejects_invalid_dashboard_presence_heartbeat_arguments(args):
+    client, service = _client()
+    body = _request_body({
+        "method": "dashboard_presence_ping",
+        "args": args,
+        "kwargs": {},
+    })
+
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_rejects_non_null_dashboard_presence_heartbeat_result():
+    client, service = _client()
+    service.dashboard_presence_ping = lambda guild_id, user_id, name: True
+    body = _request_body({
+        "method": "dashboard_presence_ping",
+        "args": ["123", "456", "Loris"],
+        "kwargs": {},
+    })
+
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
 
 
 def test_signed_dispatch_returns_dashboard_presence_viewers():
