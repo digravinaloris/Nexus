@@ -576,6 +576,9 @@ def exercise_fetch_bot_service_client(method):
             result = client.is_guild_admin("123", "44")
         elif method == "guild_presence":
             result = client.guild_presence("123")
+        elif method == "guild_presence_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-guild-presence-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.guild_presence("123")
         elif method == "guild_name":
             result = client.guild_name("123")
         elif method == "api_health_snapshot":
