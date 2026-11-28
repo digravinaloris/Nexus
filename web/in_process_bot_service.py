@@ -511,7 +511,26 @@ class InProcessBotService(BotService):
         return mark_used(token)
 
     def dashboard_public_templates_snapshot(self) -> List[Dict[str, object]]:
-        return list_public_templates()
+        """Project public templates into a bounded, metadata-only dashboard DTO."""
+        documents = list_public_templates(limit=50)
+        result = []
+        for document in documents:
+            if not isinstance(document, dict) or document.get("public") is not True:
+                continue
+            snapshot = document.get("snapshot")
+            if not isinstance(snapshot, dict):
+                snapshot = {}
+            feature_toggles = snapshot.get("feature_toggles")
+            command_roles = snapshot.get("command_roles_by_name")
+            result.append({
+                "code": str(document.get("code") or "")[:32],
+                "name": str(document.get("name") or "Untitled template")[:100],
+                "created_guild_name": str(document.get("created_guild_name") or "Unknown server")[:100],
+                "created_at": document.get("created_at") if isinstance(document.get("created_at"), datetime.datetime) else datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+                "feature_toggle_count": len(feature_toggles) if isinstance(feature_toggles, (list, tuple, dict)) else 0,
+                "command_role_count": len(command_roles) if isinstance(command_roles, (list, tuple, dict)) else 0,
+            })
+        return result
 
     def dashboard_template_snapshot(self, code: str) -> Optional[Dict[str, object]]:
         return get_template_by_code(code)
