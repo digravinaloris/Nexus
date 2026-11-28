@@ -702,6 +702,38 @@ def test_api_sanction_cases_snapshot_rejects_invalid_arguments(guild_id, filter_
     assert session.calls == []
 
 
+def test_api_member_warnings_dispatches_and_validates_result():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": 3}))
+    assert _client(session).api_member_warnings("345678901234567890", "456789012345678901") == 3
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload == {"method": "api_member_warnings", "args": ["345678901234567890", "456789012345678901"], "kwargs": {}}
+
+    bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": True}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad).api_member_warnings("345678901234567890", "456789012345678901")
+
+
+def test_api_warnlist_snapshot_dispatches_and_validates_dto():
+    dto = [{"user_id": "456789012345678901", "count": 2}]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    assert _client(session).api_warnlist_snapshot("345678901234567890") == dto
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload == {"method": "api_warnlist_snapshot", "args": ["345678901234567890"], "kwargs": {}}
+
+    bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": [{"user_id": "bad", "count": 2}]}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad).api_warnlist_snapshot("345678901234567890")
+
+
+def test_api_member_warnings_rejects_invalid_ids_before_transport():
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).api_member_warnings("bad", "456789012345678901")
+    with pytest.raises(ValueError):
+        _client(session).api_member_warnings("345678901234567890", "bad")
+    assert session.calls == []
+
+
 def test_api_audit_snapshot_dispatches_and_validates_dto():
     dto = [{
         "actor_name": "Moderator", "action": "Banned member", "details": "spam",
