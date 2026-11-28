@@ -455,7 +455,7 @@ def main():
             "user_id": "123456789012345678",
             "ban_reason": "spam",
             "appeal_text": "Please review this ban.",
-            "submitted_at": "2026-11-28T09:30:00 GMT",
+            "submitted_at": "Sat, 28 Nov 2026 09:30:00 GMT",
         }],
         f"Signed submitted appeals snapshot failed: {submitted_appeals}",
     )
