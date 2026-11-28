@@ -1616,3 +1616,26 @@ def test_dashboard_presence_tracks_fresh_viewers_and_expires_them(monkeypatch):
 
     monkeypatch.setattr("web.in_process_bot_service.time.time", lambda: 126)
     assert service.dashboard_presence_viewers("123") == []
+
+
+def test_api_rest_config_snapshot_uses_explicit_safe_allowlist(monkeypatch):
+    import web.in_process_bot_service as service_module
+
+    source = {
+        "guild_id": "123",
+        "logs_channel": "logs",
+        "ticket_category_id": "456",
+        "log_webhook_url": "https://hooks.example/secret",
+        "api_key": "per-guild-secret",
+        "_id": "mongo-id",
+        "future_unreviewed_secret": "must-not-cross-boundary",
+    }
+    monkeypatch.setattr(service_module, "get_config", lambda guild_id: dict(source))
+    snapshot = InProcessBotService().api_rest_config_snapshot("123")
+
+    assert snapshot == {
+        "guild_id": "123",
+        "logs_channel": "logs",
+        "ticket_category_id": "456",
+    }
+    assert not ({"log_webhook_url", "api_key", "_id", "future_unreviewed_secret"} & set(snapshot))

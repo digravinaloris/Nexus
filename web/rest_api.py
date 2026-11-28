@@ -143,7 +143,7 @@ def guild_stats(guild_id):
     if not presence["guild_present"]:
         return jsonify({"error": "Guild not found"}), 404
 
-    cfg = get_bot_service().api_config_snapshot(guild_id)
+    cfg = get_bot_service().api_rest_config_snapshot(guild_id)
     try:
         snapshot = get_bot_service().api_guild_stats_snapshot(
             guild_id, cfg.get("ticket_category_id")
@@ -160,9 +160,7 @@ def guild_stats(guild_id):
 @bp.route('/api/guilds/<guild_id>/config', methods=['GET'])
 @require_api_key
 def get_guild_config(guild_id):
-    cfg = get_bot_service().api_config_snapshot(guild_id)
-    cfg.pop("_id", None)
-    cfg.pop("api_key", None)  # jamais renvoyée en clair
+    cfg = get_bot_service().api_rest_config_snapshot(guild_id)
     return jsonify(cfg)
 
 
@@ -584,7 +582,7 @@ def guild_appeal_deny_route(guild_id, token):
 @bp.route('/api/guilds/<guild_id>/features', methods=['GET'])
 @require_api_key
 def guild_features_route(guild_id):
-    cfg = get_bot_service().api_config_snapshot(guild_id)
+    cfg = get_bot_service().api_rest_config_snapshot(guild_id)
     return jsonify([{
         "key": key,
         "label": meta["label"],
