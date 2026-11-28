@@ -156,6 +156,10 @@ def create_internal_bot_service_blueprint(
             if len(args) != 1 or not valid_guild_id(args[0]):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_config_snapshot":
+            if len(args) != 1 or not valid_guild_id(args[0]):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_authenticate_key":
             if (len(args) not in {1, 2} or not isinstance(args[0], str)
                 or not args[0].isascii() or not 1 <= len(args[0]) <= 512
