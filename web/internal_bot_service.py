@@ -329,7 +329,7 @@ def create_internal_bot_service_blueprint(
                         stamp = stamp.astimezone(timezone.utc)
                     if (
                         not isinstance(item, dict)
-                        or set(item) != required
+                        or not required.issubset(item)
                         or not isinstance(item["code"], str)
                         or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", item["code"]) is None
                         or not isinstance(item["name"], str) or not 1 <= len(item["name"]) <= 100
