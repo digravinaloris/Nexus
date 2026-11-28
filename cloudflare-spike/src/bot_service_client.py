@@ -402,6 +402,12 @@ class CloudflareFetchBotService:
         ):
             raise CloudflareBotServiceError("Internal BotService returned an invalid response")
         result = payload["result"]
+        if method == "api_member_warnings" and (
+            type(result) is not int or not 0 <= result <= 100000
+        ):
+            raise CloudflareBotServiceError(
+                "Internal BotService returned an invalid member warning count"
+            )
         if method in {"api_guild_id_candidates", "available_guild_ids"} and (
             len(result) > (2000 if method == "api_guild_id_candidates" else 500)
             or not all(valid_id(value) for value in result)
