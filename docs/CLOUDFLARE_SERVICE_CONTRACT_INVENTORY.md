@@ -207,6 +207,19 @@ This is an inventory of method names and call sites, not proof that each method'
 - `notify_owner_bruteforce`
 - `notify_owner_killswitch`
 
+## Dashboard overview snapshot DTO contract (next read-only slice)
+
+The dashboard guild page currently consumes `dashboard_overview_snapshot(guild_id, ticket_category_id)` to populate initial server settings. This DTO contains:
+- Guild identity: `id`, `name`, `owner_id`
+- Text channels: bounded list of `id` and `name`
+- Roles: bounded list of `id`, `name`, and the five permission booleans used by dashboard safety checks
+- Role-name lookup map: role ID to name (duplicative of role records; prefer deriving it client-side or preserve only if template compatibility requires it)
+- Open ticket channels: bounded `id` and `name` list, scoped to an explicitly validated ticket category ID
+
+Before implementing this snapshot remotely, inspect the dashboard template and POST handlers to confirm which fields are actually required. The DTO must cap channel/role/ticket arrays, validate Discord snowflakes, cap and sanitize names, require exact permission boolean fields, and reject unexpected fields. Do not send the full Discord guild/role/channel objects or raw config document. A ticket category ID must be validated on the bot service, and an absent or invalid category should produce an empty ticket list rather than broad channel enumeration.
+
+Implementation should be paired across the internal endpoint and HTTP adapter with contract tests for empty and large guilds, invalid IDs/category IDs, malformed permission flags, oversized payloads, and offline bot behavior. This is still a read-only transport slice; the production dashboard remains on the in-process adapter until the broader route/session parity gates are met.
+
 ## Recommended transport sequencing
 
 1. **Read-only, low-risk snapshots:** health/public status, guild presence/name, guild lists, text channels, roles, dashboard overview/settings, FAQ and audit snapshots. Keep responses to explicit JSON DTOs; never serialize Discord objects or raw MongoDB documents.
