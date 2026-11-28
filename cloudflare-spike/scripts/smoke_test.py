@@ -654,7 +654,7 @@ def main():
         "code": "AbC_123-x",
         "name": "Welcome Pack",
         "created_guild_name": "Spike Test Server",
-        "created_at": "2026-11-28T09:30:00Z",
+        "created_at": "Sat, 28 Nov 2026 09:30:00 GMT",
         "feature_toggle_count": 4,
         "command_role_count": 2,
     }]
