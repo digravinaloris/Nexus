@@ -170,6 +170,9 @@ class CloudflareFetchBotService:
                 or (len(args) == 2 and not valid_id(args[1]))
             ):
                 raise ValueError("Invalid dashboard overview arguments")
+        elif method == "api_member_warnings":
+            if expected_type is not int or len(args) != 2 or not all(valid_id(value) for value in args):
+                raise ValueError("Invalid member warning count arguments")
         elif method == "api_warnlist_snapshot":
             if expected_type is not list or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid warning list snapshot arguments")
@@ -410,6 +413,8 @@ class CloudflareFetchBotService:
             or len(set(result)) != len(result)
         ):
             raise CloudflareBotServiceError("Internal BotService returned invalid dashboard sanction types")
+        if method == "api_member_warnings" and (type(result) is not int or not 0 <= result <= 1000000):
+            raise CloudflareBotServiceError("Internal BotService returned invalid member warning count")
         if method == "api_warnlist_snapshot":
             def valid_warning(item):
                 return (
@@ -777,6 +782,12 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def api_member_warnings(self, guild_id: str, user_id: str) -> int:
+        for value in (guild_id, user_id):
+            if not isinstance(value, str) or re.fullmatch(r"[0-9]{1,20}", value) is None:
+                raise ValueError("Invalid member warning count IDs")
+        return self._dispatch("api_member_warnings", [guild_id, user_id], int)
 
     def api_warnlist_snapshot(self, guild_id: str) -> list:
         if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
