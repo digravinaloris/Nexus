@@ -45,6 +45,7 @@ This is a source-level inventory of the six Flask route modules and the current 
 ### Signed internal endpoint — 35 explicitly dispatched operation names
 
 - Base snapshots: `health_snapshot`, `public_status_snapshot`.
+- Public state: `public_global_lock_state`.
 - Identity/authorization: `is_guild_owner`, `is_guild_admin`, `api_authenticate_key`, `available_guild_ids`, `api_guild_id_candidates`, `guild_presence`, `guild_name`.
 - REST reads: `api_health_snapshot`, `api_guild_list_snapshot`, `api_text_channels_snapshot`, `api_roles_snapshot`, `api_faq_snapshot`, `api_members_snapshot`, `api_rest_config_snapshot`, `api_guild_stats_snapshot`, `api_member_warnings`, `api_warnlist_snapshot`, `api_audit_snapshot`, `api_sanction_cases_snapshot`.
 - Dashboard reads: `dashboard_config_snapshot`, `dashboard_calendar_upcoming_events`, `dashboard_submitted_appeals_snapshot`, `dashboard_sanction_stats_snapshot`, `dashboard_sanction_types_snapshot`, `dashboard_roles_snapshot`, `dashboard_settings_snapshot`, `dashboard_overview_snapshot`.
