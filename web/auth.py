@@ -336,7 +336,14 @@ def dash_callback():
     # Rotate any pre-authentication identifier only after both OAuth exchange
     # and identity lookup succeed. Server-side backends must invalidate the old
     # opaque ID before persisting the authenticated session.
-    _session_backend_action("rotate_session")
+    try:
+        _session_backend_action("rotate_session")
+    except Exception:
+        # A failed rotation must never fall through to an authenticated save.
+        # The old identifier may already be revoked, so clear local state and
+        # require a fresh OAuth attempt rather than reusing either session.
+        session.clear()
+        return jsonify({"error": "OAuth session storage unavailable"}), 503
 
     # Store credentials only after both OAuth exchange and identity lookup succeed.
     session["access_token"] = access_token
