@@ -637,6 +637,12 @@ def main():
         and fetch_presence.get("result") == {"bot_ready": True, "guild_present": True},
         f"Signed guild presence read failed: {fetch_presence}",
     )
+    status, invalid_presence = call("/__spike/fetch-client/guild_presence_invalid", "POST", {})
+    require(
+        status == 503
+        and invalid_presence.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted non-boolean guild presence DTO: {invalid_presence}",
+    )
     status, fetch_name = call("/__spike/fetch-client/guild_name", "POST", {})
     require(
         status == 200 and fetch_name.get("result") == "Spike Test Server",
