@@ -861,6 +861,11 @@ class CloudflareFetchBotService:
                 or len({item["id"] for item in result["text_channels"]}) != len(result["text_channels"])
                 or len({item["id"] for item in result["roles"]}) != len(result["roles"])
                 or len({item["id"] for item in result["open_tickets"]}) != len(result["open_tickets"])
+                or any(
+                    role["id"] not in result["role_names"]
+                    or result["role_names"][role["id"]] != role["name"]
+                    for role in result["roles"]
+                )
                 or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
             ):
                 raise CloudflareBotServiceError("Internal BotService returned invalid dashboard overview")
