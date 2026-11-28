@@ -806,6 +806,8 @@ class CloudflareFetchBotService:
                 or len(result) > args[2]
                 or not all(valid_calendar_event(item) for item in result)
                 or any(result[i]["starts_at"] > result[i + 1]["starts_at"] for i in range(len(result) - 1))
+                or len({item["_id"] for item in result}) != len(result)
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
             ):
                 raise CloudflareBotServiceError("Internal BotService returned invalid dashboard calendar events")
         if method == "dashboard_overview_snapshot" and result is not None:
