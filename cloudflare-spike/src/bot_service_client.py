@@ -7,6 +7,7 @@ request handler.
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import hmac
 import json
@@ -169,6 +170,23 @@ class CloudflareFetchBotService:
                 or (len(args) == 2 and not valid_id(args[1]))
             ):
                 raise ValueError("Invalid dashboard overview arguments")
+        elif method == "dashboard_calendar_upcoming_events":
+            if (
+                expected_type is not list
+                or len(args) != 3
+                or not valid_id(args[0])
+                or not isinstance(args[1], str)
+                or len(args[1]) > 64
+                or type(args[2]) is not int
+                or not 1 <= args[2] <= 50
+            ):
+                raise ValueError("Invalid dashboard calendar arguments")
+            try:
+                requested_at = datetime.datetime.fromisoformat(args[1].replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("Invalid dashboard calendar timestamp") from exc
+            if requested_at.tzinfo is None:
+                raise ValueError("Dashboard calendar timestamp must be timezone-aware")
         elif method == "dashboard_sanction_stats_snapshot":
             if (
                 expected_type is not list
@@ -369,6 +387,37 @@ class CloudflareFetchBotService:
             or len(set(result)) != len(result)
         ):
             raise CloudflareBotServiceError("Internal BotService returned invalid dashboard sanction types")
+        if method == "dashboard_calendar_upcoming_events":
+            def valid_calendar_event(item):
+                if (
+                    not isinstance(item, dict)
+                    or set(item) != {"_id", "guild_id", "title", "description", "role_id", "starts_at", "timezone", "time_set"}
+                    or not isinstance(item["_id"], str)
+                    or re.fullmatch(r"[0-9a-fA-F]{24}", item["_id"]) is None
+                    or item["guild_id"] != args[0]
+                    or not isinstance(item["title"], str)
+                    or not 1 <= len(item["title"]) <= 100
+                    or not isinstance(item["description"], str)
+                    or len(item["description"]) > 1000
+                    or not valid_id(item["role_id"])
+                    or not isinstance(item["starts_at"], str)
+                    or not isinstance(item["timezone"], str)
+                    or not 1 <= len(item["timezone"]) <= 64
+                    or type(item["time_set"]) is not bool
+                ):
+                    return False
+                try:
+                    stamp = datetime.datetime.fromisoformat(item["starts_at"].replace("Z", "+00:00"))
+                except ValueError:
+                    return False
+                return stamp.tzinfo is not None
+            if (
+                not isinstance(result, list)
+                or len(result) > args[2]
+                or not all(valid_calendar_event(item) for item in result)
+                or any(result[i]["starts_at"] > result[i + 1]["starts_at"] for i in range(len(result) - 1))
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid dashboard calendar events")
         if method == "dashboard_overview_snapshot" and result is not None:
             permission_keys = {"administrator", "manage_guild", "ban_members", "kick_members", "manage_roles"}
             def valid_overview_channel(item):
@@ -627,6 +676,19 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def dashboard_calendar_upcoming_events(self, guild_id: str, now, limit: int = 50) -> list:
+        if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
+            raise ValueError("Invalid guild ID")
+        if not isinstance(now, datetime.datetime) or now.tzinfo is None:
+            raise ValueError("Calendar snapshot time must be timezone-aware")
+        if type(limit) is not int or not 1 <= limit <= 50:
+            raise ValueError("Invalid calendar snapshot limit")
+        timestamp = now.astimezone(datetime.timezone.utc).isoformat()
+        result = self._dispatch("dashboard_calendar_upcoming_events", [guild_id, timestamp, limit], list)
+        for item in result:
+            item["starts_at"] = datetime.datetime.fromisoformat(item["starts_at"].replace("Z", "+00:00"))
+        return result
 
     def dashboard_overview_snapshot(self, guild_id: str, ticket_category_id: str | None = None) -> dict | None:
         args = [guild_id] if ticket_category_id is None else [guild_id, ticket_category_id]
