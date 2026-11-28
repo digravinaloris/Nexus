@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 import requests
 
 from web.bot_service import BotService
+from web.template_transport import validate_public_template_dto
 from web.bot_service_signing import sign_internal_request
 
 
@@ -102,6 +103,7 @@ class SignedHttpBotService(BotService):
             "api_rest_config_snapshot": 1,
             "dashboard_config_snapshot": 1,
             "dashboard_public_templates_snapshot": 0,
+            "dashboard_template_snapshot": 1,
             "dashboard_calendar_has_duplicate_event": 3,
             "dashboard_presence_viewers": 1,
             "dashboard_presence_ping": 3,
@@ -126,6 +128,10 @@ class SignedHttpBotService(BotService):
         )
         if not valid_count:
             raise ValueError("Invalid internal BotService arguments")
+        if method == "dashboard_template_snapshot" and (
+            not isinstance(args[0], str) or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", args[0]) is None
+        ):
+            raise ValueError("Invalid public template code")
         if method == "api_authenticate_key":
             if (not isinstance(args[0], str) or not args[0].isascii() or not 1 <= len(args[0]) <= 512
                 or (len(args) == 2 and not self._valid_guild_id(args[1]))):
@@ -296,6 +302,18 @@ class SignedHttpBotService(BotService):
             ):
                 raise BotServiceTransportError(
                     "Internal BotService returned an invalid dashboard presence snapshot"
+                )
+        elif method == "dashboard_template_snapshot":
+            if result is not None:
+                if not validate_public_template_dto(result):
+                    raise BotServiceTransportError(
+                        "Internal BotService returned an invalid public template snapshot"
+                    )
+                result = dict(
+                    result,
+                    created_at=datetime.datetime.fromisoformat(
+                        result["created_at"].replace("Z", "+00:00")
+                    ).astimezone(datetime.timezone.utc),
                 )
         elif method == "dashboard_public_templates_snapshot":
             required = {
@@ -911,6 +929,11 @@ class SignedHttpBotService(BotService):
 
     def dashboard_public_templates_snapshot(self):
         return self._dispatch_snapshot("dashboard_public_templates_snapshot", ())
+
+    def dashboard_template_snapshot(self, code: str):
+        if not isinstance(code, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", code) is None:
+            raise ValueError("Invalid public template code")
+        return self._dispatch_snapshot("dashboard_template_snapshot", (code,))
 
     def dashboard_presence_ping(self, guild_id: str, user_id: str, name: str) -> None:
         if not self._valid_guild_id(guild_id) or not self._valid_guild_id(user_id):
