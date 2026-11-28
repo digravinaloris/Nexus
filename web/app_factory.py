@@ -76,15 +76,23 @@ def create_web_app(
             "rotate_session",
             "revoke_session",
         )
-        if session_interface is None or getattr(
+        required_session_capabilities = (
+            "nexus_opaque_cookie_sessions",
+            "nexus_encrypted_session_payloads",
+        )
+        if session_interface is None or any(
+            getattr(session_interface, capability, False) is not True
+            for capability in required_session_capabilities
+        ) or getattr(
             session_interface, "nexus_server_side_sessions", False
         ) is not True or any(
             not callable(getattr(session_interface, hook, None))
             for hook in required_session_hooks
         ):
             raise RuntimeError(
-                "A production server-side session interface with atomic OAuth "
-                "consumption, rotation, and revocation is required"
+                "A production session interface with opaque cookies, encrypted "
+                "server-side payloads, atomic OAuth consumption, rotation, and "
+                "revocation is required"
             )
     if not app.config.get("SECRET_KEY"):
         raise RuntimeError("A Flask SECRET_KEY must be configured before creating the web app")
