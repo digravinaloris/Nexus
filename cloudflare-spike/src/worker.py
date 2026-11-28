@@ -916,6 +916,43 @@ def create_invalid_flask_session_payload(kind):
     return jsonify({"prepared": True})
 
 
+@app.post("/__spike/flask-session/create-unknown-key")
+def create_unknown_key_flask_session():
+    """Create an unreadable-by-config session to test missing-key fail-closed behavior."""
+    sid = secrets.token_urlsafe(32)
+    now = int(time.time())
+    try:
+        _await(
+            _db().prepare(
+                """
+                INSERT INTO spike_flask_sessions
+                    (session_hash, ciphertext_hex, nonce_hex, key_version,
+                     created_at, expires_at, idle_expires_at, revision)
+                VALUES (?, ?, ?, 99, ?, ?, ?, 0)
+                """
+            ).bind(
+                app.session_interface._digest(sid),
+                "00",
+                "00",
+                now,
+                now + app.session_interface.absolute_timeout,
+                now + app.session_interface.idle_timeout,
+            ).run()
+        )
+    except Exception:
+        return jsonify({"error": "unknown-key fixture unavailable"}), 503
+    response = jsonify({"created": True, "key_version": 99})
+    response.set_cookie(
+        app.config["SESSION_COOKIE_NAME"],
+        sid,
+        httponly=True,
+        secure=app.config["SESSION_COOKIE_SECURE"],
+        samesite="Lax",
+        path="/",
+    )
+    return response
+
+
 @app.post("/__spike/flask-session/create-legacy-key")
 def create_legacy_key_flask_session():
     """Insert a test session encrypted with the previous D1 key version."""
