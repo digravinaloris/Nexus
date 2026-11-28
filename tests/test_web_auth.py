@@ -566,3 +566,42 @@ def test_discord_401_clears_session_even_if_backend_revoke_fails(env, monkeypatc
     assert response.headers["Location"].endswith("/login")
     with env.client.session_transaction() as sess:
         assert not sess
+
+
+def test_callback_fails_closed_when_session_rotation_fails(env, monkeypatch):
+    class Response:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class OAuthClient:
+        def post(self, url, **kwargs):
+            return Response(200, {"access_token": "must-not-be-saved", "expires_in": 3600})
+
+        def get(self, url, **kwargs):
+            return Response(200, {"id": "123456789012345678"})
+
+    def fail_rotation(_session):
+        raise RuntimeError("session store unavailable")
+
+    monkeypatch.setitem(env.nexus.api.config, "DISCORD_HTTP_CLIENT", OAuthClient())
+    monkeypatch.setattr(env.nexus.api.session_interface, "rotate_session", fail_rotation, raising=False)
+    with env.client.session_transaction() as sess:
+        sess["oauth_state"] = "rotation-failure-state"
+        sess["oauth_code_verifier"] = "A" * 43
+        sess["oauth_state_created_at"] = auth.time.time()
+        sess["pre_auth_data"] = "must-be-cleared"
+
+    response = env.client.get(
+        "/callback?code=authorization-code&state=rotation-failure-state"
+    )
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "OAuth session storage unavailable"}
+    with env.client.session_transaction() as sess:
+        assert not sess
+        assert "access_token" not in sess
+        assert "csrf_token" not in sess
