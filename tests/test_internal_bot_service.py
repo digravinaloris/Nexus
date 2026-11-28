@@ -559,5 +559,5 @@ def test_signed_dispatch_allows_dashboard_roles_snapshot_and_rejects_bad_dto():
 
     service.dashboard_roles_snapshot = lambda guild_id: [{"id": "bad", "name": "Moderator"}]
     body = _request_body({"method": "dashboard_roles_snapshot", "args": ["123"], "kwargs": {}})
-    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    response = client.post(PATH, data=body, headers=_signed_headers(body, nonce="r" * 24))
     assert response.status_code == 503
