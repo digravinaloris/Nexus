@@ -584,9 +584,9 @@ def test_cases_page_filters_by_type(dash):
     assert "reason-warn-xyz" in text and "reason-ban-xyz" not in text
 
 
-def _submitted(dash, token, sanction="ban"):
+def _submitted(dash, token, sanction="ban", case_id=7):
     from sanctions_store import create_sanction_appeal
-    create_sanction_appeal(GID, 7, sanction, 42, "Bob", "why-banned", token)
+    create_sanction_appeal(GID, case_id, sanction, 42, "Bob", "why-banned", token)
     dash.col.ban_appeals.update_one({"token": token}, {"$set": {
         "status": "submitted", "appeal_text": "appeal-body-xyz",
         "submitted_at": datetime.datetime.now(datetime.timezone.utc)}})
@@ -594,21 +594,22 @@ def _submitted(dash, token, sanction="ban"):
 
 def test_appeals_review_accept_and_deny(dash):
     _submitted(dash, "t1")
-    _submitted(dash, "t2", sanction="warn")
+    _submitted(dash, "t2", sanction="warn", case_id=8)
     text = dash.client.get(dash.url("/appeals")).get_data(as_text=True)
     assert "appeal-body-xyz" in text
-    resp = dash.client.post(dash.url("/appeals/t1/accept"))
+    assert "t1" not in text and "/appeals/7/accept" in text
+    resp = dash.client.post(dash.url("/appeals/7/accept"))
     assert resp.status_code == 302 and resp.headers["Location"].endswith(f"/dashboard/{GID}/appeals")
     assert dash.col.ban_appeals.find_one({"token": "t1"})["status"] == "accepted"
     assert dash.guild.unbanned == [42]
     assert "Accepted appeal (via dashboard)" in dash.audit()
     assert any("accepted" in m for m in dash.dm)
-    dash.client.post(dash.url("/appeals/t2/deny"))
+    dash.client.post(dash.url("/appeals/8/deny"))
     assert dash.col.ban_appeals.find_one({"token": "t2"})["status"] == "denied"
     assert "Denied appeal (via dashboard)" in dash.audit()
     assert any("denied" in m for m in dash.dm)
     # déjà résolu -> flash "plus disponible", aucun changement
-    resp = dash.client.post(dash.url("/appeals/t1/accept"))
+    resp = dash.client.post(dash.url("/appeals/7/accept"))
     assert resp.status_code == 302
     assert any("no longer available" in m for _, m in flashes(dash.client))
 
@@ -627,7 +628,7 @@ def test_dashboard_failed_appeal_reversal_releases_claim(dash, monkeypatch):
             return False, "Discord temporarily unavailable"
 
     monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: FailedAppealService())
-    response = dash.client.post(dash.url("/appeals/failed-accept/accept"))
+    response = dash.client.post(dash.url("/appeals/7/accept"))
     assert response.status_code == 500
 
     appeal = dash.col.ban_appeals.find_one({"token": "failed-accept"})
@@ -646,13 +647,9 @@ def test_dashboard_appeal_claim_prevents_concurrent_resolution(dash, monkeypatch
         {"token": token}, {"$set": {"status": "processing"}}
     )
     service = dashboard_module.get_bot_service()
-    monkeypatch.setattr(
-        service, "api_get_appeal",
-        lambda _token: {**stale_appeal, "status": "submitted"},
-    )
     monkeypatch.setattr(dashboard_module, "get_bot_service", lambda: service)
 
-    response = dash.client.post(dash.url(f"/appeals/{token}/{action}"))
+    response = dash.client.post(dash.url(f"/appeals/7/{action}"))
     assert response.status_code == 302
     assert dash.col.ban_appeals.find_one({"token": token})["status"] == "processing"
 
