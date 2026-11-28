@@ -237,7 +237,7 @@ def test_signed_dispatch_fails_closed_when_authorization_result_is_not_boolean(m
     client, service = _client()
     setattr(service, method, lambda guild_id, user_id: "true")
     body = _request_body({"method": method, "args": args, "kwargs": {}})
-    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    response = client.post(PATH, data=body, headers=_signed_headers(body, nonce="m" * 24))
     assert response.status_code == 503
     assert response.get_json() == {"error": "internal service unavailable"}
 
@@ -542,3 +542,22 @@ def test_signed_dispatch_rejects_malformed_dashboard_settings_snapshot():
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 503
     assert response.get_json() == {"error": "internal service unavailable"}
+
+
+
+def test_signed_dispatch_allows_dashboard_roles_snapshot_and_rejects_bad_dto():
+    dto = [
+        {"id": "123", "name": "@everyone"},
+        {"id": "234", "name": "Moderator"},
+    ]
+    client, service = _client()
+    service.dashboard_roles_snapshot = lambda guild_id: dto
+    body = _request_body({"method": "dashboard_roles_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": dto}
+
+    service.dashboard_roles_snapshot = lambda guild_id: [{"id": "bad", "name": "Moderator"}]
+    body = _request_body({"method": "dashboard_roles_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body, nonce="r" * 24))
+    assert response.status_code == 503
