@@ -249,7 +249,7 @@ class BotService:
         raise NotImplementedError
 
     def dashboard_template_snapshot(self, code: str) -> Optional[Dict[str, object]]:
-        """Return one marketplace template by share code."""
+        """Return one public marketplace template by share code, without creator metadata."""
         raise NotImplementedError
 
     def dashboard_apply_template_snapshot(self, guild_id: str, snapshot: Dict[str, object]) -> None:
