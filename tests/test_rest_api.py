@@ -255,7 +255,7 @@ def test_invalid_guild_snowflakes_are_rejected_before_config_lookup(env, monkeyp
         raise AssertionError("invalid guild ID reached config lookup")
 
     class UnexpectedConfigService:
-        def api_config_snapshot(self, guild_id):
+        def api_authenticate_key(self, provided_key, guild_id=None):
             return unexpected_lookup(guild_id)
 
     monkeypatch.setattr(rest_module, "get_bot_service", lambda: UnexpectedConfigService())
