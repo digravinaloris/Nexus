@@ -949,6 +949,22 @@ def main():
     status, invalid_sanction_type_args = call("/__spike/fetch-client/dashboard_sanction_types_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_sanction_type_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard sanction types arguments: {invalid_sanction_type_args}")
 
+    status, fetch_presence_ping = call("/__spike/fetch-client/dashboard_presence_ping", "POST", {})
+    require(
+        status == 200 and fetch_presence_ping.get("result") is None,
+        f"Signed dashboard presence heartbeat failed: {fetch_presence_ping}",
+    )
+    status, invalid_presence_ping_args = call("/__spike/fetch-client/dashboard_presence_ping_invalid", "POST", {})
+    require(
+        status == 200 and invalid_presence_ping_args.get("result") == {"rejected": True},
+        "Invalid dashboard presence heartbeat arguments were accepted",
+    )
+    status, invalid_presence_ping_response = call("/__spike/fetch-client/dashboard_presence_ping_invalid_response", "POST", {})
+    require(
+        status == 503 and invalid_presence_ping_response.get("error") == "local Worker Fetch transport unavailable",
+        "Malformed dashboard presence heartbeat response was accepted",
+    )
+
     status, fetch_presence_viewers = call("/__spike/fetch-client/dashboard_presence_viewers", "POST", {})
     require(
         status == 200 and fetch_presence_viewers.get("result") == ["Loris", "Alex"],

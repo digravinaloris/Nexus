@@ -232,6 +232,16 @@ class CloudflareFetchBotService:
                 or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", args[0]) is None
             ):
                 raise ValueError("Invalid public template detail arguments")
+        elif method == "dashboard_presence_ping":
+            if (
+                expected_type is not type(None)
+                or len(args) != 3
+                or not valid_id(args[0])
+                or not valid_id(args[1])
+                or not isinstance(args[2], str)
+                or not 1 <= len(args[2].strip()) <= 100
+            ):
+                raise ValueError("Invalid dashboard presence heartbeat arguments")
         elif method == "dashboard_presence_viewers":
             if expected_type is not list or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid dashboard presence viewer arguments")
@@ -979,6 +989,14 @@ class CloudflareFetchBotService:
             raise ValueError("Invalid public template code")
         return self._dispatch("dashboard_template_snapshot", [code], (dict, type(None)))
 
+
+    def dashboard_presence_ping(self, guild_id: str, user_id: str, name: str) -> None:
+        for value in (guild_id, user_id):
+            if not isinstance(value, str) or re.fullmatch(r"[0-9]{1,20}", value) is None:
+                raise ValueError("Invalid dashboard presence heartbeat IDs")
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
+            raise ValueError("Invalid dashboard presence heartbeat name")
+        return self._dispatch("dashboard_presence_ping", [guild_id, user_id, name], type(None))
 
     def dashboard_presence_viewers(self, guild_id: str) -> list:
         if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:

@@ -383,6 +383,10 @@ def mock_internal_bot_service():
             }]
             return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_presence_ping" and args == ["123", "42", "Loris"]:
+        if key_id == "spike-presence-ping-malformed":
+            return jsonify({"ok": True, "result": {"unexpected": True}})
+        return jsonify({"ok": True, "result": None})
     if method == "dashboard_presence_viewers" and args == ["123"]:
         if key_id == "spike-presence-viewers-malformed":
             return jsonify({"ok": True, "result": ["Loris", "x" * 101]})
@@ -652,6 +656,15 @@ def exercise_fetch_bot_service_client(method):
             try: client.dashboard_overview_snapshot("not-decimal")
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
+        elif method == "dashboard_presence_ping":
+            result = client.dashboard_presence_ping("123", "42", "Loris")
+        elif method == "dashboard_presence_ping_invalid":
+            try: client.dashboard_presence_ping("not-decimal", "42", "Loris")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "dashboard_presence_ping_invalid_response":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-presence-ping-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_presence_ping("123", "42", "Loris")
         elif method == "dashboard_presence_viewers":
             result = client.dashboard_presence_viewers("123")
         elif method == "dashboard_presence_viewers_invalid":
