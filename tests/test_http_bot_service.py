@@ -1137,3 +1137,56 @@ def test_dashboard_public_templates_snapshot_rejects_unsafe_dtos(templates):
 
     with pytest.raises(BotServiceTransportError, match="invalid public templates"):
         _client(session).dashboard_public_templates_snapshot()
+
+
+def test_dashboard_calendar_has_duplicate_event_sends_utc_timestamp():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": True}))
+    starts_at = datetime.datetime(
+        2026, 11, 28, 12, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=2))
+    )
+
+    assert _client(session).dashboard_calendar_has_duplicate_event(
+        "123", "Community event", starts_at
+    ) is True
+
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {
+        "method": "dashboard_calendar_has_duplicate_event",
+        "args": ["123", "Community event", "2026-11-28T10:30:00+00:00"],
+        "kwargs": {},
+    }
+    verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+
+
+@pytest.mark.parametrize(
+    "guild_id,title,starts_at",
+    [
+        ("0", "Community event", datetime.datetime(2026, 11, 28, tzinfo=datetime.timezone.utc)),
+        ("123", "", datetime.datetime(2026, 11, 28, tzinfo=datetime.timezone.utc)),
+        ("123", "Community event", datetime.datetime(2026, 11, 28)),
+    ],
+)
+def test_dashboard_calendar_has_duplicate_event_rejects_invalid_arguments(
+    guild_id, title, starts_at
+):
+    session = FakeSession()
+    with pytest.raises(ValueError):
+        _client(session).dashboard_calendar_has_duplicate_event(guild_id, title, starts_at)
+    assert session.calls == []
+
+
+def test_dashboard_calendar_has_duplicate_event_rejects_non_boolean_result():
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": "yes"}))
+
+    with pytest.raises(BotServiceTransportError, match="invalid calendar duplicate-check"):
+        _client(session).dashboard_calendar_has_duplicate_event(
+            "123",
+            "Community event",
+            datetime.datetime(2026, 11, 28, tzinfo=datetime.timezone.utc),
+        )
