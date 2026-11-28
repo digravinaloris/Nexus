@@ -237,7 +237,7 @@ def test_signed_dispatch_fails_closed_when_authorization_result_is_not_boolean(m
     client, service = _client()
     setattr(service, method, lambda guild_id, user_id: "true")
     body = _request_body({"method": method, "args": args, "kwargs": {}})
-    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    response = client.post(PATH, data=body, headers=_signed_headers(body, nonce="m" * 24))
     assert response.status_code == 503
     assert response.get_json() == {"error": "internal service unavailable"}
 
