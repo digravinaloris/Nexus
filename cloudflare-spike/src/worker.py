@@ -794,6 +794,9 @@ def exercise_fetch_bot_service_client(method):
         elif method == "dashboard_roles_snapshot_invalid":
             invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-roles-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
             invalid_client.dashboard_roles_snapshot("123")
+        elif method == "dashboard_roles_snapshot_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-roles-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_roles_snapshot("123")
         elif method == "dashboard_roles_snapshot_invalid_args":
             try: client.dashboard_roles_snapshot("not-decimal")
             except ValueError: result = {"rejected": True}
@@ -823,6 +826,9 @@ def exercise_fetch_bot_service_client(method):
             result = client.dashboard_settings_snapshot("123")
         elif method == "dashboard_settings_snapshot_invalid":
             invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-settings-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_settings_snapshot("123")
+        elif method == "dashboard_settings_snapshot_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-settings-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
             invalid_client.dashboard_settings_snapshot("123")
         elif method == "dashboard_settings_snapshot_invalid_args":
             try: client.dashboard_settings_snapshot("not-decimal")
