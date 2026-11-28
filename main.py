@@ -213,6 +213,7 @@ from stores.template_store import (
 from web.app_factory import create_web_app
 from nexus_runtime.web_server import run_web_server
 from nexus_runtime.signals import handle_sigterm
+from nexus_runtime.web_server import start_web_server_thread
 
 # MongoDB setup
 mongo = None
@@ -4546,9 +4547,7 @@ def run_api():
     run_web_server(api, os.environ)
 
 def keep_alive():
-    t = Thread(target=run_api)
-    t.daemon = True
-    t.start()
+    start_web_server_thread(run_api, Thread)
 
 
 # Arrêt propre : Render envoie SIGTERM avant de tuer le process lors d'un
