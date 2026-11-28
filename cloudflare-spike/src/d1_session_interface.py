@@ -69,6 +69,23 @@ class D1SessionInterface(SessionInterface):
         idle_timeout=900,
         absolute_timeout=86400,
     ):
+        for name, dependency in (
+            ("db_getter", db_getter),
+            ("awaiter", awaiter),
+            ("key_getter", key_getter),
+        ):
+            if not callable(dependency):
+                raise TypeError(f"{name} must be callable")
+
+        if type(active_key_version) is not int or not 1 <= active_key_version <= 2_147_483_647:
+            raise ValueError("active_key_version must be a positive 32-bit integer")
+        if type(idle_timeout) is not int or not 1 <= idle_timeout <= 2_147_483_647:
+            raise ValueError("idle_timeout must be a positive 32-bit integer")
+        if type(absolute_timeout) is not int or not 1 <= absolute_timeout <= 2_147_483_647:
+            raise ValueError("absolute_timeout must be a positive 32-bit integer")
+        if absolute_timeout <= idle_timeout:
+            raise ValueError("absolute_timeout must be greater than idle_timeout")
+
         self._db_getter = db_getter
         self._awaiter = awaiter
         self._key_getter = key_getter
