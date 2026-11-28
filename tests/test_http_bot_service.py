@@ -208,6 +208,38 @@ def test_response_is_closed_after_success():
     assert response.closed is True
 
 
+def test_available_guild_ids_dispatches_and_enforces_candidate_scope():
+    candidates = ["123456789012345678", "234567890123456789"]
+    result = ["234567890123456789"]
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result}))
+    client = _client(session)
+    assert client.available_guild_ids(candidates) == result
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload == {
+        "method": "available_guild_ids",
+        "args": [candidates],
+        "kwargs": {},
+    }
+
+    for invalid in (
+        ["345678901234567890"],
+        ["123456789012345678", "123456789012345678"],
+        [123],
+    ):
+        bad = FakeSession(response=FakeResponse(payload={"ok": True, "result": invalid}))
+        with pytest.raises(BotServiceTransportError, match="invalid response"):
+            _client(bad).available_guild_ids(candidates)
+
+
+def test_available_guild_ids_rejects_invalid_candidate_lists_before_transport():
+    session = FakeSession()
+    client = _client(session)
+    for invalid in ("123", [123], ["bad"], ["123456789012345678"] * 2, ["1"] * 501):
+        with pytest.raises(ValueError, match="candidate guild IDs"):
+            client.available_guild_ids(invalid)
+    assert session.calls == []
+
+
 @pytest.mark.parametrize("method,args", [
     ("guild_presence", ["123456789012345678"]),
     ("guild_name", ["123456789012345678"]),
