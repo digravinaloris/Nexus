@@ -14,6 +14,10 @@ import threading
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+COMPAT = os.path.join(ROOT, "compat")
+for import_path in (ROOT, COMPAT):
+    if import_path not in sys.path:
+        sys.path.insert(0, import_path)
 GUILD = 111
 
 
