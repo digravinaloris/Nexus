@@ -158,6 +158,9 @@ class CloudflareFetchBotService:
         elif method == "dashboard_config_snapshot":
             if expected_type is not dict or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid dashboard config snapshot arguments")
+        elif method == "dashboard_public_templates_snapshot":
+            if expected_type is not list or args != []:
+                raise ValueError("Invalid public template snapshot arguments")
         elif method in {"dashboard_roles_snapshot", "dashboard_settings_snapshot"}:
             expected = (list, type(None)) if method == "dashboard_roles_snapshot" else (dict, type(None))
             if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
@@ -389,6 +392,39 @@ class CloudflareFetchBotService:
                 raise CloudflareBotServiceError(
                     "Internal BotService returned invalid FAQ snapshot"
                 )
+        if method == "dashboard_public_templates_snapshot":
+            required = {"code", "name", "created_guild_name", "created_at", "feature_toggle_count", "command_role_count"}
+            def valid_public_template(item):
+                if (
+                    not isinstance(item, dict)
+                    or set(item) != required
+                    or not isinstance(item["code"], str)
+                    or re.fullmatch(r"[A-Za-z0-9_-]{1,32}", item["code"]) is None
+                    or not isinstance(item["name"], str) or not 1 <= len(item["name"]) <= 100
+                    or not isinstance(item["created_guild_name"], str) or not 1 <= len(item["created_guild_name"]) <= 100
+                    or not isinstance(item["created_at"], str)
+                    or type(item["feature_toggle_count"]) is not int or not 0 <= item["feature_toggle_count"] <= 500
+                    or type(item["command_role_count"]) is not int or not 0 <= item["command_role_count"] <= 500
+                ):
+                    return False
+                try:
+                    stamp = datetime.datetime.fromisoformat(item["created_at"].replace("Z", "+00:00"))
+                except ValueError:
+                    return False
+                return stamp.tzinfo is not None and stamp.utcoffset() == datetime.timedelta(0)
+            if (
+                not isinstance(result, list)
+                or len(result) > 50
+                or not all(valid_public_template(item) for item in result)
+                or len({item["code"] for item in result}) != len(result)
+                or any(result[i]["created_at"] < result[i + 1]["created_at"] for i in range(len(result) - 1))
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid public templates snapshot")
+            result = [
+                dict(item, created_at=datetime.datetime.fromisoformat(item["created_at"].replace("Z", "+00:00")))
+                for item in result
+            ]
         if method == "dashboard_sanction_stats_snapshot":
             def valid_sanction_stats_label(label):
                 if not isinstance(label, str) or re.fullmatch(r"[0-3][0-9]/[0-1][0-9]", label) is None:
@@ -829,6 +865,9 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def dashboard_public_templates_snapshot(self) -> list:
+        return self._dispatch("dashboard_public_templates_snapshot", [], list)
 
     def dashboard_submitted_appeals_snapshot(self, guild_id: str, limit: int = 100) -> list:
         if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
