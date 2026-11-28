@@ -445,6 +445,27 @@ def main():
     status, invalid_dashboard_args = call("/__spike/fetch-client/dashboard_config_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard config arguments: {invalid_dashboard_args}")
 
+    status, member_warnings = call("/__spike/fetch-client/api_member_warnings", "POST", {})
+    require(
+        status == 200 and member_warnings.get("result") == 2,
+        f"Signed member warning count failed: {member_warnings}",
+    )
+    status, invalid_member_warnings = call("/__spike/fetch-client/api_member_warnings_invalid", "POST", {})
+    require(
+        status == 503 and invalid_member_warnings.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed member warning count: {invalid_member_warnings}",
+    )
+    status, out_of_range_member_warnings = call("/__spike/fetch-client/api_member_warnings_out_of_range", "POST", {})
+    require(
+        status == 503 and out_of_range_member_warnings.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted out-of-range member warning count: {out_of_range_member_warnings}",
+    )
+    status, invalid_member_warning_args = call("/__spike/fetch-client/api_member_warnings_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_member_warning_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid member warning count arguments: {invalid_member_warning_args}",
+    )
+
     status, fetch_warnlist = call("/__spike/fetch-client/api_warnlist_snapshot", "POST", {})
     require(
         status == 200 and fetch_warnlist.get("result") == [{"user_id": "123456789012345678", "count": 2}],
