@@ -19,3 +19,8 @@ def template_code_exists(code):
 
 def create_template(document):
     return col.templates.insert_one(document)
+
+
+def get_public_template_by_code(code):
+    """Look up a marketplace template only when it is explicitly public."""
+    return col.templates.find_one({"code": str(code).strip(), "public": True})
