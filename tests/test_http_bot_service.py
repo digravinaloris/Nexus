@@ -248,6 +248,17 @@ def test_guild_read_snapshots_reject_invalid_guild_ids_before_transport(guild_id
     assert session.calls == []
 
 
+@pytest.mark.parametrize("method", ["is_guild_owner", "is_guild_admin"])
+def test_dashboard_authorization_rejects_invalid_guild_or_user_ids(method):
+    session = FakeSession()
+    client = _client(session)
+    with pytest.raises(ValueError, match="guild ID"):
+        getattr(client, method)("bad", "234567890123456789")
+    with pytest.raises(ValueError, match="user ID"):
+        getattr(client, method)("123456789012345678", "bad")
+    assert session.calls == []
+
+
 @pytest.mark.parametrize(
     "method,result",
     [
