@@ -643,6 +643,45 @@ def test_signed_dispatch_fails_closed_for_non_boolean_case_appeal_action_result(
     assert response.status_code == 503
 
 
+def test_signed_dispatch_projects_audit_entries_to_safe_dto():
+    from datetime import datetime
+
+    client, service = _client()
+    service.api_audit_snapshot = lambda guild_id, limit: [{
+        "_id": "mongo-secret", "guild_id": guild_id, "actor_id": "private-actor-id",
+        "actor_name": "Moderator", "action": "Banned member", "details": "spam",
+        "timestamp": datetime(2026, 11, 28, 9, 30),
+    }]
+    body = _request_body({"method": "api_audit_snapshot", "args": ["123", 10], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+    assert result == [{"actor_name": "Moderator", "action": "Banned member", "details": "spam",
+        "timestamp": "2026-11-28T09:30:00Z"}]
+    assert "actor_id" not in result[0] and "_id" not in result[0] and "guild_id" not in result[0]
+
+
+def test_signed_dispatch_rejects_invalid_audit_snapshot_arguments():
+    client, service = _client()
+    body = _request_body({"method": "api_audit_snapshot", "args": ["123", True], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_fails_closed_for_malformed_audit_snapshot():
+    from datetime import datetime
+
+    client, service = _client()
+    service.api_audit_snapshot = lambda guild_id, limit: [{
+        "guild_id": guild_id, "actor_name": "Moderator", "action": "Banned member",
+        "details": "x" * 1001, "timestamp": datetime(2026, 11, 28, 9, 30),
+    }]
+    body = _request_body({"method": "api_audit_snapshot", "args": ["123", 10], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+
+
 def test_signed_dispatch_projects_submitted_appeals_without_tokens_or_mongo_fields():
     from datetime import datetime
 
