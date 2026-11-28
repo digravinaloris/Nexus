@@ -745,6 +745,10 @@ def exercise_fetch_bot_service_client(method):
             invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-calendar-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
             from datetime import datetime, timezone
             invalid_client.dashboard_calendar_upcoming_events("123", datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc), limit=10)
+        elif method == "dashboard_calendar_upcoming_events_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-dashboard-calendar-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            from datetime import datetime, timezone
+            invalid_client.dashboard_calendar_upcoming_events("123", datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc), limit=10)
         elif method == "dashboard_calendar_upcoming_events_invalid_args":
             from datetime import datetime
             try: client.dashboard_calendar_upcoming_events("not-decimal", datetime(2026, 11, 28))
