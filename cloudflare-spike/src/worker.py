@@ -94,6 +94,8 @@ def mock_internal_bot_service():
             "spike-members-malformed",
             "spike-dashboard-sanction-stats-malformed",
             "spike-dashboard-overview-malformed",
+            "spike-public-templates-malformed",
+            "spike-public-templates-duplicate",
             "spike-audit-malformed",
             "spike-sanction-cases-malformed",
         }
@@ -245,6 +247,14 @@ def mock_internal_bot_service():
             "voice_channels": [{"id": "789", "name": "Lobby"}],
             "roles": [{"id": "321", "name": "Moderator"}],
         },
+        "dashboard_public_templates_snapshot": [{
+            "code": "AbC_123-x",
+            "name": "Welcome Pack",
+            "created_guild_name": "Spike Test Server",
+            "created_at": "2026-11-28T09:30:00Z",
+            "feature_toggle_count": 4,
+            "command_role_count": 2,
+        }],
         "api_rest_config_snapshot": {
             "guild_id": "123",
             "language": "en",
@@ -364,6 +374,14 @@ def mock_internal_bot_service():
             malformed = dict(results[method])
             malformed["owner_id"] = "not-decimal"
             return jsonify({"ok": True, "result": malformed})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_public_templates_snapshot" and args == []:
+        if key_id == "spike-public-templates-malformed":
+            malformed = dict(results[method][0])
+            malformed["snapshot"] = {"private_config": "must-not-cross-worker-boundary"}
+            return jsonify({"ok": True, "result": [malformed]})
+        if key_id == "spike-public-templates-duplicate":
+            return jsonify({"ok": True, "result": [results[method][0], results[method][0]]})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_config_snapshot" and args == ["123"]:
         if key_id == "spike-config-malformed":
@@ -599,6 +617,18 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.dashboard_roles_snapshot("123")
         elif method == "dashboard_roles_snapshot_invalid_args":
             try: client.dashboard_roles_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "dashboard_public_templates_snapshot":
+            result = client.dashboard_public_templates_snapshot()
+        elif method == "dashboard_public_templates_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-public-templates-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_public_templates_snapshot()
+        elif method == "dashboard_public_templates_snapshot_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-public-templates-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_public_templates_snapshot()
+        elif method == "dashboard_public_templates_snapshot_invalid_args":
+            try: client._dispatch("dashboard_public_templates_snapshot", ["unexpected"], list)
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "dashboard_settings_snapshot":
