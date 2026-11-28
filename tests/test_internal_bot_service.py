@@ -487,3 +487,30 @@ def test_internal_service_enabled_with_missing_keyring_fails_closed():
             nonce_collection_provider=lambda: None,
         )
     assert service_calls == []
+
+
+def test_signed_dispatch_allows_dashboard_overview_snapshot_with_valid_dto():
+    service = FakeBotService()
+    dto = {
+        "id": "123", "name": "Test Server", "owner_id": "42",
+        "text_channels": [{"id": "111", "name": "general"}],
+        "roles": [{"id": "222", "name": "Admin",
+            "permissions": {"administrator": True, "manage_guild": False, "ban_members": False,
+                "kick_members": False, "manage_roles": False}}],
+        "role_names": {"222": "Admin"}, "open_tickets": [],
+    }
+    service.dashboard_overview_snapshot = lambda guild_id, category=None: dto
+    client, _ = _client()
+    body = _request_body({"method": "dashboard_overview_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": dto}
+
+
+def test_signed_dispatch_rejects_malformed_dashboard_overview_dto():
+    client, service = _client()
+    service.dashboard_overview_snapshot = lambda _guild_id: {"id": "123", "name": "Bad"}
+    body = _request_body({"method": "dashboard_overview_snapshot", "args": ["123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
