@@ -66,6 +66,10 @@ class FakeBotService:
         self.calls.append(("dashboard_config_snapshot", guild_id))
         return {"guild_id": guild_id, "welcome_channel_id": "456", "warn_mute_threshold": 3}
 
+    def dashboard_calendar_has_duplicate_event(self, guild_id, title, starts_at):
+        self.calls.append(("dashboard_calendar_has_duplicate_event", guild_id, title, starts_at))
+        return title == "Community event" and guild_id == "123"
+
     def dashboard_calendar_upcoming_events(self, guild_id, now, limit=50):
         self.calls.append(("dashboard_calendar_upcoming_events", guild_id, now, limit))
         return [{
@@ -211,6 +215,58 @@ def test_signed_dispatch_rejects_invalid_guild_owner_arguments(args):
     response = client.post(PATH, data=body, headers=_signed_headers(body))
     assert response.status_code == 403
     assert service.calls == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["123", "Community event"],
+        ["123", "Community event", "2026-11-28T12:00:00Z", "extra"],
+        ["not-decimal", "Community event", "2026-11-28T12:00:00Z"],
+        ["123", "", "2026-11-28T12:00:00Z"],
+        ["123", "x" * 101, "2026-11-28T12:00:00Z"],
+        ["123", "Community event", "2026-11-28T12:00:00"],
+        ["123", "Community event", "not-a-date"],
+    ],
+)
+def test_signed_dispatch_rejects_invalid_calendar_duplicate_arguments(args):
+    client, service = _client()
+    body = _request_body({"method": "dashboard_calendar_has_duplicate_event", "args": args, "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_checks_calendar_duplicate_event():
+    client, service = _client()
+    body = _request_body({
+        "method": "dashboard_calendar_has_duplicate_event",
+        "args": ["123", "Community event", "2026-11-28T12:00:00Z"],
+        "kwargs": {},
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "result": True}
+    assert service.calls == [(
+        "dashboard_calendar_has_duplicate_event",
+        "123",
+        "Community event",
+        datetime.datetime(2026, 11, 28, 12, 0, tzinfo=datetime.timezone.utc),
+    )]
+
+
+def test_signed_dispatch_rejects_non_boolean_calendar_duplicate_result():
+    client, service = _client()
+    service.dashboard_calendar_has_duplicate_event = lambda guild_id, title, starts_at: "false"
+    body = _request_body({
+        "method": "dashboard_calendar_has_duplicate_event",
+        "args": ["123", "Community event", "2026-11-28T12:00:00Z"],
+        "kwargs": {},
+    })
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "internal service unavailable"}
 
 
 def test_signed_dispatch_checks_guild_administrator_permission():
