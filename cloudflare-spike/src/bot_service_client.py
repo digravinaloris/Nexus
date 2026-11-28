@@ -428,6 +428,15 @@ class CloudflareFetchBotService:
             or not 1 <= len(result["uptime"]) <= 128
         ):
             raise CloudflareBotServiceError("Internal BotService returned an invalid public status snapshot")
+        if method == "api_health_snapshot" and (
+            not isinstance(result, dict)
+            or set(result) != {"online", "locked", "guild_count"}
+            or type(result["online"]) is not bool
+            or type(result["locked"]) is not bool
+            or type(result["guild_count"]) is not int
+            or not 0 <= result["guild_count"] <= 10_000_000
+        ):
+            raise CloudflareBotServiceError("Internal BotService returned an invalid API health snapshot")
         if method == "api_member_warnings" and (
             type(result) is not int or not 0 <= result <= 100000
         ):
