@@ -1002,6 +1002,11 @@ def main():
         status == 503 and invalid_calendar_events.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch accepted malformed dashboard calendar events: {invalid_calendar_events}",
     )
+    status, duplicate_calendar_events = call("/__spike/fetch-client/dashboard_calendar_upcoming_events_duplicate", "POST", {})
+    require(
+        status == 503 and duplicate_calendar_events.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted duplicate dashboard calendar event IDs: {duplicate_calendar_events}",
+    )
     status, invalid_calendar_args = call("/__spike/fetch-client/dashboard_calendar_upcoming_events_invalid_args", "POST", {})
     require(
         status == 200 and invalid_calendar_args.get("result") == {"rejected": True},
