@@ -161,35 +161,23 @@ Do not assume Cloudflare Worker memory is durable or shared across isolates. Ses
 - Production cutover, Cloudflare resource creation and DNS changes require separate explicit approval.
 
 
-## Guild configuration snapshot security gate (PR #311 preparation)
+## Guild configuration snapshot security gate (PRs #328-#329)
 
-The existing `api_config_snapshot(guild_id)` method returns the stored configuration document, which is consumed by dashboard and REST API handlers. This is **not a safe remote DTO by itself**. The public REST config route currently removes `_id` and `api_key` after retrieving the snapshot; that route-level redaction must not be treated as a guarantee for the internal signed transport.
+The raw `api_config_snapshot(guild_id)` method remains an in-process integration detail and must not be forwarded to the Worker. PR #328 introduced the dedicated `api_rest_config_snapshot(guild_id)` projection and switched the mobile REST config, feature-list and guild-stats routes to it.
 
-### Never forward the raw config document
+### Implemented boundary
 
-Before adding configuration snapshot transport, the bot-side service must produce a purpose-built DTO or allowlisted projection. The DTO must never contain:
+- The in-process adapter projects only an explicit top-level allowlist of REST-safe fields.
+- The projection excludes MongoDB metadata, per-guild API keys, webhook URLs (including `log_webhook_url`), and unknown future fields.
+- The signed internal dispatch endpoint exposes only `api_rest_config_snapshot` for this configuration read, with a single validated guild ID argument.
+- `SignedHttpBotService` exposes the same operation and validates the returned guild scope, reviewed top-level keys, JSON-compatible value bounds, nested secret-like key names, and a 64 KiB serialized response limit.
+- Regression tests cover secret sentinels, unreviewed fields, nested secret-like keys, invalid guild arguments, and cross-guild responses.
 
-- `_id` or database-specific metadata;
-- per-guild `api_key` or master credentials;
-- webhook URLs or secret-bearing webhook configuration (including `log_webhook_url`);
-- OAuth access/refresh tokens, session cookies, CSRF secrets, HMAC signing keys or replay nonces;
-- unreviewed fields added to MongoDB documents in the future.
+### Remaining configuration gates
 
-### Allowlist-first contract
+- The REST DTO is intentionally not a complete dashboard settings DTO. Dashboard handlers still use the in-process raw configuration snapshot and remain on the existing production adapter.
+- Before dashboard routes move to the Worker, inventory every field each dashboard handler reads and define separate minimal DTOs where needed. Do not reuse the mobile REST DTO as a blanket dashboard DTO.
+- Add explicit nested schemas for complex configuration fields (such as ticket panels and command templates) before broadening their remote use.
+- Do not expose `api_config_snapshot` through the internal endpoint or HTTP client.
 
-- Enumerate every config field actually read by the dashboard and REST API, including optional defaults and nested structures.
-- Define the remote DTO schema explicitly. Only reviewed dashboard-safe fields may be included; no pass-through dictionary or denylist-only filtering.
-- Validate guild ID, exact allowed keys, value types, list/dictionary lengths, nested item schemas and total serialized size on both bot-service and Worker-client sides.
-- Keep authentication-only config (especially `api_key`) local to the bot-service authorization boundary. Do not fetch it into the Worker merely to authenticate dashboard users.
-- Treat omitted fields as defaults only when the existing route behavior does so; preserve unavailable/error states distinctly from empty configuration.
-- Add regression tests that seed config with sentinel secrets and assert none appear in the serialized response, while approved settings survive round-trip validation.
-
-### Implementation order
-
-1. Inventory config fields read by all dashboard/API handlers and their write validators.
-2. Define separate minimal DTOs for dashboard reads and REST authentication/config access, where their needs differ.
-3. Add bot-side projection and strict internal endpoint validation.
-4. Add signed HTTP and Workers Fetch client validation, including oversized/malformed payload rejection.
-5. Add route contract tests for current in-process behavior and remote adapter parity.
-
-This gate intentionally blocks raw config snapshot transport until the allowlist and route field audit are complete. No config data is newly transported by this documentation change.
+The new REST DTO and signed transport are implemented, but this does not establish full dashboard config parity or authorize production cutover. The internal endpoint remains disabled by default; no Cloudflare resources, secrets, DNS, production settings, or deployment were changed.
