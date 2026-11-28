@@ -16,7 +16,7 @@ This is a source-level inventory of the six Flask route modules and the current 
 
 ## Route usage by module
 
-### `web/dashboard.py` — 36 operations
+### `web/dashboard.py` — 35 operations
 
 `available_guild_ids`, `is_guild_owner`, `guild_name`, `api_health_snapshot`, `dashboard_config_snapshot`, `api_update_config`, `api_audit_snapshot`, `api_sanction_cases_snapshot`, `api_record_audit`, `dashboard_submitted_appeals_snapshot`, `api_claim_appeal_by_case`, `api_release_appeal_claim_by_case`, `api_resolve_appeal_by_case`, `dashboard_presence_ping`, `dashboard_presence_viewers`, `dashboard_settings_snapshot`, `dashboard_roles_snapshot`, `dashboard_overview_snapshot`, `dashboard_add_command_role`, `dashboard_remove_command_role`, `dashboard_sanction_stats_snapshot`, `dashboard_sanction_types_snapshot`, `dashboard_calendar_has_duplicate_event`, `dashboard_calendar_insert_event`, `dashboard_calendar_delete_event`, `dashboard_calendar_upcoming_events`, `dashboard_audit_export_records`, `dashboard_public_templates_snapshot`, `dashboard_template_snapshot`, `dashboard_apply_template_snapshot`, `set_guild_locked`, `api_accept_appeal`, `api_notify_appeal_result`, `api_announce_calendar_event`, `api_log_dashboard_action`.
 
