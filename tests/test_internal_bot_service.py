@@ -643,6 +643,29 @@ def test_signed_dispatch_fails_closed_for_non_boolean_case_appeal_action_result(
     assert response.status_code == 503
 
 
+def test_signed_dispatch_verifies_api_keys_without_returning_them():
+    client, service = _client()
+    service.api_authenticate_key = lambda provided, guild_id=None: guild_id if provided == "secret-key" and guild_id == "123" else None
+    body = _request_body({"method": "api_authenticate_key", "args": ["secret-key", "123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 200 and response.get_json() == {"ok": True, "result": "123"}
+
+
+def test_signed_dispatch_rejects_malformed_api_key_auth_arguments():
+    client, service = _client()
+    body = _request_body({"method": "api_authenticate_key", "args": ["clé"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 403 and service.calls == []
+
+
+def test_signed_dispatch_fails_closed_for_wrong_scope_api_key_result():
+    client, service = _client()
+    service.api_authenticate_key = lambda provided, guild_id=None: "456"
+    body = _request_body({"method": "api_authenticate_key", "args": ["secret-key", "123"], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body))
+    assert response.status_code == 503
+
+
 def test_signed_dispatch_projects_warning_snapshots_to_safe_dtos():
     client, service = _client()
     service.api_member_warnings = lambda guild_id, user_id: 3

@@ -98,6 +98,7 @@ class SignedHttpBotService(BotService):
             "api_audit_snapshot": 2,
             "api_member_warnings": 2,
             "api_warnlist_snapshot": 1,
+            "api_authenticate_key": (1, 2),
             "dashboard_submitted_appeals_snapshot": 2,
             "api_claim_appeal_by_case": 2,
             "api_release_appeal_claim_by_case": 2,
@@ -115,6 +116,10 @@ class SignedHttpBotService(BotService):
         )
         if not valid_count:
             raise ValueError("Invalid internal BotService arguments")
+        if method == "api_authenticate_key":
+            if (not isinstance(args[0], str) or not args[0].isascii() or not 1 <= len(args[0]) <= 512
+                or (len(args) == 2 and not self._valid_guild_id(args[1]))):
+                raise ValueError("Invalid API key authentication arguments")
         if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
@@ -224,6 +229,12 @@ class SignedHttpBotService(BotService):
         result = payload["result"]
         if method in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
             if not isinstance(result, bool):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method == "api_authenticate_key":
+            if result is not None and (
+                not self._valid_guild_id(result)
+                or (len(args) == 2 and result != args[1])
+            ):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method in {"health_snapshot", "public_status_snapshot"}:
             if not isinstance(result, dict):
@@ -578,6 +589,12 @@ class SignedHttpBotService(BotService):
 
     def dashboard_sanction_types_snapshot(self, guild_id: str):
         return self._dispatch_snapshot("dashboard_sanction_types_snapshot", (guild_id,))
+
+    def api_authenticate_key(self, provided_key: str, guild_id: str = None):
+        if not isinstance(provided_key, str) or not provided_key.isascii() or not 1 <= len(provided_key) <= 512:
+            return None
+        args = (provided_key,) if guild_id is None else (provided_key, guild_id)
+        return self._dispatch_snapshot("api_authenticate_key", args)
 
     def api_member_warnings(self, guild_id: str, user_id: str):
         if not self._valid_guild_id(guild_id) or not self._valid_guild_id(user_id):
