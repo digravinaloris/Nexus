@@ -440,9 +440,11 @@ class CloudflareFetchBotService:
                         and parsed_icon.username is None
                         and parsed_icon.password is None
                         and parsed_icon.fragment == ""
+                        and parsed_icon.path.startswith(f"/icons/{guild_id}/")
+                        and parsed_icon.path.rsplit("/", 1)[-1].rsplit(".", 1)[-1] in {"png", "webp", "gif"}
                         and re.fullmatch(
-                            rf"/icons/{re.escape(guild_id)}/[A-Za-z0-9_-]{1,128}\\.(?:png|webp|gif)",
-                            parsed_icon.path,
+                            r"[A-Za-z0-9_-]{1,128}",
+                            parsed_icon.path.rsplit("/", 1)[-1].rsplit(".", 1)[0],
                         ) is not None
                     )
                 elif isinstance(icon_url, str):
