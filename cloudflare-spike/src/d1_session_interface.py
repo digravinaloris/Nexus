@@ -177,7 +177,7 @@ class D1SessionInterface(SessionInterface):
             return self._new_session(invalid=True)
 
         try:
-            key_version = int(self._row_value(row, "key_version"))
+            key_version = self._row_value(row, "key_version")
             key = self._key_for_version(key_version)
         except Exception:
             return self._new_session(unavailable=True)
