@@ -79,7 +79,6 @@ def validate_session_configuration():
     except (TypeError, ValueError):
         checks["valid_defaults"] = False
     key_checks = {}
-    key_probe = D1SessionInterface(**valid)
     for name, getter in (
         ("short_key", lambda _version: b"x" * 31),
         ("long_key", lambda _version: b"x" * 33),
@@ -87,10 +86,13 @@ def validate_session_configuration():
         ("bytearray_key", lambda _version: bytearray(b"x" * 32)),
         ("valid_key", lambda _version: b"x" * 32),
         ("invalid_version", lambda _version: b"x" * 32),
+        ("bool_version", lambda _version: b"x" * 32),
+        ("float_version", lambda _version: b"x" * 32),
+        ("string_version", lambda _version: b"x" * 32),
     ):
         probe = D1SessionInterface(**{**valid, "key_getter": getter})
         try:
-            version = 0 if name == "invalid_version" else 2
+            version = {"invalid_version": 0, "bool_version": True, "float_version": 2.0, "string_version": "2"}.get(name, 2)
             probe._key_for_version(version)
         except (TypeError, ValueError):
             key_checks[name] = name != "valid_key"
