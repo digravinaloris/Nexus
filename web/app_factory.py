@@ -28,6 +28,7 @@ def create_web_app(
     internal_bot_service_keyring=None,
     internal_nonce_store=None,
     session_interface=None,
+    require_server_side_sessions: bool = False,
 ) -> Flask:
     """Build the existing Nexus web surface without importing or starting main.py.
 
@@ -69,6 +70,22 @@ def create_web_app(
         app.config.update(config)
     if session_interface is not None:
         app.session_interface = session_interface
+    if require_server_side_sessions:
+        required_session_hooks = (
+            "consume_oauth_state",
+            "rotate_session",
+            "revoke_session",
+        )
+        if session_interface is None or getattr(
+            session_interface, "nexus_server_side_sessions", False
+        ) is not True or any(
+            not callable(getattr(session_interface, hook, None))
+            for hook in required_session_hooks
+        ):
+            raise RuntimeError(
+                "A production server-side session interface with atomic OAuth "
+                "consumption, rotation, and revocation is required"
+            )
     if not app.config.get("SECRET_KEY"):
         raise RuntimeError("A Flask SECRET_KEY must be configured before creating the web app")
     if bot_service is not None:
