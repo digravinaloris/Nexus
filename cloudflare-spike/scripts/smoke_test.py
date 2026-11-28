@@ -1110,6 +1110,8 @@ def main():
     require(status == 200 and fetch_dashboard_roles.get("result") == expected_dashboard_roles, f"Signed dashboard roles snapshot failed: {fetch_dashboard_roles}")
     status, invalid_dashboard_roles = call("/__spike/fetch-client/dashboard_roles_snapshot_invalid", "POST", {})
     require(status == 503 and invalid_dashboard_roles.get("error") == "local Worker Fetch transport unavailable", f"Workers Fetch accepted malformed dashboard roles: {invalid_dashboard_roles}")
+    status, duplicate_dashboard_roles = call("/__spike/fetch-client/dashboard_roles_snapshot_duplicate", "POST", {})
+    require(status == 503 and duplicate_dashboard_roles.get("error") == "local Worker Fetch transport unavailable", f"Workers Fetch accepted duplicate dashboard role IDs: {duplicate_dashboard_roles}")
     status, invalid_dashboard_roles_args = call("/__spike/fetch-client/dashboard_roles_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_roles_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard roles arguments: {invalid_dashboard_roles_args}")
 
@@ -1180,6 +1182,8 @@ def main():
     require(status == 200 and fetch_dashboard_settings.get("result") == expected_dashboard_settings, f"Signed dashboard settings snapshot failed: {fetch_dashboard_settings}")
     status, invalid_dashboard_settings = call("/__spike/fetch-client/dashboard_settings_snapshot_invalid", "POST", {})
     require(status == 503 and invalid_dashboard_settings.get("error") == "local Worker Fetch transport unavailable", f"Workers Fetch accepted malformed dashboard settings: {invalid_dashboard_settings}")
+    status, duplicate_dashboard_settings = call("/__spike/fetch-client/dashboard_settings_snapshot_duplicate", "POST", {})
+    require(status == 503 and duplicate_dashboard_settings.get("error") == "local Worker Fetch transport unavailable", f"Workers Fetch accepted duplicate dashboard setting role IDs: {duplicate_dashboard_settings}")
     status, invalid_dashboard_settings_args = call("/__spike/fetch-client/dashboard_settings_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_settings_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard settings arguments: {invalid_dashboard_settings_args}")
 
