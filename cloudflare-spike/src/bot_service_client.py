@@ -990,6 +990,14 @@ class CloudflareFetchBotService:
         return self._dispatch("dashboard_template_snapshot", [code], (dict, type(None)))
 
 
+    def dashboard_presence_ping(self, guild_id: str, user_id: str, name: str) -> None:
+        for value in (guild_id, user_id):
+            if not isinstance(value, str) or re.fullmatch(r"[0-9]{1,20}", value) is None:
+                raise ValueError("Invalid dashboard presence heartbeat IDs")
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
+            raise ValueError("Invalid dashboard presence heartbeat name")
+        return self._dispatch("dashboard_presence_ping", [guild_id, user_id, name], type(None))
+
     def dashboard_presence_viewers(self, guild_id: str) -> list:
         if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
             raise ValueError("Invalid guild ID")
