@@ -80,9 +80,11 @@ def create_internal_bot_service_blueprint(
 ) -> Blueprint:
     """Create the opt-in v1 dispatch endpoint.
 
-    Only explicit read-only snapshot methods are exposed. Mutating operations
-    must be added explicitly with their own DTO and authorization rules;
-    arbitrary method names are never dispatched.
+    Only explicitly allowlisted operations are exposed; arbitrary method names
+    are never dispatched. Most operations are read-only snapshots. The small
+    stateful exceptions are the appeal claim/release/resolve workflow and the
+    dashboard presence heartbeat. Each exception has a dedicated argument
+    contract and is still protected by the signed request and replay checks.
     """
     blueprint = Blueprint("nexus_internal_bot_service", __name__)
 
@@ -865,3 +867,4 @@ def internal_bot_service_app_options(
         "internal_bot_service_keyring": keyring,
         "internal_nonce_store": nonce_store,
     }
+
