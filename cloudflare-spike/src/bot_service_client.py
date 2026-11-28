@@ -402,6 +402,30 @@ class CloudflareFetchBotService:
         ):
             raise CloudflareBotServiceError("Internal BotService returned an invalid response")
         result = payload["result"]
+        if method == "health_snapshot" and (
+            not isinstance(result, dict)
+            or set(result) != {"status", "discord_gateway", "mongodb", "guild_count"}
+            or result["status"] != "alive"
+            or result["discord_gateway"] not in {"connected", "disconnected"}
+            or result["mongodb"] not in {"connected", "unreachable"}
+            or type(result["guild_count"]) is not int
+            or not 0 <= result["guild_count"] <= 10_000_000
+        ):
+            raise CloudflareBotServiceError("Internal BotService returned an invalid health snapshot")
+        if method == "public_status_snapshot" and (
+            not isinstance(result, dict)
+            or set(result) != {"online", "guild_count", "latency_ms", "uptime"}
+            or type(result["online"]) is not bool
+            or type(result["guild_count"]) is not int
+            or not 0 <= result["guild_count"] <= 10_000_000
+            or not (
+                (type(result["latency_ms"]) is int and 0 <= result["latency_ms"] <= 600_000)
+                or result["latency_ms"] == "—"
+            )
+            or not isinstance(result["uptime"], str)
+            or not 1 <= len(result["uptime"]) <= 128
+        ):
+            raise CloudflareBotServiceError("Internal BotService returned an invalid public status snapshot")
         if method == "api_member_warnings" and (
             type(result) is not int or not 0 <= result <= 100000
         ):
