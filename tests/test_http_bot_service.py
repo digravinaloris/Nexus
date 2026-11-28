@@ -573,3 +573,27 @@ def test_remote_guild_stats_snapshot_rejects_invalid_ids(args):
     with pytest.raises(ValueError):
         _client(session).api_guild_stats_snapshot(*args)
     assert session.calls == []
+
+
+def test_dashboard_overview_snapshot_dispatch_and_validates_dto():
+    dto = {
+        "id": "123456789012345678", "name": "Nexus", "owner_id": "234567890123456789",
+        "text_channels": [{"id": "345678901234567890", "name": "general"}],
+        "roles": [{"id": "456789012345678901", "name": "Admin",
+            "permissions": {"administrator": True, "manage_guild": False, "ban_members": False,
+                "kick_members": False, "manage_roles": False}}],
+        "role_names": {"456789012345678901": "Admin"},
+        "open_tickets": [{"id": "567890123456789012", "name": "ticket-1"}],
+    }
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": dto}))
+    client = _client(session)
+    assert client.dashboard_overview_snapshot("123456789012345678", "234567890123456789") == dto
+    payload = json.loads(session.calls[0][1]["data"])
+    assert payload["method"] == "dashboard_overview_snapshot"
+    assert payload["args"] == ["123456789012345678", "234567890123456789"]
+
+    malformed = dict(dto)
+    malformed["roles"] = [{"id": "456789012345678901", "name": "Admin", "permissions": {"administrator": "yes"}}]
+    bad_session = FakeSession(response=FakeResponse(payload={"ok": True, "result": malformed}))
+    with pytest.raises(BotServiceTransportError, match="invalid response"):
+        _client(bad_session).dashboard_overview_snapshot("123456789012345678")

@@ -139,6 +139,11 @@ def create_internal_bot_service_blueprint(
             if len(args) != 2 or not all(valid_guild_id(value) for value in args):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "dashboard_overview_snapshot":
+            if (len(args) not in {1, 2} or not valid_guild_id(args[0])
+                or (len(args) == 2 and args[1] is not None and not valid_guild_id(args[1]))):
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "api_guild_stats_snapshot":
             if (
                 len(args) not in {1, 2}
@@ -220,6 +225,31 @@ def create_internal_bot_service_blueprint(
 
         try:
             result = operation(*operation_args)
+            if method_name == "dashboard_overview_snapshot" and result is not None:
+                permission_keys = {"administrator", "manage_guild", "ban_members", "kick_members", "manage_roles"}
+                def valid_item(item):
+                    return (isinstance(item, dict) and set(item) == {"id", "name"}
+                        and valid_guild_id(item["id"]) and isinstance(item["name"], str)
+                        and 1 <= len(item["name"]) <= 100)
+                if (not isinstance(result, dict)
+                    or set(result) != {"id", "name", "owner_id", "text_channels", "roles", "role_names", "open_tickets"}
+                    or not valid_guild_id(result.get("id")) or not valid_guild_id(result.get("owner_id"))
+                    or not isinstance(result.get("name"), str) or not 1 <= len(result["name"]) <= 256
+                    or not isinstance(result.get("text_channels"), list) or len(result["text_channels"]) > 500
+                    or not all(valid_item(item) for item in result["text_channels"])
+                    or not isinstance(result.get("open_tickets"), list) or len(result["open_tickets"]) > 500
+                    or not all(valid_item(item) for item in result["open_tickets"])
+                    or not isinstance(result.get("roles"), list) or len(result["roles"]) > 500
+                    or not all(isinstance(role, dict) and set(role) == {"id", "name", "permissions"}
+                        and valid_guild_id(role.get("id")) and isinstance(role.get("name"), str)
+                        and 1 <= len(role["name"]) <= 100 and isinstance(role.get("permissions"), dict)
+                        and set(role["permissions"]) == permission_keys
+                        and all(type(value) is bool for value in role["permissions"].values())
+                        for role in result["roles"])
+                    or not isinstance(result.get("role_names"), dict) or len(result["role_names"]) > 500
+                    or not all(valid_guild_id(key) and isinstance(value, str) and 1 <= len(value) <= 100
+                        for key, value in result["role_names"].items())):
+                    return jsonify({"error": "internal service unavailable"}), 503
             if method_name in {"is_guild_owner", "is_guild_admin"} and not isinstance(result, bool):
                 return jsonify({"error": "internal service unavailable"}), 503
             if method_name == "guild_presence" and (
