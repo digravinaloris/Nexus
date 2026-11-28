@@ -181,6 +181,13 @@ def mock_internal_bot_service():
                 }
             ],
         },
+        "api_rest_config_snapshot": {
+            "guild_id": "123",
+            "language": "en",
+            "tickets_enabled": True,
+            "welcome_banner_enabled": False,
+            "command_roles": {"ban": ["321"]},
+        },
         "api_members_snapshot": [
             {
                 "id": "123456789012345678",
@@ -212,6 +219,12 @@ def mock_internal_bot_service():
     if method == "api_roles_snapshot" and args == ["123"]:
         if key_id == "spike-role-malformed":
             return jsonify({"ok": True, "result": [{"id": "not-decimal", "name": "Moderator"}]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "api_rest_config_snapshot" and args == ["123"]:
+        if key_id == "spike-config-malformed":
+            malformed = dict(results[method])
+            malformed["api_key"] = "must-not-cross-worker-boundary"
+            return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_members_snapshot" and args == ["123"]:
         if key_id == "spike-members-malformed":
@@ -324,6 +337,23 @@ def exercise_fetch_bot_service_client(method):
         elif method == "api_faq_snapshot_invalid_args":
             try:
                 client.api_faq_snapshot("not-decimal")
+            except ValueError:
+                result = {"rejected": True}
+            else:
+                result = {"rejected": False}
+        elif method == "api_rest_config_snapshot":
+            result = client.api_rest_config_snapshot("123")
+        elif method == "api_rest_config_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-config-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_rest_config_snapshot("123")
+        elif method == "api_rest_config_snapshot_invalid_args":
+            try:
+                client.api_rest_config_snapshot("not-decimal")
             except ValueError:
                 result = {"rejected": True}
             else:
