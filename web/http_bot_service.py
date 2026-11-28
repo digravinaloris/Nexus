@@ -96,6 +96,9 @@ class SignedHttpBotService(BotService):
             "dashboard_sanction_types_snapshot": 1,
             "api_sanction_cases_snapshot": 3,
             "dashboard_submitted_appeals_snapshot": 2,
+            "api_claim_appeal_by_case": 2,
+            "api_release_appeal_claim_by_case": 2,
+            "api_resolve_appeal_by_case": 3,
         }
         if method not in allowed_argument_counts:
             raise ValueError("Unsupported internal BotService operation")
@@ -109,7 +112,7 @@ class SignedHttpBotService(BotService):
         )
         if not valid_count:
             raise ValueError("Invalid internal BotService arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
@@ -128,6 +131,10 @@ class SignedHttpBotService(BotService):
             raise ValueError("Invalid sanction cases arguments")
         if method == "dashboard_submitted_appeals_snapshot" and (type(args[1]) is not int or not 1 <= args[1] <= 100):
             raise ValueError("Invalid submitted appeals limit")
+        if method in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case"} and (type(args[1]) is not int or not 1 <= args[1] <= (2**63 - 1)):
+            raise ValueError("Invalid appeal case ID")
+        if method == "api_resolve_appeal_by_case" and (type(args[1]) is not int or not 1 <= args[1] <= (2**63 - 1) or args[2] not in {"accepted", "denied"}):
+            raise ValueError("Invalid appeal resolution arguments")
 
         body = json.dumps(
             {"method": method, "args": list(args), "kwargs": {}},
@@ -208,7 +215,10 @@ class SignedHttpBotService(BotService):
             )
 
         result = payload["result"]
-        if method in {"health_snapshot", "public_status_snapshot"}:
+        if method in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
+            if not isinstance(result, bool):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method in {"health_snapshot", "public_status_snapshot"}:
             if not isinstance(result, dict):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method == "guild_presence":
@@ -535,6 +545,24 @@ class SignedHttpBotService(BotService):
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("Invalid submitted appeals limit")
         return self._dispatch_snapshot("dashboard_submitted_appeals_snapshot", (guild_id, limit))
+
+    def api_claim_appeal_by_case(self, guild_id: str, case_id: int) -> bool:
+        return self._dispatch_appeal_case_action("api_claim_appeal_by_case", guild_id, case_id)
+
+    def api_release_appeal_claim_by_case(self, guild_id: str, case_id: int) -> bool:
+        return self._dispatch_appeal_case_action("api_release_appeal_claim_by_case", guild_id, case_id)
+
+    def api_resolve_appeal_by_case(self, guild_id: str, case_id: int, status: str) -> bool:
+        if status not in {"accepted", "denied"}:
+            raise ValueError("Invalid appeal resolution status")
+        return self._dispatch_appeal_case_action("api_resolve_appeal_by_case", guild_id, case_id, status)
+
+    def _dispatch_appeal_case_action(self, method: str, guild_id: str, case_id: int) -> bool:
+        if not self._valid_guild_id(guild_id):
+            raise ValueError("Invalid guild ID")
+        if type(case_id) is not int or not 1 <= case_id <= (2**63 - 1):
+            raise ValueError("Invalid appeal case ID")
+        return self._dispatch_snapshot(method, (guild_id, case_id))
 
     def api_sanction_cases_snapshot(self, guild_id: str, filter_type: str = "", limit: int = 50):
         if not self._valid_guild_id(guild_id):
