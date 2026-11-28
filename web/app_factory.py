@@ -70,6 +70,10 @@ def create_web_app(
         app.config.update(config)
     if session_interface is not None:
         app.session_interface = session_interface
+    require_server_side_sessions = (
+        require_server_side_sessions
+        or runtime_env.get("NEXUS_REQUIRE_SERVER_SIDE_SESSIONS", "").strip().lower() == "true"
+    )
     if require_server_side_sessions:
         required_session_hooks = (
             "consume_oauth_state",
