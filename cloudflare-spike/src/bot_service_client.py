@@ -420,10 +420,51 @@ class CloudflareFetchBotService:
             raise CloudflareBotServiceError("Internal BotService returned invalid guild presence")
         if method == "guild_name" and (not result or len(result) > 256):
             raise CloudflareBotServiceError("Internal BotService returned an invalid guild name")
-        if method == "api_guild_list_snapshot" and result is not None and (
-            len(result) > 500 or not all(isinstance(value, dict) for value in result)
-        ):
-            raise CloudflareBotServiceError("Internal BotService returned an invalid guild list")
+        if method == "api_guild_list_snapshot" and result is not None:
+            valid_guilds = []
+            for item in result if isinstance(result, list) else ():
+                if not isinstance(item, dict) or set(item) != {"id", "name", "member_count", "icon_url"}:
+                    valid_guilds = []
+                    break
+                guild_id = item["id"]
+                name = item["name"]
+                member_count = item["member_count"]
+                icon_url = item["icon_url"]
+                valid_icon = icon_url is None
+                if isinstance(icon_url, str) and len(icon_url) <= 2048:
+                    parsed_icon = urlsplit(icon_url)
+                    valid_icon = (
+                        parsed_icon.scheme == "https"
+                        and parsed_icon.netloc == "cdn.discordapp.com"
+                        and parsed_icon.hostname == "cdn.discordapp.com"
+                        and parsed_icon.username is None
+                        and parsed_icon.password is None
+                        and parsed_icon.fragment == ""
+                        and re.fullmatch(
+                            rf"/icons/{re.escape(guild_id)}/[A-Za-z0-9_-]{1,128}\\.(?:png|webp|gif)",
+                            parsed_icon.path,
+                        ) is not None
+                    )
+                valid_guilds.append(
+                    valid_id(guild_id)
+                    and isinstance(name, str) and 1 <= len(name) <= 100
+                    and (
+                        member_count is None
+                        or (
+                            type(member_count) is int
+                            and 0 <= member_count <= 10_000_000
+                        )
+                    )
+                    and valid_icon
+                )
+            if (
+                not isinstance(result, list)
+                or len(result) > 500
+                or len(valid_guilds) != len(result)
+                or not all(valid_guilds)
+                or len({item.get("id") for item in result if isinstance(item, dict)}) != len(result)
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned an invalid guild list")
         if (
             method in {"api_text_channels_snapshot", "api_roles_snapshot"}
             and result is not None
