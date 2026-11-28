@@ -173,3 +173,23 @@ This checkpoint records PR-level code and documentation progress only. The route
 5. Finish route/assets parity and operational readiness before requesting separate deployment approval.
 
 No Cloudflare resources, secrets, DNS, production settings, or deployment were changed. The current Render path remains untouched.
+
+
+## Progress checkpoint (2026-11-28 — after PR #420)
+
+### Additional groundwork completed
+
+- [x] PRs #375 and #385–#400 expanded the isolated Worker session proof: atomic OAuth state consumption, revision/CAS conflict handling, expiry, opaque-cookie policy, malformed/oversized payload rejection, key-version migration, missing-key fail-closed behavior, and regression coverage for concurrent rotation and stale writes. This remains a compatibility spike, not the production session backend.
+- [x] PRs #401–#418 expanded the isolated Worker Fetch transport with presence heartbeat and strict DTO validation for health/status, guild lists, channel/role collections, member/calendar/dashboard snapshots, duplicate IDs, and bounded payloads.
+- [x] PR #419 rejects non-finite numeric values in dashboard and REST configuration DTOs.
+- [x] PR #420 corrected the signed internal BotService endpoint contract documentation to distinguish read-only snapshots from its explicitly scoped appeal-claim workflow and presence heartbeat.
+- [x] The active `main` baseline for this checkpoint is `247f8a1cce1a336788e85854c582d8f0d32604f1`.
+
+### Remaining release blockers (unchanged)
+
+1. Production Flask OAuth still stores the Discord access token (and transient OAuth/CSRF values) in the default readable signed-cookie session. The D1 session implementation is still isolated spike code; production integration and its full acceptance suite are not complete.
+2. Production routes still use the in-process BotService adapter. The signed HTTP and Cloudflare Fetch clients are not yet injected into a separately testable Worker app, and method presence is not proof of route/authorization parity.
+3. The Worker Fetch surface still lacks reviewed operations needed by some routes. Mutations and security-sensitive flows must receive individual authorization, actor, idempotency, audit, schema, and failure-semantics reviews; do not bulk-forward them.
+4. Full template/static asset parity, Worker dependency compatibility, environment/binding matrix, monitoring, rollback and end-to-end route tests remain outstanding.
+
+No Cloudflare account resources, secrets, DNS, OAuth redirect settings, production hosting configuration, or deployment were changed. The existing Render path remains untouched. Cloudflare migration should begin only after the blockers above pass their tests and a separate explicit deployment/cutover approval is received.
