@@ -129,7 +129,7 @@ def test_factory_can_require_a_complete_server_side_session_backend():
     ],
 )
 def test_factory_rejects_missing_or_incomplete_server_side_session_backend(backend):
-    with pytest.raises(RuntimeError, match="server-side session interface"):
+    with pytest.raises(RuntimeError, match="server-side payloads"):
         _create_app(
             _config(),
             session_interface=backend,
