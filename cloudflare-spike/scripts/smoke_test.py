@@ -445,6 +445,28 @@ def main():
     status, invalid_dashboard_args = call("/__spike/fetch-client/dashboard_config_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard config arguments: {invalid_dashboard_args}")
 
+    status, fetch_audit = call("/__spike/fetch-client/api_audit_snapshot", "POST", {})
+    require(
+        status == 200
+        and fetch_audit.get("result") == [{
+            "actor_name": "Moderator",
+            "action": "Banned member",
+            "details": "spam",
+            "timestamp": "2026-11-28T09:30:00+00:00",
+        }],
+        f"Signed audit snapshot failed: {fetch_audit}",
+    )
+    status, invalid_audit = call("/__spike/fetch-client/api_audit_snapshot_invalid", "POST", {})
+    require(
+        status == 503 and invalid_audit.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed audit data: {invalid_audit}",
+    )
+    status, invalid_audit_args = call("/__spike/fetch-client/api_audit_snapshot_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_audit_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid audit arguments: {invalid_audit_args}",
+    )
+
     status, fetch_calendar_events = call("/__spike/fetch-client/dashboard_calendar_upcoming_events", "POST", {})
     calendar_result = fetch_calendar_events.get("result")
     require(
