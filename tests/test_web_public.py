@@ -70,7 +70,7 @@ def test_web_endpoint_names_and_rules_are_stable(nexus):
 # -------------------------------------------------------------------- home
 
 def test_home_without_mongo_is_still_200(nexus, monkeypatch):
-    import core
+    from compat import core
     core.reset()
     monkeypatch.setattr(nexus, "mongo", None)
     resp = nexus.api.test_client().get("/")
@@ -265,7 +265,7 @@ def test_dashboard_page_renders_for_admin(env, monkeypatch):
         sess["access_token"] = "AT"
         sess["token_expires_at"] = 4102444800
         sess["dash_user"] = {"id": "42", "username": "bob"}
-    from sanctions_store import log_sanction
+    from compat.sanctions_store import log_sanction
     log_sanction(int(gid), 10, "ban", "spam-reason-xyz", "mobile_app")
     resp = env.client.get(f"/dashboard/{gid}/cases")
     assert resp.status_code == 200
@@ -296,7 +296,7 @@ def test_killswitch_confirm_page_has_no_side_effect(env):
     _token(env)
     resp = env.client.get("/admin/kill-switch/tok", headers={"X-Forwarded-For": "1.2.3.4, 9.9.9.9"})
     assert resp.status_code == 200 and "Lock the bot down?" in resp.get_data(as_text=True)
-    from config_store import get_global_lock
+    from compat.config_store import get_global_lock
     assert get_global_lock() is False
     assert env.col.killswitch_tokens.find_one({"token": "tok"})["used"] is False
     doc = env.col.audit.find_one({"guild_id": "global"})
@@ -315,7 +315,7 @@ def test_killswitch_wrong_code_counts_attempts_then_dies(env, monkeypatch):
     assert env.col.killswitch_tokens.find_one({"token": "tok"})["attempts"] == 5
     assert len(env.owner.sent) == 1 and "Possible intrusion attempt" in env.owner.sent[0]
     assert env.client.get("/admin/kill-switch/tok").status_code == 410  # lien mort
-    from config_store import get_global_lock
+    from compat.config_store import get_global_lock
     assert get_global_lock() is False
 
 
@@ -324,7 +324,7 @@ def test_killswitch_no_totp_secret_never_validates(env, monkeypatch):
     monkeypatch.setitem(env.nexus.api.config, "TOTP_SECRET", "")
     _token(env)
     env.client.post("/admin/kill-switch/tok", data={"code": "123456"})
-    from config_store import get_global_lock
+    from compat.config_store import get_global_lock
     assert get_global_lock() is False
     assert env.col.killswitch_tokens.find_one({"token": "tok"})["attempts"] == 1
 
@@ -336,7 +336,7 @@ def test_killswitch_correct_code_toggles_global_lock_once(env, monkeypatch):
     code = pyotp.TOTP(secret).now()
     resp = env.client.post("/admin/kill-switch/tok", data={"code": code})
     assert resp.status_code == 200 and "Bot locked down" in resp.get_data(as_text=True)
-    from config_store import get_global_lock
+    from compat.config_store import get_global_lock
     assert get_global_lock() is True
     assert env.col.killswitch_tokens.find_one({"token": "tok"})["used"] is True
     assert "locked down" in env.owner.sent[0]
@@ -353,7 +353,7 @@ def test_killswitch_correct_code_toggles_global_lock_once(env, monkeypatch):
 # ------------------------------------------------------------------ appeals
 
 def _appeal(env, status="pending", token="ap", sanction="ban"):
-    from sanctions_store import create_sanction_appeal
+    from compat.sanctions_store import create_sanction_appeal
     create_sanction_appeal(GUILD, 7, sanction, 42, "Bob", "reason-abc", token)
     if status != "pending":
         env.col.ban_appeals.update_one({"token": token}, {"$set": {"status": status}})
@@ -373,7 +373,7 @@ def test_appeal_form_states(env):
 
 
 def test_appeal_submit_validates_saves_and_posts_for_review(env):
-    from config_store import update_config
+    from compat.config_store import update_config
     channel = FakeChannel(55, "appeals")
     env.guild.text_channels = [channel]
     update_config(GUILD, "appeal_channel_id", "55")
