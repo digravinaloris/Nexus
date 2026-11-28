@@ -1,6 +1,6 @@
 # Cloudflare route-to-service inventory (2026-11-28)
 
-Audit baseline: `main` after PR #360 (merge commit `4bb0f032a38c86d28c2ebb8a12be4119bba82330`).
+Audit baseline: `main` after PR #362 (merge commit `2e9c6bb9f3b1db93264b8b8acc58ce9de3465e28`).
 
 This is a source-level inventory of the six Flask route modules and the current service/transport declarations. It is not a cutover-readiness certification. Counts describe method names found in the current source, not proven behavioral parity.
 
@@ -10,8 +10,8 @@ This is a source-level inventory of the six Flask route modules and the current 
 - The six route modules below reference 77 distinct BotService operations.
 - `InProcessBotService` implements the full interface and remains the active production adapter.
 - `SignedHttpBotService` declares 31 interface operations.
-- The internal signed dispatch endpoint explicitly allows 33 operation names. The endpoint remains opt-in and disabled by default.
-- `CloudflareFetchBotService` currently declares 29 public interface operations (excluding private helpers). It is a Worker-runtime proof client, not wired into the production Flask app.
+- The internal signed dispatch endpoint explicitly allows 34 operation names. The endpoint remains opt-in and disabled by default.
+- `CloudflareFetchBotService` currently declares 30 public interface operations (excluding private helpers). It is a Worker-runtime proof client, not wired into the production Flask app.
 - A method being present in a client or endpoint does not by itself prove equivalent authorization, error mapping, data shape, mutation idempotency, or route behavior.
 
 ## Route usage by module
@@ -60,11 +60,11 @@ All other method names are rejected. Raw `api_config_snapshot` is intentionally 
 
 `health_snapshot`, `public_status_snapshot`, `is_guild_owner`, `is_guild_admin`, `guild_presence`, `guild_name`, `api_health_snapshot`, `api_guild_list_snapshot`, `api_guild_id_candidates`, `available_guild_ids`, `api_text_channels_snapshot`, `api_roles_snapshot`, `api_guild_stats_snapshot`, `api_faq_snapshot`, `api_members_snapshot`, `api_rest_config_snapshot`, `dashboard_config_snapshot`, `dashboard_public_templates_snapshot`, `dashboard_submitted_appeals_snapshot`, `api_member_warnings`, `api_warnlist_snapshot`, `api_sanction_cases_snapshot`, `api_audit_snapshot`, `dashboard_calendar_upcoming_events`, `dashboard_overview_snapshot`, `dashboard_sanction_stats_snapshot`, `dashboard_sanction_types_snapshot`, `dashboard_roles_snapshot`, `dashboard_settings_snapshot`.
 
-The Worker Fetch client currently overlaps directly with 27 route-used operations. `api_guild_id_candidates` and `is_guild_admin` are additional service capabilities not directly called by the six route modules. This overlap is a method-name comparison only; it is not full route parity.
+The Worker Fetch client currently overlaps directly with 28 route-used operations. `api_guild_id_candidates` and `is_guild_admin` are additional service capabilities not directly called by the six route modules. This overlap is a method-name comparison only; it is not full route parity.
 
 ## Route-used operations not yet declared by the Worker Fetch client
 
-The source-level scan currently finds **50** distinct route-used method names absent from the Worker Fetch client. Each needs an explicit decision: add a reviewed DTO/action contract, retain it on the persistent Flask/bot host, or remove it only through a separate product decision.
+The source-level scan currently finds **49** distinct route-used method names absent from the Worker Fetch client. Each needs an explicit decision: add a reviewed DTO/action contract, retain it on the persistent Flask/bot host, or remove it only through a separate product decision.
 
 - `api_accept_appeal`
 - `api_announce_calendar_event`
@@ -98,7 +98,6 @@ The source-level scan currently finds **50** distinct route-used method names ab
 - `dashboard_apply_template_snapshot`
 - `dashboard_audit_export_records`
 - `dashboard_calendar_delete_event`
-- `dashboard_calendar_has_duplicate_event`
 - `dashboard_calendar_insert_event`
 - `dashboard_presence_ping`
 - `dashboard_presence_viewers`
@@ -128,7 +127,7 @@ This is a method-name comparison, not a cutover-readiness metric. Mutations and 
 
 ## Scope and reproducibility
 
-This inventory was refreshed from current `main` at merge commit `4bb0f032a38c86d28c2ebb8a12be4119bba82330`, reviewing:
+This inventory was refreshed from current `main` at merge commit `2e9c6bb9f3b1db93264b8b8acc58ce9de3465e28`, reviewing:
 - Route call sites: `web/dashboard.py`, `web/public.py`, `web/verify.py`, `web/rest_api.py`, `web/auth.py`, `web/github_webhook.py`.
 - Interface and implementation declarations: `web/bot_service.py`, `web/in_process_bot_service.py`, `web/http_bot_service.py`, `web/internal_bot_service.py`.
 - Worker transport declarations: `cloudflare-spike/src/bot_service_client.py`.
