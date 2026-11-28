@@ -244,6 +244,55 @@ def main():
     require("samesite=lax" in delete_cookie.lower(), "Logout deletion cookie does not use SameSite=Lax")
     require("path=/" in delete_cookie.lower(), "Logout deletion cookie path is not root")
 
+    # A legacy Flask session must remain readable and be re-encrypted
+    # with the active key version on its next successful write.
+    status, legacy_flask, set_cookie = call_with_cookie(
+        "/__spike/flask-session/create-legacy-key", "POST"
+    )
+    require(
+        status == 200 and legacy_flask.get("key_version") == 1,
+        f"Legacy Flask session fixture failed: {legacy_flask}",
+    )
+    legacy_flask_cookie = extract_session_cookie(set_cookie)
+    status, legacy_version_before, _ = call_with_cookie(
+        "/__spike/flask-session/key-version", cookie=legacy_flask_cookie
+    )
+    require(
+        status == 200 and legacy_version_before.get("key_version") == 1,
+        "Legacy Flask session was not stored with key version 1",
+    )
+    status, legacy_identity, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=legacy_flask_cookie
+    )
+    require(
+        status == 200
+        and legacy_identity.get("authenticated") is True
+        and legacy_identity.get("access_token") == "spike-legacy-key-access-token",
+        "Legacy-key Flask session could not be decrypted",
+    )
+    status, touched, _ = call_with_cookie(
+        "/__spike/flask-session/touch-key-version",
+        "POST",
+        legacy_flask_cookie,
+    )
+    require(status == 200 and touched.get("touched") is True, "Legacy Flask session update failed")
+    status, legacy_version_after, _ = call_with_cookie(
+        "/__spike/flask-session/key-version", cookie=legacy_flask_cookie
+    )
+    require(
+        status == 200 and legacy_version_after.get("key_version") == 2,
+        "Updated legacy Flask session was not re-encrypted with active key version 2",
+    )
+    status, migrated_identity, _ = call_with_cookie(
+        "/__spike/flask-session/me", cookie=legacy_flask_cookie
+    )
+    require(
+        status == 200
+        and migrated_identity.get("authenticated") is True
+        and migrated_identity.get("access_token") == "spike-legacy-key-access-token",
+        "Session became unreadable after encryption key migration",
+    )
+
     # Invalid or oversized server-side payloads must fail closed without
     # issuing an authenticated browser cookie.
     for payload_kind in ("unserializable", "oversized"):
