@@ -90,6 +90,7 @@ def mock_internal_bot_service():
             "spike-channel-malformed",
             "spike-guild-list-malformed",
             "spike-guild-list-oversized",
+            "spike-guild-presence-malformed",
             "spike-role-malformed",
             "spike-stats-malformed",
             "spike-stats-out-of-range",
@@ -347,6 +348,8 @@ def mock_internal_bot_service():
             return jsonify({"ok": True, "result": oversized})
         return jsonify({"ok": True, "result": results[method]})
     if method == "guild_presence" and args == ["123"]:
+        if key_id == "spike-guild-presence-malformed":
+            return jsonify({"ok": True, "result": {"bot_ready": 1, "guild_present": True}})
         return jsonify({"ok": True, "result": {"bot_ready": True, "guild_present": True}})
     if method == "guild_name" and args == ["123"]:
         return jsonify({"ok": True, "result": "Spike Test Server"})
@@ -573,6 +576,9 @@ def exercise_fetch_bot_service_client(method):
             result = client.is_guild_admin("123", "44")
         elif method == "guild_presence":
             result = client.guild_presence("123")
+        elif method == "guild_presence_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-guild-presence-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.guild_presence("123")
         elif method == "guild_name":
             result = client.guild_name("123")
         elif method == "api_health_snapshot":

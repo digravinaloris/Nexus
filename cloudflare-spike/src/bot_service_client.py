@@ -450,7 +450,7 @@ class CloudflareFetchBotService:
             raise CloudflareBotServiceError("Internal BotService returned invalid guild IDs")
         if method == "guild_presence" and (
             set(result) != {"bot_ready", "guild_present"}
-            or any(not isinstance(value, bool) for value in result.values())
+            or any(type(value) is not bool for value in result.values())
         ):
             raise CloudflareBotServiceError("Internal BotService returned invalid guild presence")
         if method == "guild_name" and (not result or len(result) > 256):
