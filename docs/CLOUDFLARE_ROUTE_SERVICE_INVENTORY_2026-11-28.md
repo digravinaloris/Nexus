@@ -9,8 +9,8 @@ This is a source-level inventory of the six Flask route modules and the current 
 - `web/bot_service.py` declares 81 BotService operations (excluding the module-level `get_bot_service()` accessor).
 - The six route modules below reference 78 distinct BotService operations.
 - `InProcessBotService` implements the full interface and remains the active production adapter.
-- `SignedHttpBotService` declares 33 interface operations.
-- The internal signed dispatch endpoint explicitly allows 37 operation names. The endpoint remains opt-in and disabled by default.
+- `SignedHttpBotService` exposes an explicit signed HTTP client surface; see the enumerated operations below.
+- The internal signed dispatch endpoint exposes an explicit allowlist. It remains opt-in and disabled by default.
 - `CloudflareFetchBotService` currently declares 33 public interface operations (excluding private helpers). It is a Worker-runtime proof client, not wired into the production Flask app.
 - A method being present in a client or endpoint does not by itself prove equivalent authorization, error mapping, data shape, mutation idempotency, or route behavior.
 
@@ -42,20 +42,20 @@ This is a source-level inventory of the six Flask route modules and the current 
 
 ## Current remote surfaces
 
-### Signed internal endpoint — 37 explicitly dispatched operation names
+### Signed internal endpoint — explicitly dispatched operations
 
 - Base snapshots: `health_snapshot`, `public_status_snapshot`.
 - Public state: `public_global_lock_state`.
 - Identity/authorization: `is_guild_owner`, `is_guild_admin`, `api_authenticate_key`, `available_guild_ids`, `api_guild_id_candidates`, `guild_presence`, `guild_name`.
 - REST reads: `api_health_snapshot`, `api_guild_list_snapshot`, `api_text_channels_snapshot`, `api_roles_snapshot`, `api_faq_snapshot`, `api_members_snapshot`, `api_rest_config_snapshot`, `api_guild_stats_snapshot`, `api_member_warnings`, `api_warnlist_snapshot`, `api_audit_snapshot`, `api_sanction_cases_snapshot`.
-- Dashboard reads: `dashboard_config_snapshot`, `dashboard_calendar_has_duplicate_event`, `dashboard_calendar_upcoming_events`, `dashboard_submitted_appeals_snapshot`, `dashboard_sanction_stats_snapshot`, `dashboard_sanction_types_snapshot`, `dashboard_roles_snapshot`, `dashboard_settings_snapshot`, `dashboard_overview_snapshot`, `dashboard_template_snapshot`.
+- Dashboard reads: `dashboard_config_snapshot`, `dashboard_calendar_has_duplicate_event`, `dashboard_calendar_upcoming_events`, `dashboard_presence_ping`, `dashboard_presence_viewers`, `dashboard_submitted_appeals_snapshot`, `dashboard_sanction_stats_snapshot`, `dashboard_sanction_types_snapshot`, `dashboard_roles_snapshot`, `dashboard_settings_snapshot`, `dashboard_overview_snapshot`, `dashboard_template_snapshot`.
 - Case-ID appeal actions: `api_claim_appeal_by_case`, `api_release_appeal_claim_by_case`, `api_resolve_appeal_by_case`.
 
 All other method names are rejected. Raw `api_config_snapshot` is intentionally not exposed.
 
-### Signed HTTP client — 33 declared interface operations
+### Signed HTTP client — declared interface operations
 
-`health_snapshot`, `public_status_snapshot`, `available_guild_ids`, `is_guild_owner`, `is_guild_admin`, `guild_presence`, `guild_name`, `api_text_channels_snapshot`, `api_roles_snapshot`, `api_faq_snapshot`, `api_members_snapshot`, `api_guild_list_snapshot`, `dashboard_sanction_stats_snapshot`, `dashboard_sanction_types_snapshot`, `api_rest_config_snapshot`, `dashboard_config_snapshot`, `dashboard_calendar_has_duplicate_event`, `dashboard_calendar_upcoming_events`, `dashboard_template_snapshot`, `api_authenticate_key`, `api_member_warnings`, `api_warnlist_snapshot`, `api_audit_snapshot`, `dashboard_submitted_appeals_snapshot`, `api_claim_appeal_by_case`, `api_release_appeal_claim_by_case`, `api_resolve_appeal_by_case`, `api_sanction_cases_snapshot`, `dashboard_roles_snapshot`, `dashboard_settings_snapshot`, `dashboard_overview_snapshot`, `api_guild_stats_snapshot`, `api_health_snapshot`.
+`health_snapshot`, `public_status_snapshot`, `available_guild_ids`, `is_guild_owner`, `is_guild_admin`, `guild_presence`, `guild_name`, `api_text_channels_snapshot`, `api_roles_snapshot`, `api_faq_snapshot`, `api_members_snapshot`, `api_guild_list_snapshot`, `dashboard_sanction_stats_snapshot`, `dashboard_sanction_types_snapshot`, `api_rest_config_snapshot`, `dashboard_config_snapshot`, `dashboard_calendar_has_duplicate_event`, `dashboard_calendar_upcoming_events`, `dashboard_presence_ping`, `dashboard_presence_viewers`, `dashboard_template_snapshot`, `api_authenticate_key`, `api_member_warnings`, `api_warnlist_snapshot`, `api_audit_snapshot`, `dashboard_submitted_appeals_snapshot`, `api_claim_appeal_by_case`, `api_release_appeal_claim_by_case`, `api_resolve_appeal_by_case`, `api_sanction_cases_snapshot`, `dashboard_roles_snapshot`, `dashboard_settings_snapshot`, `dashboard_overview_snapshot`, `api_guild_stats_snapshot`, `api_health_snapshot`.
 
 ### Cloudflare Worker Fetch client — 33 public interface operations
 
