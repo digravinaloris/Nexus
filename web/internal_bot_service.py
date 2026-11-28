@@ -10,6 +10,8 @@ from typing import Any, Callable, Mapping, Protocol
 
 from flask import Blueprint, jsonify, request
 
+from web.template_transport import project_public_template
+
 from web.bot_service_signing import (
     BotServiceAuthError,
     CLOCK_SKEW_SECONDS,
