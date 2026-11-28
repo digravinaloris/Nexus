@@ -445,6 +445,22 @@ def main():
     status, invalid_dashboard_args = call("/__spike/fetch-client/dashboard_config_snapshot_invalid_args", "POST", {})
     require(status == 200 and invalid_dashboard_args.get("result") == {"rejected": True}, f"Workers Fetch accepted invalid dashboard config arguments: {invalid_dashboard_args}")
 
+    status, fetch_sanction_stats = call("/__spike/fetch-client/dashboard_sanction_stats_snapshot", "POST", {})
+    require(
+        status == 200 and fetch_sanction_stats.get("result") == [["27/11", 0], ["28/11", 3]],
+        f"Signed dashboard sanction stats snapshot failed: {fetch_sanction_stats}",
+    )
+    status, invalid_sanction_stats = call("/__spike/fetch-client/dashboard_sanction_stats_snapshot_invalid", "POST", {})
+    require(
+        status == 503 and invalid_sanction_stats.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed dashboard sanction stats: {invalid_sanction_stats}",
+    )
+    status, invalid_sanction_stats_args = call("/__spike/fetch-client/dashboard_sanction_stats_snapshot_invalid_args", "POST", {})
+    require(
+        status == 200 and invalid_sanction_stats_args.get("result") == {"rejected": True},
+        f"Workers Fetch accepted invalid dashboard sanction stats arguments: {invalid_sanction_stats_args}",
+    )
+
     status, fetch_sanction_types = call("/__spike/fetch-client/dashboard_sanction_types_snapshot", "POST", {})
     require(status == 200 and fetch_sanction_types.get("result") == ["ban", "kick", "mute", "warn"], f"Signed dashboard sanction types snapshot failed: {fetch_sanction_types}")
     status, invalid_sanction_types = call("/__spike/fetch-client/dashboard_sanction_types_snapshot_invalid", "POST", {})
