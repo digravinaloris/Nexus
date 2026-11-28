@@ -133,7 +133,7 @@ class SignedHttpBotService(BotService):
             raise ValueError("Invalid submitted appeals limit")
         if method in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case"} and (type(args[1]) is not int or not 1 <= args[1] <= (2**63 - 1)):
             raise ValueError("Invalid appeal case ID")
-        if method == "api_resolve_appeal_by_case" and (type(args[1]) is not int or not 1 <= args[1] <= (2**63 - 1) or args[2] not in {"accepted", "denied"}):
+        if method == "api_resolve_appeal_by_case" and (type(args[1]) is not int or not 1 <= args[1] <= (2**63 - 1) or not isinstance(args[2], str) or args[2] not in {"accepted", "denied"}):
             raise ValueError("Invalid appeal resolution arguments")
 
         body = json.dumps(
@@ -553,7 +553,7 @@ class SignedHttpBotService(BotService):
         return self._dispatch_appeal_case_action("api_release_appeal_claim_by_case", guild_id, case_id)
 
     def api_resolve_appeal_by_case(self, guild_id: str, case_id: int, status: str) -> bool:
-        if status not in {"accepted", "denied"}:
+        if not isinstance(status, str) or status not in {"accepted", "denied"}:
             raise ValueError("Invalid appeal resolution status")
         return self._dispatch_appeal_case_action("api_resolve_appeal_by_case", guild_id, case_id, status)
 
