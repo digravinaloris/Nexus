@@ -68,7 +68,7 @@ class FakeBotService:
 
     def api_health_snapshot(self, guild_id=None):
         self.calls.append(("api_health_snapshot", guild_id))
-        return {"online": True, "guild_count": 1 if guild_id else 4}
+        return {"online": True, "locked": False, "guild_count": 1 if guild_id else 4}
 
     def api_guild_list_snapshot(self, guild_id=None):
         self.calls.append(("api_guild_list_snapshot", guild_id))
@@ -386,7 +386,7 @@ def test_signed_dispatch_returns_optional_api_snapshots():
     health_body = _request_body({"method": "api_health_snapshot", "args": ["123"], "kwargs": {}})
     health = client.post(PATH, data=health_body, headers=_signed_headers(health_body))
     assert health.status_code == 200
-    assert health.get_json() == {"ok": True, "result": {"online": True, "guild_count": 1}}
+    assert health.get_json() == {"ok": True, "result": {"online": True, "locked": False, "guild_count": 1}}
 
     guilds_body = _request_body({"method": "api_guild_list_snapshot", "args": ["123"], "kwargs": {}})
     guilds = client.post(PATH, data=guilds_body, headers=_signed_headers(guilds_body, nonce="g" * 24))
