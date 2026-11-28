@@ -873,6 +873,8 @@ class CloudflareFetchBotService:
                     and 1 <= len(item["name"]) <= 100
                     for item in result
                 )
+                or len({item["id"] for item in result}) != len(result)
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
             ):
                 raise CloudflareBotServiceError("Internal BotService returned invalid dashboard roles")
         if method == "dashboard_settings_snapshot" and result is not None:
@@ -895,8 +897,10 @@ class CloudflareFetchBotService:
                     not isinstance(result[key], list)
                     or len(result[key]) > 500
                     or not all(valid_setting_item(item) for item in result[key])
+                    or len({item["id"] for item in result[key]}) != len(result[key])
                     for key in ("text_channels", "voice_channels", "roles")
                 )
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
             ):
                 raise CloudflareBotServiceError("Internal BotService returned invalid dashboard settings")
         if method == "dashboard_config_snapshot":
