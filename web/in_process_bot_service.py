@@ -318,7 +318,12 @@ class InProcessBotService(BotService):
         return get_submitted_appeals(guild_id)
 
     def dashboard_submitted_appeals_snapshot(self, guild_id: str, limit: int = 100) -> List[Dict[str, object]]:
-        return get_submitted_appeals(guild_id, limit)
+        fields = ("case_id", "sanction_type", "user_name", "user_id", "ban_reason", "appeal_text", "submitted_at")
+        return [
+            {key: appeal[key] for key in fields}
+            for appeal in get_submitted_appeals(guild_id, limit)
+            if all(key in appeal for key in fields)
+        ]
 
     def api_get_appeal(self, token: str) -> Optional[Dict[str, object]]:
         return get_ban_appeal(token)
