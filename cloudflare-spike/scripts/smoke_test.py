@@ -704,12 +704,24 @@ def main():
         status == 200 and fetch_candidates.get("result") == ["123", "456"],
         f"Signed API-key guild candidates read failed: {fetch_candidates}",
     )
+    status, duplicate_candidates = call("/__spike/fetch-client/api_guild_id_candidates_duplicate", "POST", {})
+    require(
+        status == 503
+        and duplicate_candidates.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted duplicate guild ID candidates: {duplicate_candidates}",
+    )
     status, available = call("/__spike/fetch-client/available_guild_ids", "POST", {})
     require(
         status == 200 and available.get("result") == ["123"],
         f"Signed available guild filtering failed: {available}",
     )
 
+    status, duplicate_available = call("/__spike/fetch-client/available_guild_ids_duplicate", "POST", {})
+    require(
+        status == 503
+        and duplicate_available.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted duplicate available guild IDs: {duplicate_available}",
+    )
     status, fetch_channels = call(
         "/__spike/fetch-client/api_text_channels_snapshot", "POST", {}
     )

@@ -91,6 +91,8 @@ def mock_internal_bot_service():
             "spike-guild-list-malformed",
             "spike-guild-list-oversized",
             "spike-guild-presence-malformed",
+            "spike-guild-candidates-duplicate",
+            "spike-available-guilds-duplicate",
             "spike-role-malformed",
             "spike-stats-malformed",
             "spike-stats-out-of-range",
@@ -319,6 +321,8 @@ def mock_internal_bot_service():
         malformed = dict(results["public_status_snapshot"])
         malformed["latency_ms"] = False
         return jsonify({"ok": True, "result": malformed})
+    if method == "api_guild_id_candidates" and args == [] and key_id == "spike-guild-candidates-duplicate":
+        return jsonify({"ok": True, "result": ["123", "123"]})
     if isinstance(method, str) and method in results and args == [] and method != "dashboard_public_templates_snapshot":
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_health_snapshot" and args == ["123"]:
@@ -354,6 +358,8 @@ def mock_internal_bot_service():
     if method == "guild_name" and args == ["123"]:
         return jsonify({"ok": True, "result": "Spike Test Server"})
     if method == "available_guild_ids" and args == [["123", "456"]]:
+        if key_id == "spike-available-guilds-duplicate":
+            return jsonify({"ok": True, "result": ["123", "123"]})
         return jsonify({"ok": True, "result": ["123"]})
     if method == "api_text_channels_snapshot" and args == ["123"]:
         if key_id == "spike-channel-malformed":
@@ -611,8 +617,14 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.api_guild_list_snapshot("123")
         elif method == "api_guild_id_candidates":
             result = client.api_guild_id_candidates()
+        elif method == "api_guild_id_candidates_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-guild-candidates-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.api_guild_id_candidates()
         elif method == "available_guild_ids":
             result = client.available_guild_ids(["123", "456"])
+        elif method == "available_guild_ids_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-available-guilds-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.available_guild_ids(["123", "456"])
         elif method == "api_text_channels_snapshot":
             result = client.api_text_channels_snapshot("123")
         elif method == "api_text_channels_snapshot_invalid":
