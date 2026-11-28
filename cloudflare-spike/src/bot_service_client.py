@@ -431,7 +431,7 @@ class CloudflareFetchBotService:
                 member_count = item["member_count"]
                 icon_url = item["icon_url"]
                 valid_icon = icon_url is None
-                if isinstance(icon_url, str) and len(icon_url) <= 2048:
+                if isinstance(icon_url, str) and len(icon_url) <= 2048 and valid_id(guild_id):
                     parsed_icon = urlsplit(icon_url)
                     valid_icon = (
                         parsed_icon.scheme == "https"
@@ -445,6 +445,8 @@ class CloudflareFetchBotService:
                             parsed_icon.path,
                         ) is not None
                     )
+                elif isinstance(icon_url, str):
+                    valid_icon = False
                 valid_guilds.append(
                     valid_id(guild_id)
                     and isinstance(name, str) and 1 <= len(name) <= 100
