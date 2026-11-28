@@ -287,7 +287,17 @@ class D1SessionInterface(SessionInterface):
                     .first()
                 )
                 if updated is None:
-                    response.delete_cookie(cookie_name, path="/", secure=cookie_secure, httponly=True, samesite="Lax")
+                    response.status_code = 503
+                    response.set_data(b'{"error":"session storage unavailable"}')
+                    response.headers["Content-Type"] = "application/json"
+                    response.delete_cookie(
+                        cookie_name,
+                        path="/",
+                        domain=app.config.get("SESSION_COOKIE_DOMAIN"),
+                        secure=cookie_secure,
+                        httponly=True,
+                        samesite="Lax",
+                    )
                     return
                 session.revision = int(self._row_value(updated, "revision"))
         except Exception:
