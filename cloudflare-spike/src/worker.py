@@ -97,6 +97,7 @@ def mock_internal_bot_service():
             "spike-public-templates-malformed",
             "spike-public-templates-duplicate",
             "spike-audit-malformed",
+            "spike-audit-oversized",
             "spike-sanction-cases-malformed",
             "spike-member-warnings-malformed",
             "spike-member-warnings-out-of-range",
@@ -364,6 +365,10 @@ def mock_internal_bot_service():
             malformed = dict(results[method][0])
             malformed["actor_name"] = "x" * 129
             return jsonify({"ok": True, "result": [malformed]})
+        if key_id == "spike-audit-oversized":
+            oversized = dict(results[method][0])
+            oversized["details"] = "x" * 1000
+            return jsonify({"ok": True, "result": [oversized] * 100})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_calendar_has_duplicate_event" and args == ["123", "Community event", "2026-11-28T12:00:00+00:00"]:
         if key_id == "spike-calendar-duplicate-malformed":
