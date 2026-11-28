@@ -745,6 +745,9 @@ def test_oauth_callback_fails_closed_when_session_rotation_fails():
 
 
     assert response.status_code == 500
+    # Rotation failure must leave neither pre-authentication nor authenticated
+    # session data behind, and must not issue a browser cookie.
+    assert not backend.session
     assert "access_token" not in backend.session
     assert "csrf_token" not in backend.session
     assert "dash_user" not in backend.session
