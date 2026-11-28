@@ -103,6 +103,12 @@ class SignedHttpBotService(BotService):
             raise ValueError("Invalid internal BotService arguments")
         if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
+        if method == "api_guild_stats_snapshot" and len(args) == 2 and args[1] is not None and not (
+            isinstance(args[1], str)
+            and re.fullmatch(r"[0-9]{1,20}", args[1]) is not None
+            and 0 < int(args[1]) <= (2**64 - 1)
+        ):
+            raise ValueError("Invalid ticket category ID")
 
         body = json.dumps(
             {"method": method, "args": list(args), "kwargs": {}},
