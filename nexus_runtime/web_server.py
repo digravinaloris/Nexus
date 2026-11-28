@@ -19,3 +19,11 @@ def run_web_server(app, environ=None):
             flush=True,
         )
         app.run(host="0.0.0.0", port=port)
+
+
+def start_web_server_thread(target, thread_factory):
+    """Start the web server target in a daemon thread and return the thread."""
+    thread = thread_factory(target=target)
+    thread.daemon = True
+    thread.start()
+    return thread
