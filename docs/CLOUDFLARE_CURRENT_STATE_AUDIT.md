@@ -1,7 +1,7 @@
 # Cloudflare migration: current-state audit
 
 Audit date: 2026-11-28  
-Audited baseline: `main` after PR #365 (`16f2b3a6269358558bfa7780c2dec60d6345dcbc`)
+Audited baseline: `main` after PR #368 and PR #373 (commit `327c553d50f6a8f7d8272610792a9fbe45a074d5`).
 
 ## Executive summary
 
@@ -105,6 +105,13 @@ The following changes are present on the audited `main` baseline:
 - PRs #336-#343 organize root-level compatibility modules and extract runtime initialization/shutdown/startup helpers from `main.py`. These reduce entrypoint complexity but do not by themselves move the web process to Cloudflare.
 
 The main remaining blockers are unchanged: production OAuth still stores the Discord access token in Flask's readable signed cookie; production web routes still use the in-process adapter; the Cloudflare Fetch adapter is not wired into the production app; and complete route/template/static-asset parity is not proven.
+
+## Progress after the 2026-11-27 audit checkpoint
+
+- PR #368 records Worker-spike cookie-policy assertions (cookie name, `SameSite=Lax`, host-only scope, and the intentional local HTTP test setting). This is test coverage only; it does not make the prototype production-ready.
+- PR #372 makes expired-session and Discord-401 paths clear local session data even when backend revocation fails, preventing credentials from remaining in the current request session.
+- PR #373 strengthens the OAuth rotation-failure regression test to assert the session is completely empty after a failed rotation.
+- These OAuth lifecycle changes improve failure handling but do not replace the required production server-side session store. The signed-cookie access-token exposure remains a release blocker.
 - `docs/cloudflare-full-site-migration.md`, `docs/CLOUDFLARE_COMPATIBILITY_INVENTORY.md`, `docs/CLOUDFLARE_WORKER_SPIKE.md`, `docs/CLOUDFLARE_BOT_SERVICE_CONTRACT.md`
 
 
