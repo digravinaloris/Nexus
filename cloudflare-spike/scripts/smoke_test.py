@@ -132,12 +132,17 @@ def main():
         "Rotated browser cookie contains server-side session data",
     )
 
-    status, old_identity, _ = call_with_cookie(
+    status, old_identity, old_cookie_delete = call_with_cookie(
         "/__spike/flask-session/me", cookie=old_cookie
     )
     require(
         status == 200 and old_identity.get("authenticated") is False,
         "Pre-rotation Flask session remained usable",
+    )
+    require(
+        isinstance(old_cookie_delete, str)
+        and "max-age=0" in old_cookie_delete.lower(),
+        "Revoked pre-rotation browser cookie was not cleared",
     )
     status, new_identity, _ = call_with_cookie(
         "/__spike/flask-session/me", cookie=new_cookie
@@ -185,12 +190,17 @@ def main():
         race_new_cookie != race_cookie,
         "Concurrent session rotation reused the pre-auth cookie",
     )
-    status, race_old_identity, _ = call_with_cookie(
+    status, race_old_identity, race_old_cookie_delete = call_with_cookie(
         "/__spike/flask-session/me", cookie=race_cookie
     )
     require(
         status == 200 and race_old_identity.get("authenticated") is False,
         "Pre-rotation cookie remained usable after concurrent rotation",
+    )
+    require(
+        isinstance(race_old_cookie_delete, str)
+        and "max-age=0" in race_old_cookie_delete.lower(),
+        "Concurrent rotation did not clear the revoked browser cookie",
     )
     status, race_new_identity, _ = call_with_cookie(
         "/__spike/flask-session/me", cookie=race_new_cookie
