@@ -120,3 +120,23 @@ The main remaining blockers are unchanged: production OAuth still stores the Dis
 The refreshed route-to-service inventory is maintained in `docs/CLOUDFLARE_ROUTE_SERVICE_INVENTORY_2026-11-28.md` and was updated after PR #364 and merged in PR #365. Its source scan currently reports 81 declared BotService operations, 78 route-used operations, 31 Worker Fetch operations, 29 directly route-used overlaps, and 49 route-used operations still absent from Worker Fetch. These are method-name counts, not functional parity. PR #364 adds the read-only global-lock-state operation to Worker Fetch; security-sensitive lock mutations remain unported.
 
 
+
+
+## Progress after the 2026-11-28 transport work (PRs #375-#380)
+
+- PR #375 adds compare-and-swap revision checks to the disposable D1 session adapter and atomically consumes OAuth state/PKCE data. This remains confined to `cloudflare-spike/`; it does not replace the production Flask cookie session.
+- PR #376 adds a bounded, validated public-template marketplace metadata snapshot to the signed HTTP transport. It does not expose the full template payload or wire the Worker into production.
+- PR #377 adds the signed calendar duplicate-check read operation.
+- PR #378 adds the signed dashboard presence-viewer read operation.
+- PR #379 adds the signed dashboard presence heartbeat operation, retaining the existing short-lived bot-side heartbeat.
+- PR #380 adds the dashboard presence-viewer operation to the isolated Cloudflare Worker Fetch client, with response count, name-length and serialized-size limits plus malformed-response tests.
+
+These changes improve the transport building blocks but do not close the overall route parity gap. The Worker Fetch client remains isolated, and its operation count is not a measure of route or behavioral parity. The next transport candidates that remain absent include privileged writes, full template import, audit export, verification, moderation, appeal actions and public security flows. Those must not be added as generic method forwards: each needs its own actor identity, bot-side authorization, schema, size limits, idempotency/audit requirements and failure semantics.
+
+The immediate release blockers remain unchanged:
+1. Production OAuth still uses Flask's readable signed-cookie session for the Discord access token.
+2. The active production web adapter is still in-process with the bot runtime.
+3. The Worker Fetch client is not injected into the production app.
+4. Production route, template, static-asset and operational parity is not proven.
+
+No Cloudflare deployment, production secrets, DNS, OAuth redirect changes or traffic cutover were performed.
