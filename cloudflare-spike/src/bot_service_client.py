@@ -154,9 +154,10 @@ class CloudflareFetchBotService:
         elif method == "api_faq_snapshot":
             if expected_type != (dict, type(None)) or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid FAQ snapshot arguments")
-        elif method == "api_members_snapshot":
-            if expected_type != (list, type(None)) or len(args) != 1 or not valid_id(args[0]):
-                raise ValueError("Invalid members snapshot arguments")
+        elif method in {"api_members_snapshot", "api_rest_config_snapshot"}:
+            expected = (list, type(None)) if method == "api_members_snapshot" else dict
+            if expected_type != expected or len(args) != 1 or not valid_id(args[0]):
+                raise ValueError("Invalid snapshot arguments")
         else:
             raise ValueError("Unsupported internal BotService operation")
 
@@ -308,6 +309,56 @@ class CloudflareFetchBotService:
                 raise CloudflareBotServiceError(
                     "Internal BotService returned invalid FAQ snapshot"
                 )
+        if method == "api_rest_config_snapshot":
+            allowed_fields = {
+                "guild_id", "logs_channel", "autorole", "allowed_roles",
+                "automod_exempt_role_ids", "command_roles", "command_templates",
+                "language", "log_dashboard_actions", "log_webhook_channel_id",
+                "tickets_enabled", "ticket_category_id", "ticket_support_role_id",
+                "ticket_archive_category_id", "ticket_panels", "appeal_channel_id",
+                "boost_channel_id", "detailed_logs_enabled", "banned_words",
+                "antinuke_enabled", "antinuke_threshold", "weekly_digest_enabled",
+                "last_digest_sent_at", "member_count_channel_id", "min_account_age_days",
+                "banned_domains", "anti_link_global_enabled", "welcome_channel_id",
+                "welcome_banner_enabled", "verification_enabled", "verified_role_id",
+                "verification_autorole_id", "unverified_role_id", "quarantine_enabled",
+                "quarantine_role_id", "quarantine_channel_id", "quarantine_hold_minutes",
+                "quarantine_suspicion_days", "anti_mention_spam_enabled",
+                "mention_spam_threshold", "anti_media_flood_enabled", "media_flood_count",
+                "media_flood_window", "auto_slowmode_enabled", "auto_slowmode_threshold",
+                "auto_slowmode_window", "auto_slowmode_seconds",
+                "auto_slowmode_duration_minutes", "anti_doxx_enabled",
+                "raid_pattern_alert_enabled", "auto_translate_enabled", "remindme_enabled",
+                "serverinfo_visual_enabled", "trap_channel_enabled", "trap_channel_id",
+                "automod_spam_count", "automod_spam_window", "automod_caps_ratio",
+                "automod_raid_count", "automod_raid_window", "warn_escalation_enabled",
+                "warn_mute_threshold", "warn_mute_minutes", "warn_kick_threshold",
+                "jtc_channel_id", "jtc_category_id", "pending_role_menu_items",
+            }
+            forbidden_fragments = ("secret", "token", "webhook", "api_key", "password", "cookie", "credential")
+            def safe_config_value(value, depth=0):
+                if depth > 8:
+                    return False
+                if value is None or type(value) in {bool, int, float, str}:
+                    return not (isinstance(value, str) and len(value) > 4096)
+                if isinstance(value, list):
+                    return len(value) <= 500 and all(safe_config_value(item, depth + 1) for item in value)
+                if isinstance(value, dict):
+                    return len(value) <= 500 and all(
+                        isinstance(key, str) and len(key) <= 100
+                        and (depth == 0 or not any(fragment in key.lower() for fragment in forbidden_fragments))
+                        and safe_config_value(item, depth + 1)
+                        for key, item in value.items()
+                    )
+                return False
+            if (
+                not isinstance(result, dict)
+                or not set(result).issubset(allowed_fields)
+                or result.get("guild_id") != args[0]
+                or not safe_config_value(result)
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 65_536
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned an invalid REST config snapshot")
         if method == "api_guild_stats_snapshot" and result not in (None, {}):
             count_fields = {
                 "ban_count", "muted_count", "open_tickets_count",
@@ -401,3 +452,6 @@ class CloudflareFetchBotService:
 
     def api_members_snapshot(self, guild_id: str) -> list | None:
         return self._dispatch("api_members_snapshot", [guild_id], (list, type(None)))
+
+    def api_rest_config_snapshot(self, guild_id: str) -> dict:
+        return self._dispatch("api_rest_config_snapshot", [guild_id], dict)
