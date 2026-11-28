@@ -280,6 +280,11 @@ def main():
         f"Workers Fetch public status snapshot failed: {fetch_public}",
     )
 
+    status, fetch_lock_state = call("/__spike/fetch-client/public_global_lock_state", "POST", {})
+    require(
+        status == 200 and fetch_lock_state.get("result") is False,
+        f"Signed public global lock state read failed: {fetch_lock_state}",
+    )
     status, fetch_owner = call("/__spike/fetch-client/is_guild_owner", "POST", {})
     require(
         status == 200 and fetch_owner.get("result") is True,
