@@ -102,6 +102,8 @@ class SignedHttpBotService(BotService):
             "api_rest_config_snapshot": 1,
             "dashboard_config_snapshot": 1,
             "dashboard_calendar_upcoming_events": 3,
+            "is_guild_owner": 2,
+            "is_guild_admin": 2,
             "dashboard_submitted_appeals_snapshot": 2,
             "api_claim_appeal_by_case": 2,
             "api_release_appeal_claim_by_case": 2,
@@ -123,7 +125,7 @@ class SignedHttpBotService(BotService):
             if (not isinstance(args[0], str) or not args[0].isascii() or not 1 <= len(args[0]) <= 512
                 or (len(args) == 2 and not self._valid_guild_id(args[1]))):
                 raise ValueError("Invalid API key authentication arguments")
-        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot", "api_rest_config_snapshot", "dashboard_config_snapshot", "dashboard_calendar_upcoming_events"} and not self._valid_guild_id(args[0]):
+        if method in {"guild_presence", "guild_name", "api_text_channels_snapshot", "api_roles_snapshot", "api_faq_snapshot", "api_members_snapshot", "api_guild_stats_snapshot", "dashboard_overview_snapshot", "dashboard_settings_snapshot", "dashboard_roles_snapshot", "dashboard_sanction_stats_snapshot", "dashboard_sanction_types_snapshot", "api_sanction_cases_snapshot", "dashboard_submitted_appeals_snapshot", "api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case", "api_audit_snapshot", "api_member_warnings", "api_warnlist_snapshot", "api_rest_config_snapshot", "dashboard_config_snapshot", "dashboard_calendar_upcoming_events", "is_guild_owner", "is_guild_admin"} and not self._valid_guild_id(args[0]):
             raise ValueError("Invalid guild ID")
         if method in {"api_guild_stats_snapshot", "dashboard_overview_snapshot"} and len(args) == 2 and args[1] is not None and not (
             isinstance(args[1], str)
@@ -132,6 +134,8 @@ class SignedHttpBotService(BotService):
         ):
             raise ValueError("Invalid ticket category ID")
 
+        if method in {"is_guild_owner", "is_guild_admin"} and not self._valid_guild_id(args[1]):
+            raise ValueError("Invalid user ID")
         if method == "dashboard_calendar_upcoming_events":
             if (
                 not isinstance(args[1], str)
@@ -245,7 +249,10 @@ class SignedHttpBotService(BotService):
             )
 
         result = payload["result"]
-        if method in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
+        if method in {"is_guild_owner", "is_guild_admin"}:
+            if not isinstance(result, bool):
+                raise BotServiceTransportError("Internal BotService returned an invalid response")
+        elif method in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
             if not isinstance(result, bool):
                 raise BotServiceTransportError("Internal BotService returned an invalid response")
         elif method == "api_authenticate_key":
@@ -736,6 +743,12 @@ class SignedHttpBotService(BotService):
 
     def public_status_snapshot(self):
         return self._dispatch_snapshot("public_status_snapshot")
+
+    def is_guild_owner(self, guild_id: str, user_id: str) -> bool:
+        return self._dispatch_snapshot("is_guild_owner", (guild_id, user_id))
+
+    def is_guild_admin(self, guild_id: str, user_id: str) -> bool:
+        return self._dispatch_snapshot("is_guild_admin", (guild_id, user_id))
 
     def guild_presence(self, guild_id: str):
         return self._dispatch_snapshot("guild_presence", (guild_id,))

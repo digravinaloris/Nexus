@@ -211,13 +211,16 @@ def test_response_is_closed_after_success():
 @pytest.mark.parametrize("method,args", [
     ("guild_presence", ["123456789012345678"]),
     ("guild_name", ["123456789012345678"]),
+    ("is_guild_owner", ["123456789012345678", "234567890123456789"]),
+    ("is_guild_admin", ["123456789012345678", "234567890123456789"]),
 ])
 def test_guild_read_snapshots_send_bounded_signed_arguments(method, args):
-    result_value = (
-        {"bot_ready": True, "guild_present": True}
-        if method == "guild_presence"
-        else "Nexus Community"
-    )
+    result_value = {
+        "guild_presence": {"bot_ready": True, "guild_present": True},
+        "guild_name": "Nexus Community",
+        "is_guild_owner": True,
+        "is_guild_admin": True,
+    }[method]
     session = FakeSession(response=FakeResponse(payload={"ok": True, "result": result_value}))
 
     result = getattr(_client(session), method)(*args)
@@ -245,9 +248,22 @@ def test_guild_read_snapshots_reject_invalid_guild_ids_before_transport(guild_id
     assert session.calls == []
 
 
+@pytest.mark.parametrize("method", ["is_guild_owner", "is_guild_admin"])
+def test_dashboard_authorization_rejects_invalid_guild_or_user_ids(method):
+    session = FakeSession()
+    client = _client(session)
+    with pytest.raises(ValueError, match="guild ID"):
+        getattr(client, method)("bad", "234567890123456789")
+    with pytest.raises(ValueError, match="user ID"):
+        getattr(client, method)("123456789012345678", "bad")
+    assert session.calls == []
+
+
 @pytest.mark.parametrize(
     "method,result",
     [
+        ("is_guild_owner", 1),
+        ("is_guild_admin", None),
         ("guild_presence", {"bot_ready": True}),
         ("guild_presence", {"bot_ready": 1, "guild_present": False}),
         ("guild_presence", {"bot_ready": True, "guild_present": False, "extra": False}),
@@ -261,8 +277,13 @@ def test_guild_read_snapshots_reject_invalid_remote_dtos(method, result):
         response=FakeResponse(payload={"ok": True, "result": result})
     )
 
+    call_args = (
+        ("123456789012345678", "234567890123456789")
+        if method in {"is_guild_owner", "is_guild_admin"}
+        else ("123456789012345678",)
+    )
     with pytest.raises(BotServiceTransportError, match="invalid response"):
-        getattr(_client(session), method)("123456789012345678")
+        getattr(_client(session), method)(*call_args)
 
 
 @pytest.mark.parametrize("method", ["api_text_channels_snapshot", "api_roles_snapshot"])
