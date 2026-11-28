@@ -608,6 +608,41 @@ def test_signed_dispatch_allows_dashboard_roles_snapshot_and_rejects_bad_dto():
 
 
 
+def test_signed_dispatch_allows_guild_scoped_case_appeal_actions():
+    for method, args in [
+        ("api_claim_appeal_by_case", ["123", 12]),
+        ("api_release_appeal_claim_by_case", ["123", 12]),
+        ("api_resolve_appeal_by_case", ["123", 12, "accepted"]),
+    ]:
+        client, service = _client()
+        setattr(service, method, lambda *values: True)
+        body = _request_body({"method": method, "args": args, "kwargs": {}})
+        response = client.post(PATH, data=body, headers=_signed_headers(body, nonce=(method + "nonce").ljust(24, "x")))
+        assert response.status_code == 200 and response.get_json() == {"ok": True, "result": True}
+
+
+@pytest.mark.parametrize(("method", "args"), [
+    ("api_claim_appeal_by_case", ["123", True]),
+    ("api_release_appeal_claim_by_case", ["bad", 1]),
+    ("api_resolve_appeal_by_case", ["123", 1, "processing"]),
+    ("api_resolve_appeal_by_case", ["123", 1]),
+])
+def test_signed_dispatch_rejects_invalid_case_appeal_action_arguments(method, args):
+    client, service = _client()
+    body = _request_body({"method": method, "args": args, "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body, nonce=(method + "invalid").ljust(24, "x")))
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+def test_signed_dispatch_fails_closed_for_non_boolean_case_appeal_action_result():
+    client, service = _client()
+    service.api_claim_appeal_by_case = lambda guild_id, case_id: 1
+    body = _request_body({"method": "api_claim_appeal_by_case", "args": ["123", 1], "kwargs": {}})
+    response = client.post(PATH, data=body, headers=_signed_headers(body, nonce="caseactionresultnonce"))
+    assert response.status_code == 503
+
+
 def test_signed_dispatch_projects_submitted_appeals_without_tokens_or_mongo_fields():
     from datetime import datetime
 
