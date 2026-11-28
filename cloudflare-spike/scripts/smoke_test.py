@@ -76,6 +76,42 @@ def main():
     status, setup = call("/__spike/setup", "POST", {})
     require(status == 200 and setup.get("ready"), f"D1 schema setup failed: {setup}")
 
+    status, health_snapshot = call("/__spike/fetch-client/health_snapshot", "POST", {})
+    require(
+        status == 200
+        and health_snapshot.get("result") == {
+            "status": "alive",
+            "discord_gateway": "connected",
+            "mongodb": "connected",
+            "guild_count": 12,
+        },
+        f"Signed health snapshot failed: {health_snapshot}",
+    )
+    status, invalid_health = call("/__spike/fetch-client/health_snapshot_invalid", "POST", {})
+    require(
+        status == 503
+        and invalid_health.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed health snapshot: {invalid_health}",
+    )
+
+    status, public_status = call("/__spike/fetch-client/public_status_snapshot", "POST", {})
+    require(
+        status == 200
+        and public_status.get("result") == {
+            "online": True,
+            "guild_count": 12,
+            "latency_ms": 31,
+            "uptime": "3h 12m",
+        },
+        f"Signed public status snapshot failed: {public_status}",
+    )
+    status, invalid_public_status = call("/__spike/fetch-client/public_status_snapshot_invalid", "POST", {})
+    require(
+        status == 503
+        and invalid_public_status.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch accepted malformed public status snapshot: {invalid_public_status}",
+    )
+
 
     # Malformed browser-supplied IDs must never be treated as authenticated
     # sessions, and the unusable cookie must be cleared immediately.
@@ -549,7 +585,12 @@ def main():
     require(
         status == 200
         and fetch_health.get("result")
-        == {"status": "alive", "guild_count": 12},
+        == {
+            "status": "alive",
+            "discord_gateway": "connected",
+            "mongodb": "connected",
+            "guild_count": 12,
+        },
         f"Workers Fetch health snapshot failed: {fetch_health}",
     )
     status, fetch_public = call(
