@@ -152,6 +152,10 @@ def create_internal_bot_service_blueprint(
                 or not 1 <= args[1] <= (2**63 - 1) or not isinstance(args[2], str) or args[2] not in {"accepted", "denied"}):
                 return jsonify({"error": "unsupported internal operation"}), 403
             operations[method_name] = (getattr(service, method_name, None), args)
+        elif method_name == "api_audit_snapshot":
+            if len(args) != 2 or not valid_guild_id(args[0]) or type(args[1]) is not int or not 1 <= args[1] <= 100:
+                return jsonify({"error": "unsupported internal operation"}), 403
+            operations[method_name] = (getattr(service, method_name, None), args)
         elif method_name == "dashboard_submitted_appeals_snapshot":
             if len(args) != 2 or not valid_guild_id(args[0]) or type(args[1]) is not int or not 1 <= args[1] <= 100:
                 return jsonify({"error": "unsupported internal operation"}), 403
@@ -269,6 +273,28 @@ def create_internal_bot_service_blueprint(
             if method_name in {"api_claim_appeal_by_case", "api_release_appeal_claim_by_case", "api_resolve_appeal_by_case"}:
                 if not isinstance(result, bool):
                     return jsonify({"error": "internal service unavailable"}), 503
+            if method_name == "api_audit_snapshot":
+                required = {"actor_name", "action", "details", "timestamp"}
+                def audit_dto(item):
+                    if not isinstance(item, dict) or not required.issubset(item):
+                        return None
+                    actor_name, action, details, stamp = item.get("actor_name"), item.get("action"), item.get("details"), item.get("timestamp")
+                    if (not isinstance(actor_name, str) or not 1 <= len(actor_name) <= 128
+                        or not isinstance(action, str) or not 1 <= len(action) <= 200
+                        or not isinstance(details, str) or len(details) > 1000
+                        or not isinstance(stamp, datetime)):
+                        return None
+                    if stamp.tzinfo is None:
+                        stamp = stamp.replace(tzinfo=timezone.utc)
+                    stamp = stamp.astimezone(timezone.utc)
+                    return {"actor_name": actor_name, "action": action, "details": details,
+                        "timestamp": stamp.isoformat().replace("+00:00", "Z")}
+                if not isinstance(result, list) or len(result) > operation_args[1]:
+                    return jsonify({"error": "internal service unavailable"}), 503
+                projected = [audit_dto(item) for item in result]
+                if any(item is None for item in projected) or any(projected[i]["timestamp"] < projected[i + 1]["timestamp"] for i in range(len(projected) - 1)):
+                    return jsonify({"error": "internal service unavailable"}), 503
+                result = projected
             if method_name == "dashboard_submitted_appeals_snapshot":
                 required = {"guild_id", "case_id", "sanction_type", "user_name", "user_id", "ban_reason", "appeal_text", "submitted_at", "status"}
                 def appeal_dto(item):
