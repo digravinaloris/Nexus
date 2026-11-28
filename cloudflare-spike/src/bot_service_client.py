@@ -917,7 +917,7 @@ class CloudflareFetchBotService:
             forbidden = ("secret", "token", "webhook", "api_key", "password", "cookie", "credential")
             def safe_value(value, depth=0):
                 if depth > 6: return False
-                if value is None or type(value) in {bool, int, float, str}: return not (isinstance(value, str) and len(value) > 4096)
+                if value is None or type(value) in {bool, int, float, str}: return not (isinstance(value, str) and len(value) > 4096) and not (type(value) is float and not math.isfinite(value))
                 if isinstance(value, list): return len(value) <= 1000 and all(safe_value(v, depth + 1) for v in value)
                 if isinstance(value, dict): return len(value) <= 100 and all(isinstance(k, str) and len(k) <= 100 and not any(x in k.lower() for x in forbidden) and safe_value(v, depth + 1) for k, v in value.items())
                 return False
@@ -963,7 +963,7 @@ class CloudflareFetchBotService:
                 if depth > 8:
                     return False
                 if value is None or type(value) in {bool, int, float, str}:
-                    return not (isinstance(value, str) and len(value) > 4096)
+                    return not (isinstance(value, str) and len(value) > 4096) and not (type(value) is float and not math.isfinite(value))
                 if isinstance(value, list):
                     return len(value) <= 500 and all(safe_config_value(item, depth + 1) for item in value)
                 if isinstance(value, dict):
