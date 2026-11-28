@@ -181,3 +181,19 @@ The raw `api_config_snapshot(guild_id)` method remains an in-process integration
 - Do not expose `api_config_snapshot` through the internal endpoint or HTTP client.
 
 The new REST DTO and signed transport are implemented, but this does not establish full dashboard config parity or authorize production cutover. The internal endpoint remains disabled by default; no Cloudflare resources, secrets, DNS, production settings, or deployment were changed.
+
+## Per-guild API-key authentication boundary (2026-11-28)
+
+`api_authenticate_key(provided_key, guild_id=None)` is intentionally **not** exposed by the Worker Fetch client or internal dispatch allowlist yet. The current route contract in `web/rest_api.py` first checks the optional master API key in the web process, then delegates per-guild key verification to the in-process BotService. The BotService compares the supplied key against the configured guild key using `secrets.compare_digest` and returns only the matching guild ID; the configured key itself is never returned.
+
+Do not implement this as a generic configuration read or send configured API keys to the Worker. A future remote operation must preserve these boundaries:
+
+- Keep the master API key check in a trusted server-side component; never ship the master key to Pages, browser code, or a Worker response.
+- Send a caller-supplied per-guild key only over the signed HTTPS internal channel. Do not include it in logs, error text, audit payloads, metrics, or response DTOs.
+- Verify the per-guild key inside the persistent bot host against the guild's stored secret with constant-time comparison. Return only a minimal result (authorized guild ID or no match).
+- Preserve optional guild scoping: when a guild ID is supplied, check only that guild; without one, preserve the current bounded candidate-guild behavior and avoid unbounded config/database scans.
+- Reject malformed/non-ASCII/oversized keys and malformed guild IDs before lookup. Apply request rate limits and avoid distinguishable errors that reveal whether a guild or key exists.
+- Add tests for master-key precedence, correct and incorrect per-guild keys, optional guild scoping, bot-not-ready behavior, constant-time comparison path, secret redaction, replay protection, and bounded lookup behavior.
+- Keep this operation out of the Worker Fetch allowlist until the request/response schema, rate-limit owner, secret-redaction guarantees, and threat model are reviewed together.
+
+This is a deliberate security hold, not an accidental missing method. The remaining route parity must not be improved by transporting authentication secrets or weakening the bot-host trust boundary.
