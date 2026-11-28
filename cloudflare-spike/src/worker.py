@@ -274,7 +274,7 @@ def mock_internal_bot_service():
     }
     method = payload.get("method")
     args = payload["args"]
-    if isinstance(method, str) and method in results and args == []:
+    if isinstance(method, str) and method in results and args == [] and method != "dashboard_public_templates_snapshot":
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_health_snapshot" and args == ["123"]:
         return jsonify({"ok": True, "result": results[method]})
