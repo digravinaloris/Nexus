@@ -43,6 +43,44 @@ app.session_interface = D1SessionInterface(
 )
 
 
+@app.post("/__spike/session-config-validation")
+def validate_session_configuration():
+    """Local-only regression probe for D1 session constructor validation."""
+    valid = dict(
+        db_getter=_db,
+        awaiter=_await,
+        key_getter=lambda _version: b"x" * 32,
+    )
+    cases = {
+        "bool_key_version": {"active_key_version": True},
+        "zero_key_version": {"active_key_version": 0},
+        "float_key_version": {"active_key_version": 2.0},
+        "bool_idle_timeout": {"idle_timeout": True},
+        "zero_idle_timeout": {"idle_timeout": 0},
+        "float_idle_timeout": {"idle_timeout": 900.0},
+        "bool_absolute_timeout": {"absolute_timeout": True},
+        "zero_absolute_timeout": {"absolute_timeout": 0},
+        "float_absolute_timeout": {"absolute_timeout": 86400.0},
+        "absolute_not_greater": {"idle_timeout": 900, "absolute_timeout": 900},
+        "missing_dependency": {"key_getter": None},
+    }
+    checks = {}
+    for name, overrides in cases.items():
+        options = {**valid, **overrides}
+        try:
+            D1SessionInterface(**options)
+        except (TypeError, ValueError):
+            checks[name] = True
+        else:
+            checks[name] = False
+    try:
+        D1SessionInterface(**valid)
+        checks["valid_defaults"] = True
+    except (TypeError, ValueError):
+        checks["valid_defaults"] = False
+    return jsonify({"all_passed": all(checks.values()), "checks": checks})
+
+
 @app.before_request
 def reject_unavailable_session_storage():
     if getattr(session, "unavailable", False):
