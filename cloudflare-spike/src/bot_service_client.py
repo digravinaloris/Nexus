@@ -173,6 +173,15 @@ class CloudflareFetchBotService:
         elif method == "api_member_warnings":
             if expected_type is not int or len(args) != 2 or not all(valid_id(value) for value in args):
                 raise ValueError("Invalid member warning count arguments")
+        elif method == "dashboard_submitted_appeals_snapshot":
+            if (
+                expected_type is not list
+                or len(args) != 2
+                or not valid_id(args[0])
+                or type(args[1]) is not int
+                or not 1 <= args[1] <= 100
+            ):
+                raise ValueError("Invalid submitted appeals snapshot arguments")
         elif method == "api_warnlist_snapshot":
             if expected_type is not list or len(args) != 1 or not valid_id(args[0]):
                 raise ValueError("Invalid warning list snapshot arguments")
@@ -415,6 +424,44 @@ class CloudflareFetchBotService:
             raise CloudflareBotServiceError("Internal BotService returned invalid dashboard sanction types")
         if method == "api_member_warnings" and (type(result) is not int or not 0 <= result <= 1000000):
             raise CloudflareBotServiceError("Internal BotService returned invalid member warning count")
+        if method == "dashboard_submitted_appeals_snapshot":
+            required = {"case_id", "sanction_type", "user_name", "user_id", "ban_reason", "appeal_text", "submitted_at"}
+            def valid_appeal(item):
+                if (
+                    not isinstance(item, dict)
+                    or set(item) != required
+                    or type(item["case_id"]) is not int
+                    or not 1 <= item["case_id"] <= (2**63 - 1)
+                    or not isinstance(item["sanction_type"], str)
+                    or re.fullmatch(r"[a-z][a-z0-9_]{0,31}", item["sanction_type"]) is None
+                    or not isinstance(item["user_name"], str)
+                    or not 1 <= len(item["user_name"]) <= 100
+                    or not valid_id(item["user_id"])
+                    or not isinstance(item["ban_reason"], str)
+                    or len(item["ban_reason"]) > 1000
+                    or not isinstance(item["appeal_text"], str)
+                    or not 1 <= len(item["appeal_text"]) <= 4000
+                    or not isinstance(item["submitted_at"], str)
+                ):
+                    return False
+                try:
+                    stamp = datetime.datetime.fromisoformat(item["submitted_at"].replace("Z", "+00:00"))
+                except ValueError:
+                    return False
+                return stamp.tzinfo is not None and stamp.utcoffset() == datetime.timedelta(0)
+            if (
+                not isinstance(result, list)
+                or len(result) > args[1]
+                or not all(valid_appeal(item) for item in result)
+                or len({item["case_id"] for item in result}) != len(result)
+                or any(result[i]["submitted_at"] < result[i + 1]["submitted_at"] for i in range(len(result) - 1))
+                or len(json.dumps(result, separators=(",", ":"), ensure_ascii=True).encode("utf-8")) > 60 * 1024
+            ):
+                raise CloudflareBotServiceError("Internal BotService returned invalid submitted appeals snapshot")
+            result = [
+                dict(item, submitted_at=datetime.datetime.fromisoformat(item["submitted_at"].replace("Z", "+00:00")))
+                for item in result
+            ]
         if method == "api_warnlist_snapshot":
             def valid_warning(item):
                 return (
@@ -782,6 +829,13 @@ class CloudflareFetchBotService:
 
     def dashboard_config_snapshot(self, guild_id: str) -> dict:
         return self._dispatch("dashboard_config_snapshot", [guild_id], dict)
+
+    def dashboard_submitted_appeals_snapshot(self, guild_id: str, limit: int = 100) -> list:
+        if not isinstance(guild_id, str) or re.fullmatch(r"[0-9]{1,20}", guild_id) is None:
+            raise ValueError("Invalid guild ID")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Invalid submitted appeals limit")
+        return self._dispatch("dashboard_submitted_appeals_snapshot", [guild_id, limit], list)
 
     def api_member_warnings(self, guild_id: str, user_id: str) -> int:
         for value in (guild_id, user_id):

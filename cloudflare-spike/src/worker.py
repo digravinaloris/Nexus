@@ -187,6 +187,15 @@ def mock_internal_bot_service():
         },
         "dashboard_config_snapshot": {"guild_id": "123", "language": "en", "tickets_enabled": True, "banned_words": ["spam"], "command_roles": {"ban": [321]}},
         "api_warnlist_snapshot": [{"user_id": "123456789012345678", "count": 2}],
+        "dashboard_submitted_appeals_snapshot": [{
+            "case_id": 12,
+            "sanction_type": "ban",
+            "user_name": "ExampleUser",
+            "user_id": "123456789012345678",
+            "ban_reason": "spam",
+            "appeal_text": "Please review this ban.",
+            "submitted_at": "2026-11-28T09:30:00Z",
+        }],
         "api_member_warnings": 2,
         "api_audit_snapshot": [{
             "actor_name": "Moderator",
@@ -290,6 +299,17 @@ def mock_internal_bot_service():
             return jsonify({"ok": True, "result": "2"})
         if key_id == "spike-member-warnings-out-of-range":
             return jsonify({"ok": True, "result": -1})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_submitted_appeals_snapshot" and args == ["123", 10]:
+        if key_id == "spike-appeals-malformed":
+            malformed = dict(results[method][0])
+            malformed["token"] = "must-never-be-transported"
+            return jsonify({"ok": True, "result": [malformed]})
+        if key_id == "spike-appeals-duplicate":
+            return jsonify({"ok": True, "result": [results[method][0], results[method][0]]})
+        if key_id == "spike-appeals-order":
+            older = dict(results[method][0], case_id=13, submitted_at="2026-11-27T09:30:00Z")
+            return jsonify({"ok": True, "result": [older, results[method][0]]})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_warnlist_snapshot" and args == ["123"]:
         if key_id == "spike-warnlist-malformed":
@@ -492,6 +512,21 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.dashboard_sanction_types_snapshot("123")
         elif method == "dashboard_sanction_types_snapshot_invalid_args":
             try: client.dashboard_sanction_types_snapshot("not-decimal")
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "dashboard_submitted_appeals_snapshot":
+            result = client.dashboard_submitted_appeals_snapshot("123", limit=10)
+        elif method == "dashboard_submitted_appeals_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-appeals-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_submitted_appeals_snapshot("123", limit=10)
+        elif method == "dashboard_submitted_appeals_snapshot_duplicate":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-appeals-duplicate", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_submitted_appeals_snapshot("123", limit=10)
+        elif method == "dashboard_submitted_appeals_snapshot_order":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-appeals-order", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_submitted_appeals_snapshot("123", limit=10)
+        elif method == "dashboard_submitted_appeals_snapshot_invalid_args":
+            try: client.dashboard_submitted_appeals_snapshot("not-decimal", limit=10)
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "api_member_warnings":
