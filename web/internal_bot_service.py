@@ -229,8 +229,8 @@ def create_internal_bot_service_blueprint(
                 permission_keys = {"administrator", "manage_guild", "ban_members", "kick_members", "manage_roles"}
                 def valid_item(item):
                     return (isinstance(item, dict) and set(item) == {"id", "name"}
-                        and valid_guild_id(item["id"]) and 1 <= len(item["name"]) <= 100
-                        and isinstance(item["name"], str))
+                        and valid_guild_id(item["id"]) and isinstance(item["name"], str)
+                        and 1 <= len(item["name"]) <= 100)
                 if (not isinstance(result, dict)
                     or set(result) != {"id", "name", "owner_id", "text_channels", "roles", "role_names", "open_tickets"}
                     or not valid_guild_id(result.get("id")) or not valid_guild_id(result.get("owner_id"))
