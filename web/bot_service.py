@@ -245,7 +245,7 @@ class BotService:
         raise NotImplementedError
 
     def dashboard_public_templates_snapshot(self) -> List[Dict[str, object]]:
-        """Return the public template marketplace entries."""
+        """Return public marketplace metadata without template snapshots or creator IDs."""
         raise NotImplementedError
 
     def dashboard_template_snapshot(self, code: str) -> Optional[Dict[str, object]]:
