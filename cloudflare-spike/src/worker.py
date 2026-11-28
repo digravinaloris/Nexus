@@ -205,6 +205,7 @@ def mock_internal_bot_service():
             "details": "spam",
             "timestamp": "2026-11-28T09:30:00Z",
         }],
+        "dashboard_calendar_has_duplicate_event": False,
         "dashboard_calendar_upcoming_events": [{
             "_id": "0123456789abcdef01234567",
             "guild_id": "123",
@@ -348,6 +349,10 @@ def mock_internal_bot_service():
             malformed = dict(results[method][0])
             malformed["actor_name"] = "x" * 129
             return jsonify({"ok": True, "result": [malformed]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_calendar_has_duplicate_event" and args == ["123", "Community event", "2026-11-28T12:00:00+00:00"]:
+        if key_id == "spike-calendar-duplicate-malformed":
+            return jsonify({"ok": True, "result": "false"})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_calendar_upcoming_events" and args == ["123", "2026-11-28T12:00:00+00:00", 10]:
         if key_id == "spike-dashboard-calendar-malformed":
@@ -587,6 +592,18 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.api_audit_snapshot("123", limit=10)
         elif method == "api_audit_snapshot_invalid_args":
             try: client.api_audit_snapshot("not-decimal", limit=10)
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "dashboard_calendar_has_duplicate_event":
+            from datetime import datetime, timezone
+            result = client.dashboard_calendar_has_duplicate_event("123", "Community event", datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc))
+        elif method == "dashboard_calendar_has_duplicate_event_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-calendar-duplicate-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            from datetime import datetime, timezone
+            invalid_client.dashboard_calendar_has_duplicate_event("123", "Community event", datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc))
+        elif method == "dashboard_calendar_has_duplicate_event_invalid_args":
+            from datetime import datetime
+            try: client.dashboard_calendar_has_duplicate_event("not-decimal", "Community event", datetime(2026, 11, 28))
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "dashboard_calendar_upcoming_events":
