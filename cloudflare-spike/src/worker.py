@@ -506,11 +506,17 @@ def mock_internal_bot_service():
         if key_id == "spike-config-malformed":
             malformed = dict(results[method]); malformed["log_webhook_url"] = "https://example.invalid/secret"
             return jsonify({"ok": True, "result": malformed})
+        if key_id == "spike-config-nonfinite":
+            malformed = dict(results[method]); malformed["automod_caps_ratio"] = float("nan")
+            return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_rest_config_snapshot" and args == ["123"]:
         if key_id == "spike-config-malformed":
             malformed = dict(results[method])
             malformed["api_key"] = "must-not-cross-worker-boundary"
+            return jsonify({"ok": True, "result": malformed})
+        if key_id == "spike-config-nonfinite":
+            malformed = dict(results[method]); malformed["automod_caps_ratio"] = float("nan")
             return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_members_snapshot" and args == ["123"]:
@@ -905,7 +911,8 @@ def exercise_fetch_bot_service_client(method):
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "dashboard_config_snapshot_invalid":
-            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-config-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-config-malformed",
+            "spike-config-nonfinite", secret=_test_bot_service_secret(), allow_local_http=True)
             invalid_client.dashboard_config_snapshot("123")
         elif method == "dashboard_config_snapshot_invalid_args":
             try: client.dashboard_config_snapshot("not-decimal")
