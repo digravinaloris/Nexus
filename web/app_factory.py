@@ -91,7 +91,7 @@ def create_web_app(
             session_interface, "nexus_server_side_sessions", False
         ) is not True or any(
             not callable(getattr(session_interface, hook, None))
-            for hook in required_session_hooks
+            for hook in ("open_session", "save_session", *required_session_hooks)
         ):
             raise RuntimeError(
                 "A production session interface with opaque cookies, encrypted "
