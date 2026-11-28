@@ -89,6 +89,7 @@ def mock_internal_bot_service():
             "spike-oversized",
             "spike-channel-malformed",
             "spike-guild-list-malformed",
+            "spike-guild-list-oversized",
             "spike-role-malformed",
             "spike-stats-malformed",
             "spike-stats-out-of-range",
@@ -333,6 +334,17 @@ def mock_internal_bot_service():
         if key_id == "spike-guild-list-malformed":
             malformed = [dict(results[method][0], member_count="25")]
             return jsonify({"ok": True, "result": malformed})
+        if key_id == "spike-guild-list-oversized":
+            oversized = [
+                {
+                    "id": str(1000000000000000000 + index),
+                    "name": "x" * 100,
+                    "member_count": 25,
+                    "icon_url": None,
+                }
+                for index in range(500)
+            ]
+            return jsonify({"ok": True, "result": oversized})
         return jsonify({"ok": True, "result": results[method]})
     if method == "guild_presence" and args == ["123"]:
         return jsonify({"ok": True, "result": {"bot_ready": True, "guild_present": True}})
@@ -579,6 +591,14 @@ def exercise_fetch_bot_service_client(method):
             invalid_client = CloudflareFetchBotService(
                 base_url="http://127.0.0.1:8787",
                 key_id="spike-guild-list-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_guild_list_snapshot("123")
+        elif method == "api_guild_list_snapshot_oversized":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-guild-list-oversized",
                 secret=_test_bot_service_secret(),
                 allow_local_http=True,
             )

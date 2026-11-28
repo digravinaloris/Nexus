@@ -685,6 +685,14 @@ def main():
         and invalid_guild_list.get("error") == "local Worker Fetch transport unavailable",
         f"Workers Fetch client accepted malformed guild-list DTOs: {invalid_guild_list}",
     )
+    status, oversized_guild_list = call(
+        "/__spike/fetch-client/api_guild_list_snapshot_oversized", "POST", {}
+    )
+    require(
+        status == 503
+        and oversized_guild_list.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted oversized guild-list DTOs: {oversized_guild_list}",
+    )
     status, fetch_candidates = call("/__spike/fetch-client/api_guild_id_candidates", "POST", {})
     require(
         status == 200 and fetch_candidates.get("result") == ["123", "456"],
