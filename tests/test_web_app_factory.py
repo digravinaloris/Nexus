@@ -857,3 +857,56 @@ def test_logout_clears_session_when_backend_revocation_fails():
     assert response.get_json() == {"error": "Unable to revoke session. Please retry."}
     assert not backend.session
     assert "Set-Cookie" not in response.headers
+
+
+def test_oauth_callback_rejects_state_already_consumed_by_another_request():
+    import time
+    from flask.sessions import SessionInterface, SessionMixin
+
+    class BackendSession(dict, SessionMixin):
+        new = False
+        modified = False
+        accessed = False
+
+    class FakeSessionInterface(SessionInterface):
+        def __init__(self):
+            self.session = BackendSession(
+                oauth_state="already-consumed-state",
+                oauth_state_created_at=time.time(),
+                oauth_code_verifier="C" * 43,
+            )
+            self.consume_calls = 0
+
+        def open_session(self, app, request):
+            return self.session
+
+        def save_session(self, app, session, response):
+            pass
+
+        def consume_oauth_state(self, session, expected_state):
+            self.consume_calls += 1
+            assert expected_state == "already-consumed-state"
+            return False
+
+    class DiscordMustNotBeCalled:
+        def post(self, *args, **kwargs):
+            raise AssertionError("OAuth token exchange ran after state consumption failed")
+
+        def get(self, *args, **kwargs):
+            raise AssertionError("Discord identity lookup ran after state consumption failed")
+
+    backend = FakeSessionInterface()
+    app = _create_app(
+        _config(DISCORD_HTTP_CLIENT=DiscordMustNotBeCalled()),
+        session_interface=backend,
+    )
+
+    response = app.test_client().get(
+        "/callback?code=valid-authorization-code&state=already-consumed-state"
+    )
+
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "Invalid state"}
+    assert backend.consume_calls == 1
+    assert backend.session["oauth_state"] == "already-consumed-state"
+    assert "Set-Cookie" not in response.headers
