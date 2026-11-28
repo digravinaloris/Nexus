@@ -88,6 +88,7 @@ def mock_internal_bot_service():
             "spike-malformed",
             "spike-oversized",
             "spike-channel-malformed",
+            "spike-guild-list-malformed",
             "spike-role-malformed",
             "spike-stats-malformed",
             "spike-faq-malformed",
@@ -159,7 +160,12 @@ def mock_internal_bot_service():
             "uptime": "3h 12m",
         },
         "api_health_snapshot": {"online": True, "locked": False, "guild_count": 1},
-        "api_guild_list_snapshot": [{"id": "123", "name": "Spike Test Server"}],
+        "api_guild_list_snapshot": [{
+            "id": "123",
+            "name": "Spike Test Server",
+            "member_count": 25,
+            "icon_url": None,
+        }],
         "api_guild_id_candidates": ["123", "456"],
         "api_text_channels_snapshot": [
             {"id": "456", "name": "general"},
@@ -296,6 +302,9 @@ def mock_internal_bot_service():
     if method == "api_health_snapshot" and args == ["123"]:
         return jsonify({"ok": True, "result": results[method]})
     if method == "api_guild_list_snapshot" and args == ["123"]:
+        if key_id == "spike-guild-list-malformed":
+            malformed = [dict(results[method][0], member_count="25")]
+            return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if method == "guild_presence" and args == ["123"]:
         return jsonify({"ok": True, "result": {"bot_ready": True, "guild_present": True}})
@@ -498,6 +507,14 @@ def exercise_fetch_bot_service_client(method):
             result = client.api_health_snapshot("123")
         elif method == "api_guild_list_snapshot":
             result = client.api_guild_list_snapshot("123")
+        elif method == "api_guild_list_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(
+                base_url="http://127.0.0.1:8787",
+                key_id="spike-guild-list-malformed",
+                secret=_test_bot_service_secret(),
+                allow_local_http=True,
+            )
+            invalid_client.api_guild_list_snapshot("123")
         elif method == "api_guild_id_candidates":
             result = client.api_guild_id_candidates()
         elif method == "available_guild_ids":

@@ -610,8 +610,21 @@ def main():
     status, fetch_api_guilds = call("/__spike/fetch-client/api_guild_list_snapshot", "POST", {})
     require(
         status == 200
-        and fetch_api_guilds.get("result") == [{"id": "123", "name": "Spike Test Server"}],
+        and fetch_api_guilds.get("result") == [{
+            "id": "123",
+            "name": "Spike Test Server",
+            "member_count": 25,
+            "icon_url": None,
+        }],
         f"Signed API guild-list read failed: {fetch_api_guilds}",
+    )
+    status, invalid_guild_list = call(
+        "/__spike/fetch-client/api_guild_list_snapshot_invalid", "POST", {}
+    )
+    require(
+        status == 503
+        and invalid_guild_list.get("error") == "local Worker Fetch transport unavailable",
+        f"Workers Fetch client accepted malformed guild-list DTOs: {invalid_guild_list}",
     )
     status, fetch_candidates = call("/__spike/fetch-client/api_guild_id_candidates", "POST", {})
     require(
