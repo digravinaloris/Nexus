@@ -636,6 +636,16 @@ def test_template_store_uses_global_shareable_codes(mongo_db):
     # Templates are globally addressable by code, not scoped to the importing guild.
     assert template_store.get_template_by_code("shared")["snapshot"] == {"features": ["tickets"]}
     assert template_store.get_template_by_code("missing") is None
+    assert template_store.get_public_template_by_code("shared") is None
+
+    template_store.create_template({
+        "code": "public-share",
+        "public": True,
+        "created_guild_id": "2",
+        "snapshot": {"features": ["tickets"]},
+    })
+    assert template_store.get_public_template_by_code("public-share")["created_guild_id"] == "2"
+    assert template_store.get_public_template_by_code("missing") is None
 
 
 def test_killswitch_store_creates_secure_expiring_token(mongo_db):

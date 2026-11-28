@@ -1273,3 +1273,70 @@ def test_dashboard_presence_ping_rejects_non_null_response():
 
     with pytest.raises(BotServiceTransportError, match="invalid dashboard presence heartbeat"):
         _client(session).dashboard_presence_ping("123", "456", "Loris")
+
+
+def test_dashboard_template_snapshot_dispatches_allowlisted_public_detail():
+    template = {
+    "code": "AbC_123-x",
+    "name": "Welcome Pack",
+    "created_guild_name": "Example Server",
+    "created_at": datetime.datetime(2026, 11, 28, 9, 30, tzinfo=datetime.timezone.utc),
+    "public": True,
+    "snapshot": {
+        "feature_toggles": {"tickets_enabled": True},
+        "automod": {"automod_spam_count": 10, "banned_words": ["spam"]},
+        "warn_escalation_enabled": False,
+        "command_roles_by_name": {"ban": ["Moderators"]},
+    },
+}
+    payload = dict(template)
+    payload["created_at"] = "2026-11-28T09:30:00Z"
+    payload.pop("public")
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": payload}))
+
+    result = _client(session).dashboard_template_snapshot("AbC_123-x")
+
+    assert result["code"] == "AbC_123-x"
+    assert result["created_at"] == datetime.datetime(2026, 11, 28, 9, 30, tzinfo=datetime.timezone.utc)
+    assert result["snapshot"] == template["snapshot"]
+    body = session.calls[0][1]["data"]
+    assert json.loads(body) == {
+        "method": "dashboard_template_snapshot",
+        "args": ["AbC_123-x"],
+        "kwargs": {},
+    }
+    verify_internal_request(
+        keyring={"current": SECRET},
+        method="POST",
+        path="/internal/v1/dispatch",
+        body=body,
+        headers=session.calls[0][1]["headers"],
+    )
+
+
+@pytest.mark.parametrize("code", ["", "unsafe/code", "x" * 33, 123])
+def test_dashboard_template_snapshot_rejects_invalid_codes(code):
+    session = FakeSession()
+    with pytest.raises(ValueError, match="Invalid public template code"):
+        _client(session).dashboard_template_snapshot(code)
+    assert session.calls == []
+
+
+@pytest.mark.parametrize("payload", [
+    {"code": "safe", "name": "Template", "created_guild_name": "Server",
+     "created_at": "2026-11-28T09:30:00Z", "snapshot": {"private": "leak"}},
+    {"code": "safe", "name": "Template", "created_guild_name": "Server",
+     "created_at": "not-a-date", "snapshot": {
+         "feature_toggles": {}, "automod": {}, "warn_escalation_enabled": False,
+         "command_roles_by_name": {},
+     }},
+    {"code": "safe", "name": "Template", "created_guild_name": "Server",
+     "created_at": "2026-11-28T09:30:00Z", "snapshot": {
+         "feature_toggles": {"tickets_enabled": "yes"}, "automod": {},
+         "warn_escalation_enabled": False, "command_roles_by_name": {},
+     }},
+])
+def test_dashboard_template_snapshot_rejects_malformed_details(payload):
+    session = FakeSession(response=FakeResponse(payload={"ok": True, "result": payload}))
+    with pytest.raises(BotServiceTransportError, match="invalid public template snapshot"):
+        _client(session).dashboard_template_snapshot("safe")

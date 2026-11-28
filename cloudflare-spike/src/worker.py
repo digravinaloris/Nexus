@@ -257,6 +257,18 @@ def mock_internal_bot_service():
             "feature_toggle_count": 4,
             "command_role_count": 2,
         }],
+        "dashboard_template_snapshot": {
+            "code": "AbC_123-x",
+            "name": "Welcome Pack",
+            "created_guild_name": "Spike Test Server",
+            "created_at": "2026-11-28T09:30:00Z",
+            "snapshot": {
+                "feature_toggles": {"tickets_enabled": True},
+                "automod": {"automod_spam_count": 10, "banned_words": ["spam"]},
+                "warn_escalation_enabled": False,
+                "command_roles_by_name": {"ban": ["Moderators"]},
+            },
+        },
         "api_rest_config_snapshot": {
             "guild_id": "123",
             "language": "en",
@@ -392,6 +404,12 @@ def mock_internal_bot_service():
             return jsonify({"ok": True, "result": [malformed]})
         if key_id == "spike-public-templates-duplicate":
             return jsonify({"ok": True, "result": [results[method][0], results[method][0]]})
+        return jsonify({"ok": True, "result": results[method]})
+    if method == "dashboard_template_snapshot" and args == ["AbC_123-x"]:
+        if key_id == "spike-template-detail-malformed":
+            malformed = dict(results[method])
+            malformed["snapshot"] = {"private_config": "must-not-cross-worker-boundary"}
+            return jsonify({"ok": True, "result": malformed})
         return jsonify({"ok": True, "result": results[method]})
     if method == "dashboard_config_snapshot" and args == ["123"]:
         if key_id == "spike-config-malformed":
@@ -662,6 +680,15 @@ def exercise_fetch_bot_service_client(method):
             invalid_client.dashboard_public_templates_snapshot()
         elif method == "dashboard_public_templates_snapshot_invalid_args":
             try: client._dispatch("dashboard_public_templates_snapshot", ["unexpected"], list)
+            except ValueError: result = {"rejected": True}
+            else: result = {"rejected": False}
+        elif method == "dashboard_template_snapshot":
+            result = client.dashboard_template_snapshot("AbC_123-x")
+        elif method == "dashboard_template_snapshot_invalid":
+            invalid_client = CloudflareFetchBotService(base_url="http://127.0.0.1:8787", key_id="spike-template-detail-malformed", secret=_test_bot_service_secret(), allow_local_http=True)
+            invalid_client.dashboard_template_snapshot("AbC_123-x")
+        elif method == "dashboard_template_snapshot_invalid_args":
+            try: client.dashboard_template_snapshot("unsafe/code")
             except ValueError: result = {"rejected": True}
             else: result = {"rejected": False}
         elif method == "dashboard_settings_snapshot":

@@ -15,7 +15,7 @@ from nexus_runtime import core
 import discord
 from stores import calendar_store
 from services.template_ops import _apply_template_base_config
-from stores.template_store import get_template_by_code, list_public_templates
+from stores.template_store import get_public_template_by_code, list_public_templates
 from stores.killswitch_store import get_killswitch_token, increment_killswitch_attempts, mark_killswitch_token_used
 from security.verification import get_valid_challenge, mark_used, record_failed_attempt
 from stores.config_store import add_command_role, get_config, get_global_lock, remove_command_role, set_global_lock, update_config, update_config_fields
@@ -533,7 +533,7 @@ class InProcessBotService(BotService):
         return result
 
     def dashboard_template_snapshot(self, code: str) -> Optional[Dict[str, object]]:
-        return get_template_by_code(code)
+        return get_public_template_by_code(code)
 
     def dashboard_apply_template_snapshot(self, guild_id: str, snapshot: Dict[str, object]) -> None:
         _apply_template_base_config(guild_id, snapshot)
